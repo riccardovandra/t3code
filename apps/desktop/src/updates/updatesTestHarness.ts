@@ -14,6 +14,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
+import * as MacSelfInstall from "./MacSelfInstall.ts";
 
 export const flushCallbacks = Effect.yieldNow;
 
@@ -35,6 +36,8 @@ export interface UpdatesHarnessOptions {
   readonly platform?: NodeJS.Platform;
   readonly packageType?: string | undefined;
   readonly installRecord?: string | undefined;
+  /** When set, the bundle is treated as unsigned and installs run this instead of Squirrel. */
+  readonly macSelfInstall?: Effect.Effect<void, MacSelfInstall.MacSelfInstallError>;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -47,6 +50,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
   const installSteps: string[] = [];
+  const selfInstalls: MacSelfInstall.DownloadedUpdate[] = [];
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -106,6 +110,15 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
           }),
       ).pipe(Effect.asVoid),
   } satisfies ElectronUpdater.ElectronUpdater["Service"]);
+
+  const layerMacSelfInstall = Layer.succeed(MacSelfInstall.MacSelfInstall, {
+    isRequired: Effect.succeed(options.macSelfInstall !== undefined),
+    install: (update) =>
+      Effect.sync(() => {
+        selfInstalls.push(update);
+        installSteps.push("selfInstall");
+      }).pipe(Effect.andThen(options.macSelfInstall ?? Effect.void)),
+  } satisfies MacSelfInstall.MacSelfInstall["Service"]);
 
   const layerWindow = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
@@ -251,6 +264,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provide(layerFileSystem),
+    Layer.provide(layerMacSelfInstall),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
     Layer.provideMerge(layerBackend),
@@ -273,6 +287,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     checkCount: () => checkCount,
     quitAndInstalls: () => quitAndInstallCount,
     installSteps,
+    selfInstalls,
     updateRestartMarkers,
     installRecords,
     previousInstallRecord: () => previousInstallRecord,
