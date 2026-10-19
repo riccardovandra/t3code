@@ -70,6 +70,9 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import * as DocsHandlers from "./toolkits/docs/handlers.ts";
+import { DocsToolkit } from "./toolkits/docs/tools.ts";
+import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
@@ -973,6 +976,10 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 
+export const layerDocsToolkit = toolkitRegistration(DocsToolkit, DocsHandlers.layer).pipe(
+  Layer.provide(WorkspaceDocs.layer),
+);
+
 export const layerHtmlToolkit = Layer.mergeAll(
   toolkitRegistration(HtmlRenderToolkit, HtmlHandlers.layerRender),
   imageToolRegistration(registerHtmlPreview(), HtmlHandlers.layerPreview),
@@ -1062,4 +1069,5 @@ export const layer = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerDocsToolkit,
 ).pipe(Layer.provideMerge(layerMcpTransport));

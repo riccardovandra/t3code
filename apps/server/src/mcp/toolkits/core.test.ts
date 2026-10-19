@@ -20,6 +20,7 @@ import {
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -51,6 +52,11 @@ import * as McpInvocationContext from "../McpInvocationContext.ts";
 import * as McpToolAccessTestkit from "../McpToolAccess.testkit.ts";
 import { dispatchFailure } from "../threadAccess.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as DocCommentsService from "../../docs/DocCommentsService.ts";
+import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
+import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
+import * as WorkspaceFileSystem from "../../workspace/WorkspaceFileSystem.ts";
+import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import { OrchestratorToolkit } from "./orchestrator/tools.ts";
 import { PreviewToolkit } from "./preview/tools.ts";
 import { PreviewControlsToolkit } from "./previewControls/tools.ts";
@@ -76,12 +82,13 @@ const declaredFailure = (result: McpSchema.CallToolResult) => {
 };
 import { PullRequestsToolkit } from "./pullRequests/tools.ts";
 import { HtmlToolkit } from "./html/tools.ts";
+import { DocsToolkit } from "./docs/tools.ts";
 import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
   resolveT3McpToolSummaryAction,
 } from "@t3tools/shared/t3McpToolPresentation";
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+import { docOpenFromToolItem, htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);
@@ -105,6 +112,7 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
     DeviceToolkit,
     PullRequestsToolkit,
     HtmlToolkit,
+    DocsToolkit,
   ]) {
     for (const tool of Object.values(toolkit.tools)) {
       expect(names.has(tool.name)).toBe(false);
@@ -309,6 +317,61 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
           }),
         ),
       ),
+    ),
+  ),
+);
+
+it.effect("returns a created doc that Codex and Claude tool rows both carry", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({ name: "docs_create", arguments: { title: "Launch plan" } })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    const doc = { docPath: "docs/launch-plan.md", title: "Launch plan" };
+    for (const [toolName, output] of [
+      ["t3-code.docs_create", result.structuredContent],
+      ["mcp__t3-code__docs_create", result.content],
+    ] as const) {
+      expect(docOpenFromToolItem({ toolName, status: "completed", output })).toEqual(doc);
+    }
+  }).pipe(
+    Effect.provide(
+      Layer.unwrap(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-docs-" });
+          return McpHttpServer.layerDocsToolkit.pipe(
+            Layer.provideMerge(McpServer.McpServer.layer),
+            Layer.provide(
+              WorkspaceFileSystem.layer.pipe(
+                Layer.provide(
+                  Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+                    assertContains: () => Effect.void,
+                  }),
+                ),
+                Layer.provideMerge(WorkspaceEntries.layer),
+                Layer.provideMerge(WorkspacePaths.layer),
+              ),
+            ),
+            Layer.provide(Layer.mock(DocCommentsService.DocCommentsService)({})),
+            Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+            Layer.provide(
+              Layer.mock(ThreadManagement.ThreadManagementService)({
+                getThreadShell: (id) =>
+                  Effect.succeed({
+                    ...McpToolAccessTestkit.liveThreadShell(id),
+                    worktreePath: checkout,
+                  }),
+              }),
+            ),
+            Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-docs-" })),
+            Layer.provide(NodeServices.layer),
+          );
+        }),
+      ).pipe(Layer.provide(NodeServices.layer)),
     ),
   ),
 );

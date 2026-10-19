@@ -1083,6 +1083,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.aiPmBrief,
       staleTimeMs: 15_000,
     }),
+    docComments: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:docs:comments",
+      tag: WS_METHODS.docsListComments,
+      staleTimeMs: 5_000,
+    }),
     scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:scheduled-task:webhook-deliveries",
       tag: WS_METHODS.scheduledTasksListWebhookDeliveries,
@@ -1286,6 +1291,22 @@ export function createServerEnvironmentAtoms<R, E>(
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
+    }),
+    createDocComment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs:create-comment",
+      tag: WS_METHODS.docsCreateComment,
+    }),
+    replyDocComment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs:reply-comment",
+      tag: WS_METHODS.docsReplyComment,
+    }),
+    setDocCommentResolved: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs:set-comment-resolved",
+      tag: WS_METHODS.docsSetCommentResolved,
+    }),
+    deleteDocComment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs:delete-comment",
+      tag: WS_METHODS.docsDeleteComment,
     }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",

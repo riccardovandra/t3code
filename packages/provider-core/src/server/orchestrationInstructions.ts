@@ -35,7 +35,11 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 
 ### Showing visuals
 
-When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.`,
+When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.
+
+### Docs
+
+Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `

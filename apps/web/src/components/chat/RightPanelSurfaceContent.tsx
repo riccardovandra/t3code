@@ -29,6 +29,9 @@ const PreviewPanel = lazy(() =>
 const AiPmPanel = lazy(() =>
   import("../aiPm/AiPmPanel").then((module) => ({ default: module.AiPmPanel })),
 );
+const DocsPanel = lazy(() =>
+  import("../docs/DocsPanel").then((module) => ({ default: module.DocsPanel })),
+);
 const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
@@ -94,6 +97,21 @@ export function RightPanelSurfaceContent(props: {
             onSelectProject={(projectId) =>
               useRightPanelStore.getState().selectAiPmProject(threadRef, projectId)
             }
+          />
+        </Suspense>
+      );
+    case "docs":
+      if (!props.pullRequest.projectId || !props.files.workspaceRoot) return null;
+      return (
+        <Suspense fallback={null}>
+          <DocsPanel
+            key={`${props.environmentId}:${props.files.workspaceRoot}`}
+            environmentId={props.environmentId}
+            projectId={props.pullRequest.projectId}
+            cwd={props.files.workspaceRoot}
+            threadRef={threadRef}
+            docPath={surface.docPath}
+            onSelectDoc={(docPath) => useRightPanelStore.getState().selectDoc(threadRef, docPath)}
           />
         </Suspense>
       );

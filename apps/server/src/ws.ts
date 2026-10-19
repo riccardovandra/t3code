@@ -1,4 +1,6 @@
 import * as AiPmService from "./aiPm/AiPmService.ts";
+import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
+import * as DocCommentsService from "./docs/DocCommentsService.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -1201,6 +1203,8 @@ const layerWsRpc = (
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const aiPm = yield* AiPmService.AiPmService;
+      const docComments = yield* DocCommentsService.DocCommentsService;
+      const docCommentDelivery = yield* DocCommentDelivery.DocCommentDelivery;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
@@ -2032,6 +2036,11 @@ const layerWsRpc = (
           ),
         [WS_METHODS.aiPmList]: () => aiPm.list(),
         [WS_METHODS.aiPmBrief]: (input) => aiPm.brief(input),
+        [WS_METHODS.docsListComments]: (input) => docComments.list(input),
+        [WS_METHODS.docsCreateComment]: (input) => docCommentDelivery.create(input),
+        [WS_METHODS.docsReplyComment]: (input) => docCommentDelivery.reply(input),
+        [WS_METHODS.docsSetCommentResolved]: (input) => docComments.setResolved(input),
+        [WS_METHODS.docsDeleteComment]: (input) => docComments.delete(input),
         [WS_METHODS.scheduledTasksList]: (_input) =>
           scheduledTasks.list().pipe(Effect.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
@@ -3172,6 +3181,9 @@ export const layer = Layer.unwrap(
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
               Layer.provide(DefectReporter.layer),
+              Layer.provide(
+                DocCommentDelivery.layer.pipe(Layer.provideMerge(DocCommentsService.layer)),
+              ),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AiPmService.layer.pipe(Layer.provide(ProcessRunner.layer))),
               Layer.provide(AgentSessionScanner.layer),

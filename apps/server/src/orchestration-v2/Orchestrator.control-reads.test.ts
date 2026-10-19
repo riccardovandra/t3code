@@ -1010,6 +1010,59 @@ it.effect.each([false, true])("rejects thread.create for an existing id (deleted
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect(
+  "creates a subagent child with thread.create parentThreadId in the parent's project",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const projectId = ProjectId.make("project:child-create");
+      const base = {
+        type: "thread.create",
+        projectId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      } as const;
+      const parentId = ThreadId.make("thread:child-create:parent");
+      yield* orchestrator.dispatch({
+        ...base,
+        commandId: CommandId.make("create:child-create:parent"),
+        threadId: parentId,
+        title: "Parent",
+      });
+      const childId = ThreadId.make("thread:child-create:child");
+      yield* orchestrator.dispatch({
+        ...base,
+        commandId: CommandId.make("create:child-create:child"),
+        threadId: childId,
+        title: "Child",
+        parentThreadId: parentId,
+      });
+      assert.deepEqual((yield* projections.getThread(childId)).lineage, {
+        parentThreadId: parentId,
+        relationshipToParent: "subagent",
+        rootThreadId: parentId,
+      });
+
+      const foreign = yield* orchestrator
+        .dispatch({
+          ...base,
+          commandId: CommandId.make("create:child-create:foreign"),
+          threadId: ThreadId.make("thread:child-create:foreign"),
+          projectId: ProjectId.make("project:child-create:other"),
+          title: "Foreign",
+          parentThreadId: parentId,
+        })
+        .pipe(Effect.flip);
+      assert.equal(foreign._tag, "OrchestratorDispatchError");
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("replays a thread.create receipt without changing the thread", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

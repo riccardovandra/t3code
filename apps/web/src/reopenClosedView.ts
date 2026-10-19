@@ -117,6 +117,10 @@ export async function reopenClosedView(
   )
     return false;
   switch (surface.kind) {
+    case "docs":
+      panels.open(ref, "docs");
+      panels.selectDoc(ref, surface.docPath);
+      break;
     case "ai-pm":
       panels.open(ref, "ai-pm");
       panels.selectAiPmProject(ref, surface.projectId);

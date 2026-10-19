@@ -27,6 +27,7 @@ import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dn
 import { CSS } from "@dnd-kit/utilities";
 import {
   Smartphone,
+  NotebookPen,
   ListTodo,
   ChevronDown,
   ChevronLeft,
@@ -90,6 +91,7 @@ import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanel
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { docTitleFromPath } from "@t3tools/shared/docPaths";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
@@ -139,6 +141,7 @@ interface RightPanelTabsProps {
   onAddPullRequests: () => void;
   onAddDevice: () => void;
   onAddAiPm: () => void;
+  onAddDocs: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -147,6 +150,7 @@ interface RightPanelTabsProps {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
   aiPmAvailable: boolean;
+  docsAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
 }
@@ -176,6 +180,7 @@ const SURFACE_DISABLED_REASONS = {
   pullRequests: "No linked pull requests are available for this thread.",
   device: "Devices are only available from a thread.",
   aiPm: "AI PM is only available with a connected environment.",
+  docs: "Docs are only available from a thread with a project folder.",
 } as const;
 
 const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
@@ -198,6 +203,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequests: "No linked pull requests available.",
   device: "Available from a thread.",
   aiPm: "Available with a connected environment.",
+  docs: "Available from a thread with a project folder.",
 } as const;
 
 type TabContextMenuAction =
@@ -320,6 +326,7 @@ function RightPanelEmptyState(props: {
   onAddPullRequests: () => void;
   onAddDevice: () => void;
   onAddAiPm: () => void;
+  onAddDocs: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -328,6 +335,7 @@ function RightPanelEmptyState(props: {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
   aiPmAvailable: boolean;
+  docsAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -396,6 +404,14 @@ function RightPanelEmptyState(props: {
       available: props.aiPmAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.aiPm,
       onClick: props.onAddAiPm,
+    },
+    {
+      label: "Docs",
+      icon: NotebookPen,
+      shortcut: "O",
+      available: props.docsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.docs,
+      onClick: props.onAddDocs,
     },
   ] as const;
 
@@ -564,6 +580,8 @@ function surfaceTitle(
   switch (surface.kind) {
     case "ai-pm":
       return "AI PM";
+    case "docs":
+      return surface.docPath ? docTitleFromPath(surface.docPath) : "Docs";
     case "diff":
       return "Diff";
     case "files":
@@ -648,6 +666,8 @@ function SurfaceIcon({
       return <PreviewFavicon capturedUrl={previewCapturedUrl} url={previewUrl} />;
     case "ai-pm":
       return <ListTodo className="size-3 shrink-0" />;
+    case "docs":
+      return <NotebookPen className="size-3 shrink-0" />;
     case "diff":
       return <FileDiff className="size-3 shrink-0" />;
     case "files":
@@ -1108,6 +1128,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.aiPm,
       onClick: props.onAddAiPm,
     },
+    {
+      label: "Docs",
+      icon: NotebookPen,
+      shortcut: "O",
+      available: props.docsAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.docs,
+      onClick: props.onAddDocs,
+    },
   ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1482,6 +1510,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddAiPm={props.onAddAiPm}
+            onAddDocs={props.onAddDocs}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
@@ -1490,6 +1519,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestsAvailable={props.pullRequestsAvailable}
             deviceAvailable={props.deviceAvailable}
             aiPmAvailable={props.aiPmAvailable}
+            docsAvailable={props.docsAvailable}
           />
         ) : (
           props.children
