@@ -45,6 +45,21 @@ beforeEach(() => {
 });
 
 describe("reopenClosedView", () => {
+  it("restores AI PM without requiring a workspace or creating a browser", async () => {
+    const openPreview = vi.fn();
+    const view = {
+      kind: "panel-tab",
+      threadRef,
+      surface: { id: "ai-pm", kind: "ai-pm", projectId: "chosen-project" },
+    } as const;
+    expect(await reopenClosedView(view, { openPreview, workspaceAvailable: false })).toBe(true);
+    expect(await reopenClosedView(view, { openPreview, workspaceAvailable: false })).toBe(true);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef),
+    ).toMatchObject({ isOpen: true, activeSurfaceId: "ai-pm", surfaces: [view.surface] });
+    expect(openPreview).not.toHaveBeenCalled();
+  });
+
   it("restores a file tab at its line without creating a browser session", async () => {
     const openPreview = vi.fn();
     const reopened = await reopenClosedView(

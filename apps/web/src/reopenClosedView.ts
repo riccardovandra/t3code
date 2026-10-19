@@ -117,6 +117,10 @@ export async function reopenClosedView(
   )
     return false;
   switch (surface.kind) {
+    case "ai-pm":
+      panels.open(ref, "ai-pm");
+      panels.selectAiPmProject(ref, surface.projectId);
+      break;
     case "preview":
       if (surface.resourceId !== null) return false;
       panels.openBrowser(ref, null);

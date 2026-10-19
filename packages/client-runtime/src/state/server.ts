@@ -1073,6 +1073,16 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,
     }),
+    aiPmList: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:ai-pm:list",
+      tag: WS_METHODS.aiPmList,
+      staleTimeMs: 15_000,
+    }),
+    aiPmBrief: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:ai-pm:brief",
+      tag: WS_METHODS.aiPmBrief,
+      staleTimeMs: 15_000,
+    }),
     scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:scheduled-task:webhook-deliveries",
       tag: WS_METHODS.scheduledTasksListWebhookDeliveries,

@@ -60,6 +60,11 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
   const surface = view.surface;
   if (!surface || typeof surface.id !== "string") return false;
   switch (surface.kind) {
+    case "ai-pm":
+      return (
+        surface.id === "ai-pm" &&
+        (surface.projectId === undefined || typeof surface.projectId === "string")
+      );
     case "diff":
     case "files":
     case "pull-requests":

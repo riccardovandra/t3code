@@ -18,6 +18,7 @@ const RIGHT_PANEL_KINDS = [
   "file",
   "preview",
   "device",
+  "ai-pm",
   "terminal",
   "pull-request",
   "pull-requests",
@@ -43,6 +44,7 @@ export type RightPanelSurface =
       activeTerminalId: string;
       splitDirection?: "horizontal" | "vertical";
     }
+  | { id: "ai-pm"; kind: "ai-pm"; projectId?: string }
   | { id: "diff"; kind: "diff" }
   | {
       id: "files";
@@ -124,6 +126,7 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
+  selectAiPmProject: (ref: ScopedThreadRef, projectId: string | undefined) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
@@ -206,6 +209,8 @@ const singletonSurface = (
   kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
 ): RightPanelSurface => {
   switch (kind) {
+    case "ai-pm":
+      return { id: "ai-pm", kind };
     case "diff":
       return { id: "diff", kind };
     case "files":
@@ -449,6 +454,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     const kind = (surface as { kind?: string }).kind;
                     if (kind === "plan" || kind === "agents") return [];
+                    if (surface.kind === "ai-pm") {
+                      return [
+                        {
+                          id: "ai-pm",
+                          kind: "ai-pm",
+                          ...(typeof surface.projectId === "string"
+                            ? { projectId: surface.projectId }
+                            : {}),
+                        },
+                      ];
+                    }
                     if (
                       (surface.kind === "file" || surface.kind === "files") &&
                       "folderTrail" in surface &&
@@ -623,6 +639,20 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
+        ),
+      selectAiPmProject: (ref, projectId) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) => ({
+            ...current,
+            surfaces: current.surfaces.map((surface) => {
+              if (surface.kind !== "ai-pm") return surface;
+              return {
+                id: "ai-pm",
+                kind: "ai-pm",
+                ...(projectId === undefined ? {} : { projectId }),
+              };
+            }),
+          })),
         ),
       openDevice: (ref, target, automatic = false) =>
         set((state) =>
