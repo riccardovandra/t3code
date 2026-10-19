@@ -145,7 +145,7 @@ describe("docs toolkit", () => {
 
         const created = yield* callTool(checkout, "docs_create", { title: "Launch Plan" });
         expect(created).toEqual({
-          doc: { docPath: "docs/launch-plan-2.md", title: "Launch Plan" },
+          doc: { docPath: "docs/launch-plan-2.md", title: "Launch Plan", excerpt: "" },
         });
         expect(yield* readText(checkout, "docs/launch-plan-2.md")).toBe("# Launch Plan\n");
         expect(yield* readText(checkout, "docs/launch-plan.md")).toBe("# Original\n");
@@ -155,7 +155,9 @@ describe("docs toolkit", () => {
           markdown: "No heading here.\n",
           folder: "docs/meetings",
         });
-        expect(withBody).toEqual({ doc: { docPath: "docs/meetings/notes.md", title: "Notes" } });
+        expect(withBody).toEqual({
+          doc: { docPath: "docs/meetings/notes.md", title: "Notes", excerpt: "No heading here." },
+        });
         expect(yield* readText(checkout, "docs/meetings/notes.md")).toBe("No heading here.\n");
       }).pipe(Effect.provide(NodeServices.layer)),
     ),
@@ -219,9 +221,9 @@ describe("docs toolkit", () => {
   it.effect("opens only a doc that exists", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const checkout = yield* makeCheckout({ "docs/plan.md": "# Plan\n" });
+        const checkout = yield* makeCheckout({ "docs/plan.md": "# Plan\n\nShip **Friday**.\n" });
         expect(yield* callTool(checkout, "docs_open", { docPath: "docs/plan.md" })).toEqual({
-          doc: { docPath: "docs/plan.md", title: "plan" },
+          doc: { docPath: "docs/plan.md", title: "plan", excerpt: "Ship Friday." },
         });
         expect(yield* callTool(checkout, "docs_open", { docPath: "docs/gone.md" })).toMatchObject({
           code: "invalid_request",

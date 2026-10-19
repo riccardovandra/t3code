@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { docTitleFromPath, isMarkdownPath, nextDocPath, slugifyDocTitle } from "./docPaths.ts";
+import {
+  docExcerpt,
+  docTitleFromPath,
+  isMarkdownPath,
+  nextDocPath,
+  slugifyDocTitle,
+} from "./docPaths.ts";
 
 describe("docPaths", () => {
+  it("previews a doc as plain text without its title heading", () => {
+    expect(
+      docExcerpt("# Plan\n\nShip **on time**. See [brief](https://x.test).\n\n- [ ] One\n- Two\n"),
+    ).toBe("Ship on time. See brief. One Two");
+    expect(docExcerpt(`# T\n\n${"word ".repeat(100)}`, 20)).toBe("word word word word…");
+  });
+
   it("slugifies titles to ASCII, falling back to untitled", () => {
     expect(slugifyDocTitle("Q3 Launch: Café Plan!")).toBe("q3-launch-cafe-plan");
     expect(slugifyDocTitle("???")).toBe("untitled");

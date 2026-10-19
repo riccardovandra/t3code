@@ -424,7 +424,16 @@ function DocView({
                 onAnchorTops={setAnchorTops}
               />
             ) : file.error ? (
-              <p className="text-sm text-destructive-foreground">{file.error}</p>
+              <div className="flex flex-col items-start gap-2 py-10">
+                <p className="text-sm font-medium">This doc can't be opened</p>
+                <p className="text-sm text-muted-foreground">
+                  It may have been renamed, moved or deleted, or it isn't in this thread's checkout.
+                </p>
+                <p className="font-mono text-xs text-muted-foreground">{file.error}</p>
+                <Button size="sm" variant="outline" onClick={() => onSelectDoc(undefined)}>
+                  All docs
+                </Button>
+              </div>
             ) : null}
           </div>
           {showResolved ? (

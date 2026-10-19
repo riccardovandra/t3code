@@ -8,7 +8,7 @@ Select text to format it or comment on it. Press **Cmd+Option+M** (**Ctrl+Alt+M*
 
 **Send to agent** is ticked by default and remembered per doc. Comments you send go to a doc agent: a sub-thread of your conversation, one per doc, so the main chat stays clear. The agent edits the doc and replies in the comment thread; **Open agent thread** on a comment shows its work. The doc refreshes when either thread finishes a turn.
 
-Ask any agent for a document, plan, spec or notes to keep and it writes a doc instead of pasting text into chat. The doc opens in the Docs panel, and a card in the conversation reopens it beside the chat or full screen. Agents can also list, read and comment on docs, so you can ask for things like "review docs/plan.md and leave comments".
+Ask any agent for a document, plan, spec or notes to keep and it writes a doc instead of pasting text into chat. The doc opens in the Docs panel, and a card in the conversation, with a short preview, reopens it beside the chat or full screen. Agents can also list, read and comment on docs, so you can ask for things like "review docs/plan.md and leave comments".
 
 Comments are stored by the environment running the project, not in the file. Every thread and worktree of that project on that environment shares them, but they are not committed to git. When the commented text is edited, the comment follows the passage; if the passage is deleted, the comment stays and is marked **Text removed**.
 

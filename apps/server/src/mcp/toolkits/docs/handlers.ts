@@ -1,5 +1,5 @@
 import { type DocComment, type DocsError, OrchestratorMcpFailure } from "@t3tools/contracts";
-import { DOCS_ROOT } from "@t3tools/shared/docPaths";
+import { DOCS_ROOT, docExcerpt } from "@t3tools/shared/docPaths";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -118,17 +118,17 @@ const handlers = {
           markdown: input.markdown,
         })
         .pipe(Effect.mapError(toFileFailure));
-      return { doc };
+      return { doc: { ...doc, excerpt: docExcerpt(input.markdown ?? "") } };
     }),
   ),
   docs_open: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const { cwd } = yield* callerCheckout("docs_open");
       const files = yield* WorkspaceDocs.WorkspaceDocs;
-      const { docPath, title } = yield* files
+      const { docPath, title, markdown } = yield* files
         .read({ cwd, docPath: input.docPath })
         .pipe(Effect.mapError(toFileFailure));
-      return { doc: { docPath, title } };
+      return { doc: { docPath, title, excerpt: docExcerpt(markdown) } };
     }),
   ),
   docs_list_comments: McpToolAccess.readsAsCaller((input) =>
