@@ -85,6 +85,7 @@ describe("closedViewStore", () => {
 
   it("preserves every supported saved panel type and its restore data", async () => {
     const surfaces = [
+      { kind: "ai-pm", id: "ai-pm" },
       { kind: "diff", id: "diff" },
       { kind: "files", id: "files" },
       { kind: "pull-requests", id: "pull-requests" },

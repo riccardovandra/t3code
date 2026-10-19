@@ -82,6 +82,7 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         onAddPullRequest={noop}
         onAddPullRequests={noop}
         onAddDevice={noop}
+        onAddAiPm={noop}
         browserAvailable={false}
         terminalAvailable={false}
         diffAvailable={false}
@@ -89,6 +90,7 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         pullRequestAvailable={false}
         pullRequestsAvailable={false}
         deviceAvailable={false}
+        aiPmAvailable={false}
         {...overrides}
       >
         content
@@ -108,6 +110,21 @@ async function press(key: string, options: KeyboardEventInit = {}) {
 }
 
 describe("right panel new-tab shortcut", () => {
+  it("opens AI PM with A from the surface launcher and add menu", async () => {
+    const addAiPm = vi.fn();
+    await renderPanel({ aiPmAvailable: true, onAddAiPm: addAiPm });
+    expect(container.querySelector('[aria-label="Open a surface"]')?.textContent).toContain(
+      "AI PM",
+    );
+    expect((await press("a")).defaultPrevented).toBe(true);
+    expect(addAiPm).toHaveBeenCalledTimes(1);
+    await press("t", { metaKey: true });
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("AI PM");
+    await press("a");
+    expect(addAiPm).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[role="menu"]:not([data-closed])')).toBeNull();
+  });
+
   it.each(["MacIntel", "Win32", "Linux x86_64"])(
     "opens the menu on %s and chooses a tab",
     async (platform) => {

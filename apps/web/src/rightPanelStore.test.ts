@@ -30,6 +30,40 @@ beforeEach(() => {
 });
 
 describe("rightPanelStore", () => {
+  it("keeps AI PM as one surface per thread and restores the persisted selection", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "ai-pm");
+    store.selectAiPmProject(refA, "project-1");
+    store.open(refA, "files");
+    store.open(refA, "ai-pm");
+    store.open(refB, "ai-pm");
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual(["ai-pm", "files"]);
+    expect(state.activeSurfaceId).toBe("ai-pm");
+    expect(state.surfaces[0]).toEqual({ id: "ai-pm", kind: "ai-pm", projectId: "project-1" });
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB).surfaces,
+    ).toEqual([{ id: "ai-pm", kind: "ai-pm" }]);
+    const persisted = useRightPanelStore.persist.getOptions().partialize!(
+      useRightPanelStore.getState(),
+    );
+    expect(
+      selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA),
+    ).toEqual(state);
+  });
+
+  it("remembers a closed AI PM surface for reopening", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "ai-pm");
+    store.closeSurface(refA, "ai-pm");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).isOpen,
+    ).toBe(false);
+    expect(useClosedViewStore.getState().entries).toMatchObject([
+      { kind: "panel-tab", threadRef: refA, surface: { id: "ai-pm", kind: "ai-pm" } },
+    ]);
+  });
+
   it("records single and bulk tab closes, newest first", () => {
     const store = useRightPanelStore.getState();
     const pr = pullRequestSurface({

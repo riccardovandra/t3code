@@ -1,6 +1,8 @@
 # AI PM project overview
 
-Open **AI PM** from the sidebar or search for **Open AI PM** in the command palette. Choose the environment whose project board you want to read.
+To keep AI PM beside your conversation, open the workspace panel and choose **AI PM** from **Open a surface** or the **+** menu. Press **A** while the empty surface picker is focused to open it. The panel reads the board on the conversation’s environment; you can open project briefs without leaving the chat. Close its tab to return to another surface.
+
+For a full-page overview, open **AI PM** from the left sidebar or search for **Open AI PM** in the command palette. Choose the environment whose project board you want to read.
 
 The overview lists open AI PM projects, with projects needing your input first. Search by project, client or current focus. Open a brief to see its objective, current focus, next actions, risks and plan. Expand a step for its dependencies and latest recorded update.
 

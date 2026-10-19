@@ -1,6 +1,6 @@
 import type { AiPmBriefResult, AiPmProjectSummary, EnvironmentId } from "@t3tools/contracts";
 import { ArrowLeftIcon, ListChecksIcon } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -75,14 +75,16 @@ export function AiPmPage({
   );
 }
 
-function AiPmEnvironment({
+export function AiPmEnvironment({
   environmentId,
   projectId,
   onSelectProject,
+  embedded = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly projectId: string | undefined;
   readonly onSelectProject: (id: string | undefined) => void;
+  readonly embedded?: boolean;
 }) {
   const list = useEnvironmentQuery(serverEnvironment.aiPmList({ environmentId, input: {} }));
   const [filter, setFilter] = useState("");
@@ -99,7 +101,11 @@ function AiPmEnvironment({
     <>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Where your projects stand</h1>
+          {embedded ? (
+            <h2 className="text-lg font-semibold tracking-tight">Your projects</h2>
+          ) : (
+            <h1 className="text-2xl font-semibold tracking-tight">Where your projects stand</h1>
+          )}
           <p className="text-sm text-muted-foreground">
             {list.data
               ? `${projects.length} open projects · ${waiting} items need you`
@@ -107,7 +113,8 @@ function AiPmEnvironment({
           </p>
         </div>
         <Button variant="outline" size="sm" disabled={list.isPending} onClick={list.refresh}>
-          <RefreshIcon size="sm" refreshing={list.isPending} /> Refresh projects
+          <RefreshIcon size="sm" refreshing={list.isPending} />{" "}
+          {embedded ? "Refresh" : "Refresh projects"}
         </Button>
       </div>
       {list.error ? (
@@ -138,7 +145,7 @@ function AiPmEnvironment({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className={embedded ? "grid min-w-0 gap-3" : "grid gap-3 md:grid-cols-2"}>
             {visible.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -229,6 +236,7 @@ function AiPmProject({
 
 function ProjectBrief({ brief }: { readonly brief: AiPmBriefResult }) {
   const [showCompleted, setShowCompleted] = useState(false);
+  const stepIdPrefix = useId();
   const activePhases = brief.phases.filter((phase) => showCompleted || !phase.shipped);
   return (
     <div className="space-y-8">
@@ -262,9 +270,11 @@ function ProjectBrief({ brief }: { readonly brief: AiPmBriefResult }) {
                   {action.step ? (
                     <a
                       className="text-sm font-medium underline decoration-border underline-offset-4 hover:decoration-foreground"
-                      href={`#ai-pm-step-${action.step}`}
+                      href={`#${stepIdPrefix}-ai-pm-step-${action.step}`}
                       onClick={() => {
-                        const target = document.getElementById(`ai-pm-step-${action.step}`);
+                        const target = document.getElementById(
+                          `${stepIdPrefix}-ai-pm-step-${action.step}`,
+                        );
                         if (target instanceof HTMLDetailsElement) {
                           target.open = true;
                           const phase = target.parentElement?.closest("details");
@@ -335,7 +345,7 @@ function ProjectBrief({ brief }: { readonly brief: AiPmBriefResult }) {
                 {steps.map((step) => (
                   <details
                     key={step.ref}
-                    id={`ai-pm-step-${step.ref}`}
+                    id={`${stepIdPrefix}-ai-pm-step-${step.ref}`}
                     className="scroll-mt-4 py-3"
                   >
                     <summary className="cursor-pointer text-sm">
