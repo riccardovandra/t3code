@@ -72,7 +72,7 @@ export function assertReleasableVersion(version: string, tags: ReadonlyArray<str
 }
 
 export function expectedMacArtifacts(version: string, arch: string): ReadonlyArray<string> {
-  const base = `T3-Code-${version}-${arch}`;
+  const base = `UP-Orchestrator-${version}-${arch}`;
   return [
     `${base}.dmg`,
     `${base}.dmg.blockmap`,
@@ -216,7 +216,7 @@ function main(): void {
     "--target",
     sha,
     "--title",
-    `T3 Code ${version}`,
+    `UP Orchestrator ${version}`,
     "--latest",
     "--notes",
     notes,

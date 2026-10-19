@@ -56,10 +56,10 @@ describe("release-fork-desktop", () => {
 
   it("lists the macOS artifacts the updater feed needs", () => {
     assert.deepEqual(expectedMacArtifacts("0.1.2", "arm64"), [
-      "T3-Code-0.1.2-arm64.dmg",
-      "T3-Code-0.1.2-arm64.dmg.blockmap",
-      "T3-Code-0.1.2-arm64.zip",
-      "T3-Code-0.1.2-arm64.zip.blockmap",
+      "UP-Orchestrator-0.1.2-arm64.dmg",
+      "UP-Orchestrator-0.1.2-arm64.dmg.blockmap",
+      "UP-Orchestrator-0.1.2-arm64.zip",
+      "UP-Orchestrator-0.1.2-arm64.zip.blockmap",
       "latest-mac.yml",
     ]);
   });
