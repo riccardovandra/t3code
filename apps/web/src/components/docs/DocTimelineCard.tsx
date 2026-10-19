@@ -24,35 +24,40 @@ export function DocTimelineCard(props: {
 }) {
   const { threadRef, doc } = props;
   return (
-    <div className="flex max-w-xl items-center gap-3 rounded-xl border border-border bg-card p-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-        <FileTextIcon className="size-4 text-muted-foreground" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{doc.title}</span>
-        <span className="block truncate font-mono text-xs text-muted-foreground">
-          {doc.docPath}
+    <div className="flex max-w-xl flex-col gap-2 rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <FileTextIcon className="size-4 text-muted-foreground" />
         </span>
-      </span>
-      {threadRef ? (
-        <span className="flex shrink-0 gap-1">
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: false })}
-          >
-            <PanelRightIcon />
-            Open
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            aria-label="Open full screen"
-            onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: true })}
-          >
-            <Maximize2Icon />
-          </Button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{doc.title}</span>
+          <span className="block truncate font-mono text-xs text-muted-foreground">
+            {doc.docPath}
+          </span>
         </span>
+        {threadRef ? (
+          <span className="flex shrink-0 gap-1">
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: false })}
+            >
+              <PanelRightIcon />
+              Open
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost-muted"
+              aria-label="Open full screen"
+              onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: true })}
+            >
+              <Maximize2Icon />
+            </Button>
+          </span>
+        ) : null}
+      </div>
+      {doc.excerpt ? (
+        <p className="line-clamp-3 text-sm text-muted-foreground">{doc.excerpt}</p>
       ) : null}
     </div>
   );

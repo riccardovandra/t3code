@@ -39,6 +39,8 @@ const Folder = TrimmedNonEmptyString.check(Schema.isMaxLength(512)).annotate({
 });
 
 const DocSummary = Schema.Struct({ docPath: DocPath, title: Schema.String });
+// The conversation card shows this preview without reading the file.
+const OpenedDoc = Schema.Struct({ ...DocSummary.fields, excerpt: Schema.String });
 
 const DocsListTool = Tool.make("docs_list", {
   ...shared,
@@ -88,7 +90,7 @@ const DocsCreateTool = Tool.make("docs_create", {
     ),
     folder: Schema.optional(Folder),
   }),
-  success: Schema.Struct({ doc: DocSummary }),
+  success: Schema.Struct({ doc: OpenedDoc }),
 })
   .annotate(Tool.Title, "Create a doc")
   .annotate(Tool.Readonly, false)
@@ -101,7 +103,7 @@ const DocsOpenTool = Tool.make("docs_open", {
   description:
     "Show an existing project doc in the user's Docs panel, for example after updating it or to point them at it.",
   parameters: Schema.Struct({ docPath: DocPathParameter }),
-  success: Schema.Struct({ doc: DocSummary }),
+  success: Schema.Struct({ doc: OpenedDoc }),
 })
   .annotate(Tool.Title, "Open a doc")
   .annotate(Tool.Readonly, true)

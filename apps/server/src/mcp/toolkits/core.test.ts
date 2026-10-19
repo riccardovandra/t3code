@@ -330,7 +330,7 @@ it.effect("returns a created doc that Codex and Claude tool rows both carry", ()
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
       );
-    const doc = { docPath: "docs/launch-plan.md", title: "Launch plan" };
+    const doc = { docPath: "docs/launch-plan.md", title: "Launch plan", excerpt: "" };
     for (const [toolName, output] of [
       ["t3-code.docs_create", result.structuredContent],
       ["mcp__t3-code__docs_create", result.content],

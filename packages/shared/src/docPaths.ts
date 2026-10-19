@@ -33,3 +33,24 @@ export function nextDocPath(
 export function isMarkdownPath(path: string): boolean {
   return /\.md$/i.test(path);
 }
+
+export const DOC_EXCERPT_MAX_LENGTH = 280;
+
+/**
+ * A short plain-text preview for a doc card in the conversation. The leading
+ * title heading is dropped because the card shows the title already.
+ */
+export function docExcerpt(markdown: string, maxLength = DOC_EXCERPT_MAX_LENGTH): string {
+  const text = markdown
+    .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "")
+    .replace(/^\s*#\s+[^\n]*\n/, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, "")
+    .replace(/^\s*\|?\s*:?-{3,}.*$/gm, "")
+    .replace(/[*_`~|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}

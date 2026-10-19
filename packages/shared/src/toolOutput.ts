@@ -50,13 +50,15 @@ interface CompactToolOutput {
 export interface DocReference {
   readonly docPath: string;
   readonly title: string;
+  /** A short plain-text preview for the conversation card. */
+  readonly excerpt?: string;
 }
 
 const DOC_OPEN_TOOL_NAMES: ReadonlySet<string> = new Set(["docs_create", "docs_open"]);
 
 function readDocReference(value: unknown): DocReference | undefined {
   if (!Predicate.isObject(value)) return undefined;
-  const { docPath, title } = value;
+  const { docPath, title, excerpt } = value;
   if (
     typeof docPath !== "string" ||
     !isMarkdownPath(docPath) ||
@@ -66,7 +68,11 @@ function readDocReference(value: unknown): DocReference | undefined {
   ) {
     return undefined;
   }
-  return { docPath, title };
+  return {
+    docPath,
+    title,
+    ...(typeof excerpt === "string" && excerpt.length <= 600 ? { excerpt } : {}),
+  };
 }
 
 function readResult(value: unknown, budget: ResultReadBudget, depth = 0): ResultEnvelope {
