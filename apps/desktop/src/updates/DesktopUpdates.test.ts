@@ -19,6 +19,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
+import * as MacSelfInstall from "./MacSelfInstall.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
@@ -764,6 +765,79 @@ describe("DesktopUpdates", () => {
         assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
         assert.equal(harness.updateRestartMarkers.size, 0);
         assert.equal(harness.installRecords.size, 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("installs unsigned macOS builds without Squirrel", () => {
+    const harness = makeHarness({ macSelfInstall: Effect.void });
+    const downloaded = {
+      version: "1.2.4",
+      downloadedFile: "/cache/pending/T3-Code-1.2.4-arm64.zip",
+      files: [{ url: "T3-Code-1.2.4-arm64.zip", sha512: "abc" }],
+    };
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", downloaded);
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.equal(harness.quitAndInstalls(), 0);
+        assert.deepEqual(harness.selfInstalls, [downloaded]);
+        assert.equal(harness.installRecords.size, 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("recovers when an unsigned macOS self-install fails", () => {
+    const harness = makeHarness({
+      macSelfInstall: Effect.fail(new MacSelfInstall.MacSelfInstallError({ stage: "permission" })),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", {
+          version: "1.2.4",
+          downloadedFile: "/cache/pending/T3-Code-1.2.4-arm64.zip",
+          files: [],
+        });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.equal(result.state.errorContext, "install");
+        assert.equal(
+          result.state.message,
+          new MacSelfInstall.MacSelfInstallError({ stage: "permission" }).message,
+        );
+        assert.deepEqual(harness.installSteps, ["selfInstall", "startBackend"]);
+        assert.equal(harness.installRecords.size, 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("refuses a self-install when the download event had no file", () => {
+    const harness = makeHarness({ macSelfInstall: Effect.void });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.equal(result.state.errorContext, "install");
+        assert.deepEqual(harness.selfInstalls, []);
+        assert.deepEqual(harness.installSteps, ["startBackend"]);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

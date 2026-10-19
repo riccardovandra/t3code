@@ -33,6 +33,7 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as MacSelfInstall from "./MacSelfInstall.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -82,6 +83,7 @@ const encodeInstallRecord = Schema.encodeEffect(DesktopUpdateInstallRecord);
 
 const decodeAppUpdateYmlConfig = Schema.decodeUnknownEffect(AppUpdateYmlConfig);
 const decodeUpdateInfo = Schema.decodeUnknownEffect(UpdateInfo);
+const decodeDownloadedUpdate = Schema.decodeUnknownEffect(MacSelfInstall.DownloadedUpdate);
 const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressInfo);
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -343,6 +345,7 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const macSelfInstall = yield* MacSelfInstall.MacSelfInstall;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
@@ -353,6 +356,7 @@ export const make = Effect.gen(function* () {
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
+  const downloadedUpdateRef = yield* Ref.make(Option.none<MacSelfInstall.DownloadedUpdate>());
   const updateStateRef = yield* Ref.make<DesktopUpdateState>(
     createInitialDesktopUpdateState(
       environment.appVersion,
@@ -758,10 +762,19 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: Duration.seconds(5) }),
             { concurrency: "unbounded" },
           );
-          yield* electronUpdater.quitAndInstall({
-            isSilent: true,
-            isForceRunAfter: true,
-          });
+          if (yield* macSelfInstall.isRequired) {
+            const downloadedUpdate = yield* Ref.get(downloadedUpdateRef);
+            yield* Option.match(downloadedUpdate, {
+              onNone: () =>
+                Effect.fail(new MacSelfInstall.MacSelfInstallError({ stage: "download" })),
+              onSome: macSelfInstall.install,
+            });
+          } else {
+            yield* electronUpdater.quitAndInstall({
+              isSilent: true,
+              isForceRunAfter: true,
+            });
+          }
           return { accepted: true, completed: false, failed: false };
         }).pipe(
           Effect.catchTags({
@@ -774,6 +787,17 @@ export const make = Effect.gen(function* () {
                   channel: error.channel,
                   isSilent: error.isSilent,
                   isForceRunAfter: error.isForceRunAfter,
+                });
+                return { accepted: true, completed: false, failed: true };
+              },
+            ),
+            MacSelfInstallError: Effect.fn("desktop.updates.handleSelfInstallFailure")(
+              function* (error) {
+                yield* recoverFailedInstall(error.message);
+                yield* logUpdaterError(error.message, {
+                  errorTag: error._tag,
+                  cause: describeUpdateErrorCause(error.cause),
+                  stage: error.stage,
                 });
                 return { accepted: true, completed: false, failed: true };
               },
@@ -998,6 +1022,10 @@ export const make = Effect.gen(function* () {
         Effect.fn("desktop.updates.applyUpdateDownloaded")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
+          yield* Ref.set(
+            downloadedUpdateRef,
+            yield* decodeDownloadedUpdate(raw).pipe(Effect.option),
+          );
           yield* logUpdaterInfo("update downloaded", { version: info.version });
         }),
       ),

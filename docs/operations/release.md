@@ -466,6 +466,34 @@ available.
   - `electron-updater` reads `latest-mac.yml` on stable and `nightly-mac.yml` on nightly, for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one channel-specific mac manifest before publishing the GitHub Release.
 
+### Releasing your own fork's desktop app
+
+Fork maintainers can publish a desktop build to their fork's GitHub Releases from a Mac and have
+installed builds update from it:
+
+```bash
+node scripts/release-fork-desktop.ts --dry-run   # print repo, version, build and gh commands
+node scripts/release-fork-desktop.ts             # build, verify, and publish
+```
+
+- The repository comes from `origin` (`--repo owner/repo` overrides it). The script refuses
+  `pingdotgg/t3code`.
+- The version is the next patch after the highest plain `vX.Y.Z` tag on the fork, or after the
+  desktop package version. Pass `--version X.Y.Z` to choose it, for example to go above a version
+  you already installed. Prerelease suffixes are rejected because those builds ship without the
+  stable update feed.
+- It builds `--platform mac --target dmg --arch arm64` (`--arch` overrides) into
+  `release/fork-vX.Y.Z/`, checks that the zip's `app-update.yml` names the fork, then runs
+  `gh release create` with the tag on the current `HEAD`. The commit must already be on the fork;
+  a dirty tree needs `--allow-dirty`.
+
+Unsigned macOS builds are ad-hoc signed, and Squirrel.Mac rejects updates for a bundle without a
+Team ID. Those builds detect this with `codesign` at install time and swap the bundle themselves
+(`apps/desktop/src/updates/MacSelfInstall.ts`). The download and restart buttons behave the same;
+the app's folder must be writable. Signed builds keep the Squirrel path. Windows and Linux unsigned
+builds already update through `electron-updater` normally. The first install of an unsigned app
+still needs right-click, Open, or `xattr -dr com.apple.quarantine` on the bundle once.
+
 ### Windows payload topology and update validation
 
 Windows packages the bundled server and only its runtime-external/native
