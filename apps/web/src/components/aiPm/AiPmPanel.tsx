@@ -12,7 +12,7 @@ export function AiPmPanel({
 }) {
   return (
     <section aria-label="AI PM project board" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-      <div className="flex min-w-0 flex-col gap-5 p-4">
+      <div className="flex min-w-0 flex-col gap-3 p-3">
         <AiPmEnvironment
           environmentId={environmentId}
           projectId={projectId}
