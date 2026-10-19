@@ -1,6 +1,11 @@
 import type { AiPmBriefResult, AiPmProjectSummary, EnvironmentId } from "@t3tools/contracts";
-import { ArrowLeftIcon, ListChecksIcon } from "lucide-react";
-import { useId, useState } from "react";
+import {
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  ListChecksIcon,
+  MessageSquarePlusIcon,
+} from "lucide-react";
+import { useState } from "react";
 
 import { isElectron } from "../../env";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -11,8 +16,22 @@ import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import {
+  Menu,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useNewProject } from "../../hooks/useNewProject";
+import { groupAiPmProjects, type AiPmScope, type AiPmThreadTask } from "./aiPmBoard";
+import { useAiPmUpProject, useStartAiPmThread } from "./useAiPmUpProject";
 import { AiPmIdeas } from "./AiPmIdeas";
 
 export function AiPmPage({
@@ -89,335 +108,416 @@ export function AiPmEnvironment({
 }) {
   const list = useEnvironmentQuery(serverEnvironment.aiPmList({ environmentId, input: {} }));
   const [filter, setFilter] = useState("");
+  const [scope, setScope] = useState<AiPmScope>("all");
   const projects = (list.data?.projects ?? []).filter((project) => !project.closed);
-  const visible = projects
-    .filter((project) =>
-      `${project.name} ${project.owner} ${project.now}`
-        .toLowerCase()
-        .includes(filter.toLowerCase()),
-    )
-    .toSorted((a, b) => b.waitingOnYou - a.waitingOnYou || a.name.localeCompare(b.name));
+  const query = filter.toLowerCase();
+  const groups = groupAiPmProjects(
+    projects.filter((project) =>
+      `${project.name} ${project.owner} ${project.now}`.toLowerCase().includes(query),
+    ),
+    scope,
+  );
   const waiting = projects.reduce((sum, project) => sum + project.waitingOnYou, 0);
+  const selected = projects.find((project) => project.id === projectId);
   return (
-    <>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          {embedded ? (
-            <h2 className="text-lg font-semibold tracking-tight">Your projects</h2>
-          ) : (
-            <h1 className="text-2xl font-semibold tracking-tight">Where your projects stand</h1>
-          )}
-          <p className="text-sm text-muted-foreground">
-            {list.data
-              ? `${projects.length} open projects · ${waiting} items need you`
-              : "Project status hasn’t loaded yet"}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" disabled={list.isPending} onClick={list.refresh}>
-          <RefreshIcon size="sm" refreshing={list.isPending} />{" "}
-          {embedded ? "Refresh" : "Refresh projects"}
+    <div className="@container/ai-pm flex min-w-0 flex-col gap-3">
+      <div className="flex items-center gap-2">
+        {embedded ? (
+          <h2 className="text-sm font-semibold">Projects</h2>
+        ) : (
+          <h1 className="text-sm font-semibold">Projects</h1>
+        )}
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {list.data
+            ? `${projects.length} open · ${waiting} need you · read ${new Date(list.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            : "Not loaded yet"}
+        </span>
+        <Button
+          className="ml-auto"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Refresh projects"
+          disabled={list.isPending}
+          onClick={list.refresh}
+        >
+          <RefreshIcon size="sm" refreshing={list.isPending} />
         </Button>
       </div>
       {list.error ? (
         <Notice title="Couldn’t read the AI PM board" description={list.error} />
       ) : null}
-      {list.data ? (
-        <p className="text-xs text-muted-foreground">
-          Board read {new Date(list.data.fetchedAt).toLocaleString()}. Status comes from AI PM;
-          reading does not reconcile or verify the work.
+      {list.isPending && !list.data ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Reading the project board…
         </p>
       ) : null}
-      {list.isPending && !list.data ? <p role="status">Reading the project board…</p> : null}
-      {projectId ? (
-        <>
-          <div>
-            <Button variant="ghost" size="sm" onClick={() => onSelectProject(undefined)}>
-              <ArrowLeftIcon className="size-4" /> All projects
-            </Button>
-          </div>
-          <AiPmProject key={projectId} environmentId={environmentId} projectId={projectId} />
-        </>
-      ) : list.data ? (
-        <>
-          <Input
-            type="search"
-            aria-label="Search projects"
-            placeholder="Search projects, ideas, clients or current focus…"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-          <div className={embedded ? "grid min-w-0 gap-3" : "grid gap-3 md:grid-cols-2"}>
-            {visible.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onOpen={() => onSelectProject(project.id)}
-              />
-            ))}
-          </div>
-          {visible.length === 0 ? (
-            <Notice
-              title={projects.length === 0 ? "No open projects" : "No matching projects"}
-              description={
-                projects.length === 0
-                  ? "Projects from this environment’s AI PM board will appear here."
-                  : "Try a different project name or client."
-              }
+      {list.data ? (
+        <div className="flex min-w-0 flex-col gap-3 @2xl/ai-pm:flex-row">
+          <nav
+            aria-label="AI PM projects"
+            className={`flex min-w-0 shrink-0 flex-col gap-2 @2xl/ai-pm:w-60 ${selected ? "hidden @2xl/ai-pm:flex" : ""}`}
+          >
+            <Input
+              type="search"
+              size="compact"
+              aria-label="Search projects"
+              placeholder="Filter projects, clients or ideas"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
             />
-          ) : null}
-        </>
+            <div className="flex gap-1" role="group" aria-label="Project type">
+              {(
+                [
+                  ["all", "All"],
+                  ["client", "Clients"],
+                  ["business", "Business"],
+                ] as const
+              ).map(([key, label]) => (
+                <Button
+                  key={key}
+                  size="compact"
+                  variant={scope === key ? "secondary" : "ghost"}
+                  aria-pressed={scope === key}
+                  onClick={() => setScope(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            {groups.map((group) => (
+              <div key={group.name} className="flex flex-col">
+                <h3 className="px-1.5 pt-1 pb-0.5 text-xs text-muted-foreground">{group.name}</h3>
+                {group.projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    aria-current={project.id === projectId ? "true" : undefined}
+                    onClick={() => onSelectProject(project.id)}
+                    className="flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-accent/50 aria-[current=true]:bg-accent aria-[current=true]:font-medium"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                    {project.waitingOnYou > 0 ? (
+                      <span className="text-xs text-warning-foreground">
+                        {project.waitingOnYou}
+                        <span className="sr-only"> need you</span>
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {groups.length === 0 ? (
+              <p className="px-1.5 text-xs text-muted-foreground">
+                {projects.length === 0 ? "No open projects." : "No matching projects."}
+              </p>
+            ) : null}
+          </nav>
+          <div className="min-w-0 flex-1 @2xl/ai-pm:border-l @2xl/ai-pm:border-border @2xl/ai-pm:pl-4">
+            {selected ? (
+              <>
+                <Button
+                  size="compact"
+                  variant="ghost"
+                  className="mb-1 @2xl/ai-pm:hidden"
+                  onClick={() => onSelectProject(undefined)}
+                >
+                  <ArrowLeftIcon /> Projects
+                </Button>
+                <AiPmProject key={selected.id} environmentId={environmentId} project={selected} />
+              </>
+            ) : projectId ? (
+              <Notice
+                title="Project not on the board"
+                description="It may have closed. Choose another project."
+              />
+            ) : (
+              <AiPmIdeas
+                environmentId={environmentId}
+                filter={filter}
+                projects={projects}
+                onSelectProject={onSelectProject}
+              />
+            )}
+          </div>
+        </div>
       ) : null}
-      {projectId ? null : (
-        <AiPmIdeas
-          environmentId={environmentId}
-          filter={filter}
-          projects={projects}
-          embedded={embedded}
-          onSelectProject={onSelectProject}
-        />
-      )}
-    </>
-  );
-}
-
-function ProjectCard({
-  project,
-  onOpen,
-}: {
-  readonly project: AiPmProjectSummary;
-  readonly onOpen: () => void;
-}) {
-  return (
-    <article className="flex flex-col gap-4 rounded-xl border border-border bg-card/30 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">{project.owner}</span>
-        {project.waitingOnYou > 0 ? (
-          <Badge variant="warning">{project.waitingOnYou} need you</Badge>
-        ) : (
-          <Badge variant="secondary">No asks flagged</Badge>
-        )}
-      </div>
-      <h2 className="text-lg font-medium">{project.name}</h2>
-      <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-        <span className="font-medium text-foreground">Now: </span>
-        {project.now || "Current focus hasn’t been recorded."}
-      </p>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          {project.version ? `${project.version} · ` : ""}
-          {project.done}/{project.total} total steps recorded complete
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={`Open ${project.name} brief`}
-          onClick={onOpen}
-        >
-          Open brief
-        </Button>
-      </div>
-    </article>
+    </div>
   );
 }
 
 function AiPmProject({
   environmentId,
-  projectId,
+  project,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly projectId: string;
+  readonly project: AiPmProjectSummary;
 }) {
   const brief = useEnvironmentQuery(
-    serverEnvironment.aiPmBrief({ environmentId, input: { projectId } }),
+    serverEnvironment.aiPmBrief({ environmentId, input: { projectId: project.id } }),
   );
+  const upProject = useAiPmUpProject(environmentId, project);
+  const startThread = useStartAiPmThread(project, upProject.project);
   return (
-    <>
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" disabled={brief.isPending} onClick={brief.refresh}>
-          <RefreshIcon size="sm" refreshing={brief.isPending} /> Refresh brief
-        </Button>
-      </div>
+    <div className="flex min-w-0 flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <div className="flex items-baseline gap-2">
+          <h2 className="min-w-0 truncate text-base font-semibold">{project.name}</h2>
+          <span className="shrink-0 text-xs text-muted-foreground">{project.owner}</span>
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+            {project.version ? `${project.version} · ` : ""}
+            {project.done}/{project.total} done
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Refresh brief"
+            disabled={brief.isPending}
+            onClick={brief.refresh}
+          >
+            <RefreshIcon size="sm" refreshing={brief.isPending} />
+          </Button>
+        </div>
+        <UpProjectMenu environmentId={environmentId} project={project} upProject={upProject} />
+        {brief.data?.objective ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">{brief.data.objective}</p>
+        ) : null}
+      </header>
       {brief.error ? <Notice title="Couldn’t read this project" description={brief.error} /> : null}
-      {brief.isPending && !brief.data ? <p role="status">Reading the project brief…</p> : null}
-      {brief.data ? <ProjectBrief brief={brief.data} /> : null}
-    </>
+      {brief.isPending && !brief.data ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Reading the project brief…
+        </p>
+      ) : null}
+      {brief.data ? <ProjectBrief brief={brief.data} startThread={startThread} /> : null}
+    </div>
   );
 }
 
-function ProjectBrief({ brief }: { readonly brief: AiPmBriefResult }) {
-  const [showCompleted, setShowCompleted] = useState(false);
-  const stepIdPrefix = useId();
-  const activePhases = brief.phases.filter((phase) => showCompleted || !phase.shipped);
+function UpProjectMenu({
+  environmentId,
+  project,
+  upProject: { project: linked, candidates, setLinkedProjectId },
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly project: AiPmProjectSummary;
+  readonly upProject: ReturnType<typeof useAiPmUpProject>;
+}) {
+  const createNewProject = useNewProject();
+  const [creating, setCreating] = useState(false);
   return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          {brief.owner}
-          {brief.updated ? ` · Board updated ${brief.updated}` : ""} · Read{" "}
-          {new Date(brief.fetchedAt).toLocaleString()}
+    <Menu>
+      <MenuTrigger render={<Button size="compact" variant="ghost-muted" className="self-start" />}>
+        {linked ? `Threads start in ${linked.title}` : "Not linked to a project"}
+        <ChevronDownIcon />
+      </MenuTrigger>
+      <MenuPopup align="start">
+        <MenuRadioGroup
+          value={linked?.id ?? ""}
+          onValueChange={(value) => setLinkedProjectId(value || null)}
+        >
+          <MenuGroupLabel>Start this project’s threads in</MenuGroupLabel>
+          {candidates.map((candidate) => (
+            <MenuRadioItem key={candidate.id} value={candidate.id}>
+              {candidate.title}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        <MenuSeparator />
+        <MenuItem
+          disabled={creating}
+          onClick={async () => {
+            setCreating(true);
+            // Created with the AI PM name, so the name match links it without storing anything.
+            await createNewProject({ environmentId, name: project.name, publishTo: null });
+            setLinkedProjectId(null);
+            setCreating(false);
+          }}
+        >
+          Create “{project.name}” as a new project
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function ProjectBrief({
+  brief,
+  startThread,
+}: {
+  readonly brief: AiPmBriefResult;
+  readonly startThread: ((task: AiPmThreadTask) => Promise<void>) | null;
+}) {
+  const [showCompleted, setShowCompleted] = useState(false);
+  const phases = brief.phases.filter((phase) => showCompleted || !phase.shipped);
+  return (
+    <>
+      {brief.now ? (
+        <p className="text-xs">
+          <span className="font-medium">Now: </span>
+          {brief.now}
         </p>
-        <h2 className="text-2xl font-semibold">{brief.name}</h2>
-        <BriefSection title="Objective" text={brief.objective || "No objective recorded."} />
-        <BriefSection title="Now" text={brief.now || "No current focus recorded."} />
-      </div>
-      {brief.version ? (
-        <section className="space-y-2 rounded-xl border border-border bg-card/30 p-5">
-          <h3 className="font-medium">{brief.version} · Current outcome</h3>
-          <p className="text-sm leading-relaxed">{brief.outcome}</p>
-          {brief.shipWhen ? <BriefSection title="Complete when" text={brief.shipWhen} /> : null}
-        </section>
       ) : null}
-      <section className="space-y-3">
-        <h3 className="font-medium">Next actions</h3>
-        {brief.next.length ? (
-          <ul className="space-y-3">
-            {brief.next.map((action) => (
-              <li
-                key={`${action.step}-${action.title}`}
-                className="rounded-lg border border-border p-4"
-              >
-                <div className="flex flex-wrap justify-between gap-2">
-                  {action.step ? (
-                    <a
-                      className="text-sm font-medium underline decoration-border underline-offset-4 hover:decoration-foreground"
-                      href={`#${stepIdPrefix}-ai-pm-step-${action.step}`}
-                      onClick={() => {
-                        const target = document.getElementById(
-                          `${stepIdPrefix}-ai-pm-step-${action.step}`,
-                        );
-                        if (target instanceof HTMLDetailsElement) {
-                          target.open = true;
-                          const phase = target.parentElement?.closest("details");
-                          if (phase instanceof HTMLDetailsElement) phase.open = true;
-                        }
-                      }}
-                    >
-                      {action.title}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-medium">{action.title}</span>
-                  )}
-                  <Badge variant={action.owner === "you" ? "warning" : "secondary"}>
-                    {action.owner}
-                  </Badge>
-                </div>
-                {action.why ? (
-                  <p className="mt-2 text-sm text-muted-foreground">{action.why}</p>
-                ) : null}
-                {action.step ? (
-                  <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
-                    {action.step.includes("/") ? action.step : `${brief.id}/${action.step}`}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">
+      <section className="flex flex-col">
+        <SectionTitle>Next actions</SectionTitle>
+        {brief.next.map((action) => (
+          <TaskRow
+            key={`${action.step}-${action.title}`}
+            task={action}
+            detail={action.why}
+            startThread={startThread}
+          />
+        ))}
+        {brief.next.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
             No next action recorded. This does not mean the project is complete.
           </p>
-        )}
+        ) : null}
       </section>
       {brief.risks.length ? (
-        <section className="space-y-3">
-          <h3 className="font-medium">Risks to keep in view</h3>
+        <section className="flex flex-col gap-1">
+          <SectionTitle>Risks</SectionTitle>
           {brief.risks.map((risk) => (
-            <div key={risk.code} className="rounded-lg border border-warning/30 p-4">
-              <p className="text-sm font-medium">
-                {risk.code} · {risk.title}
+            <div key={risk.code} className="text-xs">
+              <p>
+                <span className="text-warning-foreground">{risk.code}</span> {risk.title}
               </p>
               {risk.context ? (
-                <p className="mt-2 text-sm text-muted-foreground">{risk.context}</p>
+                <p className="line-clamp-2 text-muted-foreground">{risk.context}</p>
               ) : null}
             </div>
           ))}
         </section>
       ) : null}
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-medium">Project plan</h3>
-          <Button size="sm" variant="ghost" onClick={() => setShowCompleted(!showCompleted)}>
-            {showCompleted ? "Hide completed steps" : "Show completed steps"}
+      <section className="flex flex-col">
+        <div className="flex items-center">
+          <SectionTitle>Plan</SectionTitle>
+          <Button
+            className="ml-auto"
+            size="compact"
+            variant="ghost"
+            onClick={() => setShowCompleted(!showCompleted)}
+          >
+            {showCompleted ? "Hide completed" : "Show completed"}
           </Button>
         </div>
-        {activePhases.map((phase) => {
+        {phases.map((phase) => {
           const steps = phase.steps.filter((step) => showCompleted || step.state !== "done");
           return steps.length ? (
-            <details
-              key={`${phase.version}-${phase.kind}-${phase.name}`}
-              open={phase.kind !== "inbox" && phase.kind !== "later"}
-              className="rounded-xl border border-border p-5"
-            >
-              <summary className="cursor-pointer text-sm font-medium">
-                {phase.name} · {steps.length} steps
-              </summary>
-              <div className="mt-4 divide-y divide-border">
-                {steps.map((step) => (
-                  <details
-                    key={step.ref}
-                    id={`${stepIdPrefix}-ai-pm-step-${step.ref}`}
-                    className="scroll-mt-4 py-3"
-                  >
-                    <summary className="cursor-pointer text-sm">
-                      <span className="mr-2">
-                        <Badge
-                          variant={
-                            step.state === "blocked" || step.state === "check"
-                              ? "warning"
-                              : "secondary"
-                          }
-                        >
-                          {step.state}
-                        </Badge>
-                      </span>
-                      {step.title} <span className="text-muted-foreground">· {step.owner}</span>
-                    </summary>
-                    <div className="mt-3 space-y-2 pl-2 text-sm leading-relaxed text-muted-foreground">
-                      <p className="break-all font-mono text-xs">{step.ref}</p>
-                      {step.what ? <p>{step.what}</p> : null}
-                      {step.waitingTitles.length ? (
-                        <p>Depends on: {step.waitingTitles.join(", ")}</p>
-                      ) : null}
-                      {step.warnings.map((warning) => (
-                        <p key={warning} className="text-warning-foreground">
-                          {warning}
-                        </p>
-                      ))}
-                      {step.lastProgress ? (
-                        <div>
-                          <p className="font-medium">Latest recorded update</p>
-                          <p className="whitespace-pre-wrap">{step.lastProgress}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </details>
+            <div key={`${phase.version}-${phase.kind}-${phase.name}`} className="mb-2">
+              <h4 className="py-0.5 text-xs font-medium">{phase.name}</h4>
+              {steps.map((step) => (
+                <TaskRow
+                  key={step.ref}
+                  task={{ title: step.title, owner: step.owner, step: step.ref, why: step.what }}
+                  state={step.state}
+                  detail={[
+                    step.what,
+                    step.waitingTitles.length
+                      ? `Depends on: ${step.waitingTitles.join(", ")}`
+                      : null,
+                    ...step.warnings,
+                    step.lastProgress ? `Latest update: ${step.lastProgress}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join("\n")}
+                  startThread={startThread}
+                />
+              ))}
+            </div>
           ) : null;
         })}
-        {activePhases.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No open plan recorded.</p>
+        {phases.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No open plan recorded.</p>
         ) : null}
       </section>
+      <p className="text-xs text-muted-foreground">
+        Status comes from AI PM. Reading it does not reconcile or verify the work.
+      </p>
+    </>
+  );
+}
+
+const STATE_DOT: Record<AiPmBriefResult["phases"][number]["steps"][number]["state"], string> = {
+  done: "bg-success",
+  active: "bg-info",
+  blocked: "bg-destructive",
+  check: "bg-warning",
+  todo: "bg-muted-foreground/40",
+  parked: "bg-muted-foreground/20",
+};
+
+function TaskRow({
+  task,
+  state,
+  detail,
+  startThread,
+}: {
+  readonly task: AiPmThreadTask;
+  readonly state?: keyof typeof STATE_DOT;
+  readonly detail: string | null;
+  readonly startThread: ((task: AiPmThreadTask) => Promise<void>) | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b border-border/60 last:border-0">
+      <div className="flex min-w-0 items-center gap-2 py-0.5 text-xs">
+        <span
+          className={`size-1.5 shrink-0 rounded-full ${state ? STATE_DOT[state] : task.owner === "you" ? "bg-warning" : "bg-muted-foreground/40"}`}
+        />
+        {state ? <span className="sr-only">{state}</span> : null}
+        <button
+          type="button"
+          aria-expanded={detail ? open : undefined}
+          disabled={!detail}
+          onClick={() => setOpen(!open)}
+          className={`min-w-0 flex-1 truncate text-left ${state === "done" ? "text-muted-foreground line-through" : ""}`}
+        >
+          {task.title}
+        </button>
+        <Badge size="sm" variant={task.owner === "you" ? "warning" : "secondary"}>
+          {task.owner}
+        </Badge>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                disabled={!startThread}
+                aria-label={`Start a thread for ${task.title}`}
+                onClick={() => void startThread?.(task)}
+              />
+            }
+          >
+            <MessageSquarePlusIcon />
+          </TooltipTrigger>
+          <TooltipPopup>
+            {startThread
+              ? "Start a thread focused on this. The prompt is drafted, not sent."
+              : "Choose a project for this board’s threads first"}
+          </TooltipPopup>
+        </Tooltip>
+      </div>
+      {open && detail ? (
+        <p className="pb-1.5 pl-3.5 text-xs whitespace-pre-wrap text-muted-foreground">{detail}</p>
+      ) : null}
     </div>
   );
 }
 
-function BriefSection({ title, text }: { readonly title: string; readonly text: string }) {
+function SectionTitle({ children }: { readonly children: string }) {
   return (
-    <div className="space-y-1">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
-    </div>
+    <h3 className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      {children}
+    </h3>
   );
 }
 
 function Notice({ title, description }: { readonly title: string; readonly description: string }) {
   return (
-    <div role="status" className="space-y-2 rounded-xl border border-border p-6">
-      <h2 className="font-medium">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
+    <div role="status" className="space-y-1 rounded-lg border border-border p-4">
+      <h2 className="text-sm font-medium">{title}</h2>
+      <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   );
 }

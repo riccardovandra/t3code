@@ -8,6 +8,7 @@ export const AiPmProjectSummary = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   owner: Schema.String,
+  area: NullableString,
   now: Schema.String,
   waitingOnYou: Schema.Number,
   done: Schema.Number,

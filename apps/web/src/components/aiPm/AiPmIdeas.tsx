@@ -89,13 +89,11 @@ export function AiPmIdeas({
   environmentId,
   filter,
   projects,
-  embedded,
   onSelectProject,
 }: {
   readonly environmentId: EnvironmentId;
   readonly filter: string;
   readonly projects: ReadonlyArray<AiPmProjectSummary>;
-  readonly embedded: boolean;
   readonly onSelectProject: (id: string) => void;
 }) {
   const ideas = useEnvironmentQuery(serverEnvironment.aiPmIdeas({ environmentId, input: {} }));
@@ -114,7 +112,7 @@ export function AiPmIdeas({
     <section className="space-y-4" aria-label="Ideas">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
             <LightbulbIcon className="size-4 text-muted-foreground" /> Ideas
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -154,7 +152,7 @@ export function AiPmIdeas({
         </p>
       ) : null}
       {ideas.isPending && !ideas.data ? <p role="status">Reading ideas…</p> : null}
-      <div className={embedded ? "grid min-w-0 gap-3" : "grid gap-3 md:grid-cols-2"}>
+      <div className="grid min-w-0 gap-3 @4xl/ai-pm:grid-cols-2">
         {visible.map((idea) => (
           <IdeaCard
             key={idea.id}
@@ -236,7 +234,7 @@ function IdeaCard({
           {idea.status === "promoted" && idea.project ? ` → ${project?.name ?? idea.project}` : ""}
         </Badge>
       </div>
-      <h3 className="text-lg font-medium">{idea.title}</h3>
+      <h3 className="text-base font-medium">{idea.title}</h3>
       {idea.summary ? (
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
           <span className="font-medium text-foreground">Where you left off: </span>

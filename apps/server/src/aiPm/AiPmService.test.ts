@@ -11,6 +11,7 @@ const summary = {
   id: "demo",
   name: "Demo",
   owner: "Riccardo",
+  area: "client",
   now: "Build",
   waiting_on_you: 1,
   done: 1,
@@ -74,6 +75,7 @@ describe("AI PM read adapter", () => {
         const aiPm = yield* AiPmService.AiPmService;
         const list = yield* aiPm.list();
         expect(list.projects[0]).toMatchObject({
+          area: "client",
           waitingOnYou: 1,
           version: "v1",
           done: 1,
