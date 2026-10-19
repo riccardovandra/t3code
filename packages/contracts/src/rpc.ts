@@ -1,3 +1,4 @@
+import { AiPmBriefInput, AiPmBriefResult, AiPmListResult, AiPmError } from "./aiPm.ts";
 import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
@@ -502,6 +503,8 @@ export const WS_METHODS = {
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
+  aiPmList: "aiPm.list",
+  aiPmBrief: "aiPm.brief",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1757,6 +1760,17 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
   stream: true,
 });
 
+const WsAiPmListRpc = Rpc.make(WS_METHODS.aiPmList, {
+  payload: Schema.Struct({}),
+  success: AiPmListResult,
+  error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
+});
+const WsAiPmBriefRpc = Rpc.make(WS_METHODS.aiPmBrief, {
+  payload: AiPmBriefInput,
+  success: AiPmBriefResult,
+  error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -1853,6 +1867,8 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  WsAiPmListRpc,
+  WsAiPmBriefRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
