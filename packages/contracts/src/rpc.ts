@@ -1,5 +1,15 @@
 import { AiPmBriefInput, AiPmBriefResult, AiPmListResult, AiPmError } from "./aiPm.ts";
 import {
+  DocCommentCreateInput,
+  DocCommentDeleteInput,
+  DocCommentMutationResult,
+  DocCommentReplyInput,
+  DocCommentSetResolvedInput,
+  DocCommentsListInput,
+  DocCommentsResult,
+  DocsError,
+} from "./docs.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -505,6 +515,11 @@ export const WS_METHODS = {
 
   aiPmList: "aiPm.list",
   aiPmBrief: "aiPm.brief",
+  docsListComments: "docs.listComments",
+  docsCreateComment: "docs.createComment",
+  docsReplyComment: "docs.replyComment",
+  docsSetCommentResolved: "docs.setCommentResolved",
+  docsDeleteComment: "docs.deleteComment",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1771,6 +1786,32 @@ const WsAiPmBriefRpc = Rpc.make(WS_METHODS.aiPmBrief, {
   error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
 });
 
+const WsDocsListCommentsRpc = Rpc.make(WS_METHODS.docsListComments, {
+  payload: DocCommentsListInput,
+  success: DocCommentsResult,
+  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
+});
+const WsDocsCreateCommentRpc = Rpc.make(WS_METHODS.docsCreateComment, {
+  payload: DocCommentCreateInput,
+  success: DocCommentMutationResult,
+  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
+});
+const WsDocsReplyCommentRpc = Rpc.make(WS_METHODS.docsReplyComment, {
+  payload: DocCommentReplyInput,
+  success: DocCommentMutationResult,
+  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
+});
+const WsDocsSetCommentResolvedRpc = Rpc.make(WS_METHODS.docsSetCommentResolved, {
+  payload: DocCommentSetResolvedInput,
+  success: DocCommentMutationResult,
+  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
+});
+const WsDocsDeleteCommentRpc = Rpc.make(WS_METHODS.docsDeleteComment, {
+  payload: DocCommentDeleteInput,
+  success: DocCommentMutationResult,
+  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -1869,6 +1910,11 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 export const WsRpcGroup = RpcGroup.make(
   WsAiPmListRpc,
   WsAiPmBriefRpc,
+  WsDocsListCommentsRpc,
+  WsDocsCreateCommentRpc,
+  WsDocsReplyCommentRpc,
+  WsDocsSetCommentResolvedRpc,
+  WsDocsDeleteCommentRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

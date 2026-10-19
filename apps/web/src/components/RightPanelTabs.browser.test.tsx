@@ -144,6 +144,7 @@ async function renderTabs(
         onAddFiles={noop}
         onAddDevice={noop}
         onAddAiPm={noop}
+        onAddDocs={noop}
         browserAvailable
         terminalAvailable={false}
         diffAvailable={false}
@@ -152,6 +153,7 @@ async function renderTabs(
         pullRequestsAvailable={false}
         deviceAvailable={false}
         aiPmAvailable={false}
+        docsAvailable={false}
       >
         <div>content</div>
       </RightPanelTabs>,

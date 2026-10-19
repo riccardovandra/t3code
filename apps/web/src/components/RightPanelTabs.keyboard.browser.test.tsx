@@ -83,6 +83,7 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         onAddPullRequests={noop}
         onAddDevice={noop}
         onAddAiPm={noop}
+        onAddDocs={noop}
         browserAvailable={false}
         terminalAvailable={false}
         diffAvailable={false}
@@ -91,6 +92,7 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         pullRequestsAvailable={false}
         deviceAvailable={false}
         aiPmAvailable={false}
+        docsAvailable={false}
         {...overrides}
       >
         content
@@ -123,6 +125,14 @@ describe("right panel new-tab shortcut", () => {
     await press("a");
     expect(addAiPm).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[role="menu"]:not([data-closed])')).toBeNull();
+  });
+
+  it("opens Docs with O from the surface launcher", async () => {
+    const addDocs = vi.fn();
+    await renderPanel({ docsAvailable: true, onAddDocs: addDocs });
+    expect(container.querySelector('[aria-label="Open a surface"]')?.textContent).toContain("Docs");
+    expect((await press("o")).defaultPrevented).toBe(true);
+    expect(addDocs).toHaveBeenCalledTimes(1);
   });
 
   it.each(["MacIntel", "Win32", "Linux x86_64"])(

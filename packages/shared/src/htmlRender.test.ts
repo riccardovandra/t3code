@@ -15,7 +15,7 @@ import {
   readHtmlRenderReference,
 } from "./htmlRender.ts";
 import { T3_CODE_DARK_THEME_COLORS, T3_CODE_LIGHT_THEME_COLORS } from "./themePalettes.ts";
-import { htmlRenderFromToolItem } from "./toolOutput.ts";
+import { docOpenFromToolItem, htmlRenderFromToolItem } from "./toolOutput.ts";
 
 const reference = { attachmentId: "thread-abc-123.html", title: "Chart", height: 420 };
 
@@ -229,6 +229,33 @@ describe("htmlRenderFromToolItem", () => {
     expect(
       htmlRenderFromToolItem({ toolName: "html_render", output: { ...result, isError: true } }),
     ).toBeUndefined();
+  });
+});
+
+describe("docOpenFromToolItem", () => {
+  const doc = { docPath: "docs/launch-plan.md", title: "Launch plan" };
+  const result = { doc };
+
+  it("reads the doc from completed docs_create and docs_open calls in each envelope", () => {
+    for (const [toolName, output] of [
+      ["mcp__t3-code__docs_create", [{ type: "text", text: JSON.stringify(result) }]],
+      ["t3-code.docs_open", { structuredContent: result, content: [] }],
+      ["t3-code-thread_1_docs_create", JSON.stringify(result)],
+      ["docs_open", result],
+    ] as const) {
+      expect(docOpenFromToolItem({ toolName, status: "completed", output })).toEqual(doc);
+    }
+  });
+
+  it("ignores other tools, unfinished or failed calls, and non-markdown paths", () => {
+    const item = { toolName: "docs_create", status: "completed", output: result };
+    expect(docOpenFromToolItem({ ...item, toolName: "mcp__t3-code__docs_read" })).toBeNull();
+    expect(docOpenFromToolItem({ ...item, toolName: "mcp__other__docs_create" })).toBeNull();
+    expect(docOpenFromToolItem({ ...item, status: "running" })).toBeNull();
+    expect(docOpenFromToolItem({ ...item, output: { ...result, isError: true } })).toBeNull();
+    expect(
+      docOpenFromToolItem({ ...item, output: { doc: { docPath: "docs/a.txt", title: "A" } } }),
+    ).toBeNull();
   });
 });
 

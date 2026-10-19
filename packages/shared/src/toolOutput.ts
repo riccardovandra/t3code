@@ -9,6 +9,7 @@ import {
   readHtmlRenderReference,
   type HtmlRenderReference,
 } from "./htmlRender.ts";
+import { isMarkdownPath } from "./docPaths.ts";
 import { MCP_APP_OUTPUT_KEY, readMcpAppReference, type McpAppReference } from "./mcpApp.ts";
 import { resolveT3McpToolId } from "./t3McpToolPresentation.ts";
 
@@ -40,9 +41,32 @@ interface CompactToolOutput {
   scheduledTaskId?: string;
   status?: "rolled_back";
   htmlRender?: HtmlRenderReference;
+  doc?: DocReference;
   [MCP_APP_OUTPUT_KEY]?: McpAppReference;
   thread?: { threadId: string };
   threads?: Array<{ threadId?: string; status?: "rolled_back" }>;
+}
+
+export interface DocReference {
+  readonly docPath: string;
+  readonly title: string;
+}
+
+const DOC_OPEN_TOOL_NAMES: ReadonlySet<string> = new Set(["docs_create", "docs_open"]);
+
+function readDocReference(value: unknown): DocReference | undefined {
+  if (!Predicate.isObject(value)) return undefined;
+  const { docPath, title } = value;
+  if (
+    typeof docPath !== "string" ||
+    !isMarkdownPath(docPath) ||
+    docPath.length > 512 ||
+    typeof title !== "string" ||
+    title.length > 512
+  ) {
+    return undefined;
+  }
+  return { docPath, title };
 }
 
 function readResult(value: unknown, budget: ResultReadBudget, depth = 0): ResultEnvelope {
@@ -125,6 +149,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     if (data.status === "rolled_back") output.status = "rolled_back";
     const htmlRender = readHtmlRenderReference(data.htmlRender);
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
+    const doc = readDocReference(data.doc);
+    if (doc !== undefined) output.doc = doc;
     const mcpApp = readMcpAppReference(data[MCP_APP_OUTPUT_KEY]);
     if (mcpApp !== undefined) output[MCP_APP_OUTPUT_KEY] = mcpApp;
     const nestedThreadId = Predicate.isObject(data.thread)
@@ -184,6 +210,19 @@ export function htmlRenderFromToolItem(item: {
   if (resolveT3McpToolId(item.toolName) !== HTML_RENDER_TOOL_NAME) return undefined;
   const output = compactDynamicToolOutput(item.output);
   return output?.isError ? undefined : output?.htmlRender;
+}
+
+/** The doc a completed docs_create or docs_open call asks the client to show. */
+export function docOpenFromToolItem(item: {
+  readonly toolName: string | null | undefined;
+  readonly status: string;
+  readonly output?: unknown;
+}): DocReference | null {
+  if (item.status !== "completed") return null;
+  const toolId = resolveT3McpToolId(item.toolName);
+  if (toolId === null || !DOC_OPEN_TOOL_NAMES.has(toolId)) return null;
+  const output = compactDynamicToolOutput(item.output);
+  return output?.isError ? null : (output?.doc ?? null);
 }
 
 /**

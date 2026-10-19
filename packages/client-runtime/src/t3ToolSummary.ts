@@ -433,6 +433,12 @@ export function summarizeT3ToolCalls(
     case "html-render":
       label = phrase("Rendered", "render", quantity(selected.length, "HTML page"));
       break;
+    case "docs":
+      label = phrase("Used", "use", quantity(selected.length, "doc tool"));
+      break;
+    case "docs-comments":
+      label = phrase("Used", "use", quantity(selected.length, "doc comment tool"));
+      break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;

@@ -1,6 +1,7 @@
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
+import * as DocCommentsService from "../../../docs/DocCommentsService.ts";
 import * as ServerConfig from "../../../config.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
@@ -34,11 +35,15 @@ import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
+import * as WorkspaceEntries from "../../../workspace/WorkspaceEntries.ts";
+import * as WorkspaceFileSystem from "../../../workspace/WorkspaceFileSystem.ts";
+import * as WorkspacePaths from "../../../workspace/WorkspacePaths.ts";
 
 const layerStubServices = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
   Layer.mock(DeviceService.DeviceService)({}),
+  Layer.mock(DocCommentsService.DocCommentsService)({}),
   Layer.mock(ThreadManagementService.ThreadManagementService)({}),
   Layer.mock(ProviderRegistry.ProviderRegistry)({}),
   Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
@@ -57,6 +62,9 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
+  Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),
+  Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({}),
+  Layer.mock(WorkspacePaths.WorkspacePaths)({}),
 );
 
 const ToolsListPayload = Schema.fromJsonString(

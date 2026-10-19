@@ -1685,6 +1685,7 @@ function PullRequestsRouteView() {
             onAddPullRequests={() => undefined}
             onAddDevice={() => undefined}
             onAddAiPm={() => undefined}
+            onAddDocs={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}
@@ -1693,6 +1694,7 @@ function PullRequestsRouteView() {
             pullRequestsAvailable={false}
             deviceAvailable={false}
             aiPmAvailable={false}
+            docsAvailable={false}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
             <PullRequestDetailPanel

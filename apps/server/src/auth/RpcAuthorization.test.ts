@@ -41,6 +41,18 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.aiPmBrief)).toBe(AuthOrchestrationReadScope);
   });
 
+  it("lets readers see doc comments but requires operate access to change them", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.docsListComments)).toBe(AuthOrchestrationReadScope);
+    for (const method of [
+      WS_METHODS.docsCreateComment,
+      WS_METHODS.docsReplyComment,
+      WS_METHODS.docsSetCommentResolved,
+      WS_METHODS.docsDeleteComment,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
+  });
+
   it("requires operate access to stop a workflow", () => {
     expect(requiredScopeForRpcMethod(ORCHESTRATION_V2_WS_METHODS.stopWorkflow)).toBe(
       AuthOrchestrationOperateScope,

@@ -19,6 +19,7 @@ const RIGHT_PANEL_KINDS = [
   "preview",
   "device",
   "ai-pm",
+  "docs",
   "terminal",
   "pull-request",
   "pull-requests",
@@ -45,6 +46,7 @@ export type RightPanelSurface =
       splitDirection?: "horizontal" | "vertical";
     }
   | { id: "ai-pm"; kind: "ai-pm"; projectId?: string }
+  | { id: "docs"; kind: "docs"; docPath?: string }
   | { id: "diff"; kind: "diff" }
   | {
       id: "files";
@@ -127,6 +129,7 @@ interface RightPanelStoreState {
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
   selectAiPmProject: (ref: ScopedThreadRef, projectId: string | undefined) => void;
+  selectDoc: (ref: ScopedThreadRef, docPath: string | undefined) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
@@ -211,6 +214,8 @@ const singletonSurface = (
   switch (kind) {
     case "ai-pm":
       return { id: "ai-pm", kind };
+    case "docs":
+      return { id: "docs", kind };
     case "diff":
       return { id: "diff", kind };
     case "files":
@@ -454,6 +459,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     const kind = (surface as { kind?: string }).kind;
                     if (kind === "plan" || kind === "agents") return [];
+                    if (surface.kind === "docs") {
+                      return [
+                        {
+                          id: "docs",
+                          kind: "docs",
+                          ...(typeof surface.docPath === "string"
+                            ? { docPath: surface.docPath }
+                            : {}),
+                        },
+                      ];
+                    }
                     if (surface.kind === "ai-pm") {
                       return [
                         {
@@ -651,6 +667,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 kind: "ai-pm",
                 ...(projectId === undefined ? {} : { projectId }),
               };
+            }),
+          })),
+        ),
+      selectDoc: (ref, docPath) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) => ({
+            ...current,
+            surfaces: current.surfaces.map((surface) => {
+              if (surface.kind !== "docs") return surface;
+              return { id: "docs", kind: "docs", ...(docPath === undefined ? {} : { docPath }) };
             }),
           })),
         ),

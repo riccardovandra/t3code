@@ -2257,6 +2257,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
+    // Lineage is immutable, so the parent is read without holding its dispatch lock.
+    const parentThreadId = command.parentThreadId;
+    const parent =
+      parentThreadId === undefined
+        ? null
+        : yield* projectionStore.getThread(parentThreadId).pipe(
+            Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+            Effect.mapError(
+              (cause) => new OrchestratorProjectionError({ threadId: parentThreadId, cause }),
+            ),
+          );
+    if (
+      parentThreadId !== undefined &&
+      (parent === null || parent.deletedAt !== null || parent.projectId !== command.projectId)
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Parent thread ${parentThreadId} is not in project ${command.projectId}.`,
+      });
+    }
+
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
     const thread: OrchestrationV2AppThread = {
@@ -2273,11 +2295,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       worktreePath: command.worktreePath,
       activeProviderThreadId: null,
       pullRequests: [],
-      lineage: {
-        parentThreadId: null,
-        relationshipToParent: null,
-        rootThreadId: command.threadId,
-      },
+      lineage:
+        parent === null
+          ? { parentThreadId: null, relationshipToParent: null, rootThreadId: command.threadId }
+          : {
+              parentThreadId: parent.id,
+              relationshipToParent: "subagent",
+              rootThreadId: parent.lineage.rootThreadId,
+            },
       forkedFrom: null,
       createdAt: now,
       updatedAt: now,

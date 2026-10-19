@@ -178,6 +178,7 @@ import {
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
 import { ProposedPlanCard } from "./ProposedPlanCard";
+import { DocTimelineCard } from "../docs/DocTimelineCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -1934,6 +1935,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                 row.kind === "event" ||
                 row.kind === "attempt-fold" ||
                 row.kind === "html-render" ||
+                row.kind === "doc" ||
                 row.kind === "mcp-app"
               ? "pb-2"
               : "pb-4",
@@ -1983,6 +1985,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
+      {row.kind === "doc" ? <DocTimelineRow row={row} /> : null}
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
@@ -2837,6 +2840,15 @@ function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "htm
         threadRef={ctx.threadRef ?? undefined}
         onFullscreenChange={onFullscreenChange}
       />
+    </div>
+  );
+}
+
+function DocTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "doc" }> }) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="min-w-0 px-1">
+      <DocTimelineCard threadRef={ctx.threadRef} doc={row.doc} />
     </div>
   );
 }

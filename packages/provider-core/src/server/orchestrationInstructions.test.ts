@@ -26,6 +26,15 @@ describe("T3 orchestration provider instructions", () => {
     assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "bindToCurrentThread=false");
   });
 
+  it("steers kept documents into docs instead of chat", () => {
+    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "write it with `docs_create`");
+    assert.include(
+      T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+      "`docs_read` returns a doc with its open comments",
+    );
+    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "reply with `docs_comment_reply`");
+  });
+
   it("injects prompt fallback only for an MCP-enabled first run", () => {
     const prompt = "Inspect the repository.";
     const injected = t3OrchestrationPromptForFirstRun({

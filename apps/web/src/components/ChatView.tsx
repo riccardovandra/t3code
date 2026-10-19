@@ -1,3 +1,4 @@
+import { useAgentOpenedDocs } from "./docs/useAgentOpenedDocs";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
@@ -3674,6 +3675,12 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().open(activeThreadRef, "ai-pm");
   };
   const addAiPmSurfaceStable = useStableCallback(addAiPmSurface);
+  const addDocsSurface = () => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "docs");
+  };
+  const addDocsSurfaceStable = useStableCallback(addDocsSurface);
+  useAgentOpenedDocs(activeThreadRef, serverVisibleTurnItems);
   useAgentOpenedPreviews({
     threadRef: activeThreadRef,
     deviceState,
@@ -8559,6 +8566,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
           onAddAiPm={addAiPmSurfaceStable}
+          onAddDocs={addDocsSurfaceStable}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
           diffAvailable={isServerThread && isGitRepo}
@@ -8567,6 +8575,7 @@ export default function ChatView(props: ChatViewProps) {
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}
           aiPmAvailable={activeThreadRef !== null}
+          docsAvailable={activeThreadRef !== null && activeProject !== null}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -8616,6 +8625,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequests={addPullRequestsSurfaceStable}
             onAddDevice={addDeviceSurfaceStable}
             onAddAiPm={addAiPmSurfaceStable}
+            onAddDocs={addDocsSurfaceStable}
             browserAvailable={canOperatePreview && browserAvailable}
             terminalAvailable={activeProject !== null && canOperateTerminal}
             diffAvailable={isServerThread && isGitRepo}
@@ -8624,6 +8634,7 @@ export default function ChatView(props: ChatViewProps) {
             pullRequestsAvailable={pullRequestsSurfaceAvailable}
             deviceAvailable={activeThreadRef !== null}
             aiPmAvailable={activeThreadRef !== null}
+            docsAvailable={activeThreadRef !== null && activeProject !== null}
           >
             {rightPanelContent}
           </RightPanelTabs>

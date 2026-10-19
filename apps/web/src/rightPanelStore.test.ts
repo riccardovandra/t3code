@@ -52,6 +52,23 @@ describe("rightPanelStore", () => {
     ).toEqual(state);
   });
 
+  it("keeps the open doc across a persisted reload and returns to the list", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "docs");
+    store.selectDoc(refA, "docs/plan.md");
+    const persisted = useRightPanelStore.persist.getOptions().partialize!(
+      useRightPanelStore.getState(),
+    );
+    expect(
+      selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA)
+        .surfaces,
+    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md" }]);
+    store.selectDoc(refA, undefined);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "docs", kind: "docs" }]);
+  });
+
   it("remembers a closed AI PM surface for reopening", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "ai-pm");

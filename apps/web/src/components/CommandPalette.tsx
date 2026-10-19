@@ -68,6 +68,7 @@ import {
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
+  NotebookPenIcon,
   ListChecksIcon,
   MessageSquareIcon,
   MonitorIcon,
@@ -1740,6 +1741,16 @@ function OpenCommandPaletteDialog(props: {
 
   if (activeThread !== null) {
     const thread = activeThread;
+    actionItems.push({
+      kind: "action",
+      value: "action:open-docs",
+      searchTerms: ["docs", "documents", "notes", "write", "comment", "markdown"],
+      title: "Open Docs",
+      icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(scopeThreadRef(thread.environmentId, thread.id), "docs");
+      },
+    });
     actionItems.push({
       kind: "action",
       value: "action:restart-agent-session",

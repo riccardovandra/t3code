@@ -64,7 +64,9 @@ export type T3McpToolSummaryAction =
   | "browser"
   | "device"
   | "html-preview"
-  | "html-render";
+  | "html-render"
+  | "docs"
+  | "docs-comments";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -331,6 +333,23 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_thread_send_attachments: tool(["Send", "Sending", "Sent", "attachments"], "attachment-send"),
   html_preview: tool(["Preview", "Previewing", "Previewed", "an HTML page"], "html-preview"),
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
+  docs_list: tool(["List", "Listing", "Listed", "docs"], "docs"),
+  docs_read: tool(["Read", "Reading", "Read", "a doc"], "docs"),
+  docs_create: tool(["Create", "Creating", "Created", "a doc"], "docs"),
+  docs_open: tool(["Open", "Opening", "Opened", "a doc"], "docs"),
+  docs_list_comments: tool(["Read", "Reading", "Read", "doc comments"], "docs-comments"),
+  docs_comment_create: tool(
+    ["Comment on", "Commenting on", "Commented on", "a doc"],
+    "docs-comments",
+  ),
+  docs_comment_reply: tool(
+    ["Reply to", "Replying to", "Replied to", "a doc comment"],
+    "docs-comments",
+  ),
+  docs_comment_resolve: tool(
+    ["Resolve", "Resolving", "Resolved", "a doc comment"],
+    "docs-comments",
+  ),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
