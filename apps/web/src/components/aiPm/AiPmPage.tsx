@@ -13,6 +13,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
+import { AiPmIdeas } from "./AiPmIdeas";
 
 export function AiPmPage({
   projectId,
@@ -35,7 +36,7 @@ export function AiPmPage({
       <WorkspacePageHeader electron={isElectron} className="border-b border-border">
         <ListChecksIcon className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">AI PM</span>
-        <span className="ml-auto text-xs text-muted-foreground">Project overview</span>
+        <span className="ml-auto text-xs text-muted-foreground">Projects and ideas</span>
       </WorkspacePageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <WorkspacePageContainer width="wide">
@@ -141,7 +142,7 @@ export function AiPmEnvironment({
           <Input
             type="search"
             aria-label="Search projects"
-            placeholder="Search projects, clients or current focus…"
+            placeholder="Search projects, ideas, clients or current focus…"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
@@ -166,6 +167,15 @@ export function AiPmEnvironment({
           ) : null}
         </>
       ) : null}
+      {projectId ? null : (
+        <AiPmIdeas
+          environmentId={environmentId}
+          filter={filter}
+          projects={projects}
+          embedded={embedded}
+          onSelectProject={onSelectProject}
+        />
+      )}
     </>
   );
 }

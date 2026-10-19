@@ -39,7 +39,11 @@ When a chart, table, diagram, image collage, or mockup would say more than prose
 
 ### Docs
 
-Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.`,
+Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.
+
+### AI PM ideas
+
+When the user wants to park an idea or concept for later ("park this idea"), save it with \`aipm_idea_save\`: a summary of where the work was left, the next step, and absolute paths of files it produced. It links this thread. Call \`aipm_idea_list\` first and pass an existing idea's id to update it rather than duplicate it.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `

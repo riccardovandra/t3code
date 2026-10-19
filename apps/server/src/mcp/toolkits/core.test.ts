@@ -83,6 +83,7 @@ const declaredFailure = (result: McpSchema.CallToolResult) => {
 import { PullRequestsToolkit } from "./pullRequests/tools.ts";
 import { HtmlToolkit } from "./html/tools.ts";
 import { DocsToolkit } from "./docs/tools.ts";
+import { AipmToolkit } from "./aipm/tools.ts";
 import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
@@ -113,6 +114,7 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
     PullRequestsToolkit,
     HtmlToolkit,
     DocsToolkit,
+    AipmToolkit,
   ]) {
     for (const tool of Object.values(toolkit.tools)) {
       expect(names.has(tool.name)).toBe(false);

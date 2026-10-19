@@ -1,4 +1,12 @@
-import { AiPmError, type AiPmListResult, type AiPmBriefResult } from "@t3tools/contracts";
+import {
+  AiPmError,
+  type AiPmBriefResult,
+  type AiPmIdea,
+  type AiPmIdeasResult,
+  type AiPmListResult,
+  AiPmSaveIdeaInput,
+  type AiPmSetIdeaStatusInput,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -82,9 +90,27 @@ const SourceBrief = Schema.Struct({
   ),
 });
 
+const SourceIdea = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: Schema.Literals(["parked", "exploring", "promoted", "dropped"]),
+  summary: Schema.String,
+  next: Schema.String,
+  project: OptionalText,
+  threads: Schema.Array(
+    Schema.Struct({ id: Schema.String, title: OptionalText, environment: OptionalText }),
+  ),
+  files: Schema.Array(Schema.Struct({ path: Schema.String })),
+  created: Schema.String,
+  updated: Schema.String,
+});
+
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeSummaries = Schema.decodeUnknownEffect(Schema.Array(SourceSummary));
 const decodeBrief = Schema.decodeUnknownEffect(SourceBrief);
+const decodeIdeas = Schema.decodeUnknownEffect(Schema.Array(SourceIdea));
+const decodeIdea = Schema.decodeUnknownEffect(SourceIdea);
+const encodeSaveInput = Schema.encodeEffect(Schema.fromJsonString(AiPmSaveIdeaInput));
 
 export class AiPmService extends Context.Service<
   AiPmService,
@@ -93,11 +119,33 @@ export class AiPmService extends Context.Service<
     readonly brief: (input: {
       readonly projectId: string;
     }) => Effect.Effect<AiPmBriefResult, AiPmError>;
+    readonly ideas: () => Effect.Effect<AiPmIdeasResult, AiPmError>;
+    /** Agents add links to an idea, so they merge; the edit form sends the full list, so it replaces. */
+    readonly saveIdea: (
+      input: AiPmSaveIdeaInput,
+      options: { readonly mergeLinks: boolean },
+    ) => Effect.Effect<AiPmIdea, AiPmError>;
+    readonly setIdeaStatus: (input: AiPmSetIdeaStatusInput) => Effect.Effect<AiPmIdea, AiPmError>;
   }
 >()("t3/aiPm/AiPmService") {}
 
 const text = (value: string | undefined): string | null =>
   value === undefined ? null : value.slice(0, 8_000);
+
+const toIdea = (idea: typeof SourceIdea.Type): AiPmIdea => ({
+  ...idea,
+  project: idea.project ?? null,
+});
+
+// The CLI reports write refusals on stderr only; keep the reason, never the text.
+const writeFailure = (stderr: string) =>
+  new AiPmError({
+    reason: /no idea "/.test(stderr)
+      ? "idea_not_found"
+      : /no project "/.test(stderr)
+        ? "project_not_found"
+        : "write_failed",
+  });
 
 const make = Effect.gen(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
@@ -113,12 +161,16 @@ const make = Effect.gen(function* () {
       .join(platform === "win32" ? ";" : ":"),
   };
   const command = environment.T3CODE_AIPM_EXECUTABLE?.trim() || "aipm";
-  const read = Effect.fn("AiPmService.read")(function* (args: ReadonlyArray<string>) {
+  const run = Effect.fn("AiPmService.run")(function* (
+    args: ReadonlyArray<string>,
+    options: { readonly stdin?: string; readonly write?: boolean } = {},
+  ) {
     const result = yield* runner
       .run({
         command,
         args,
         env,
+        ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
         timeout: "15 seconds",
         maxOutputBytes: 2 * 1024 * 1024,
         outputMode: "error",
@@ -141,13 +193,16 @@ const make = Effect.gen(function* () {
     if (result.timedOut) return yield* new AiPmError({ reason: "timeout" });
     if (result.stdoutTruncated || result.stderrTruncated)
       return yield* new AiPmError({ reason: "output_limit" });
-    if (result.code !== 0) return yield* new AiPmError({ reason: "command_failed" });
+    if (result.code !== 0)
+      return yield* options.write
+        ? writeFailure(result.stderr)
+        : new AiPmError({ reason: "command_failed" });
     return yield* decodeJson(result.stdout).pipe(
       Effect.mapError(() => new AiPmError({ reason: "invalid_data" })),
     );
   });
   const list = Effect.fn("AiPmService.list")(function* () {
-    const raw = yield* read(["list", "--json"]);
+    const raw = yield* run(["list", "--json"]);
     const projects = yield* decodeSummaries(raw).pipe(
       Effect.mapError(() => new AiPmError({ reason: "invalid_data" })),
     );
@@ -176,7 +231,7 @@ const make = Effect.gen(function* () {
     const board = yield* list();
     if (!board.projects.some((p) => p.id === projectId))
       return yield* new AiPmError({ reason: "project_not_found" });
-    const raw = yield* read(["brief", projectId, "--json"]);
+    const raw = yield* run(["brief", projectId, "--json"]);
     const p = yield* decodeBrief(raw).pipe(
       Effect.mapError(() => new AiPmError({ reason: "invalid_data" })),
     );
@@ -230,7 +285,42 @@ const make = Effect.gen(function* () {
       fetchedAt: DateTime.formatIso(yield* DateTime.now),
     };
   });
-  return AiPmService.of({ list, brief });
+  const ideas = Effect.fn("AiPmService.ideas")(function* () {
+    const raw = yield* run(["idea", "list", "--json"]);
+    const items = yield* decodeIdeas(raw).pipe(
+      Effect.mapError(() => new AiPmError({ reason: "invalid_data" })),
+    );
+    return { ideas: items.map(toIdea), fetchedAt: DateTime.formatIso(yield* DateTime.now) };
+  });
+  const decodeWritten = (raw: unknown) =>
+    decodeIdea(raw).pipe(
+      Effect.map(toIdea),
+      Effect.mapError(() => new AiPmError({ reason: "invalid_data" })),
+    );
+  const saveIdea = Effect.fn("AiPmService.saveIdea")(function* (
+    input: AiPmSaveIdeaInput,
+    options: { readonly mergeLinks: boolean },
+  ) {
+    // Free text goes over stdin so the CLI never reads a summary as a flag.
+    const stdin = yield* encodeSaveInput(input).pipe(
+      Effect.mapError(() => new AiPmError({ reason: "write_failed" })),
+    );
+    const raw = yield* run(
+      ["idea", "save", "--stdin", ...(options.mergeLinks ? [] : ["--replace-links"]), "--json"],
+      { stdin, write: true },
+    );
+    return yield* decodeWritten(raw);
+  });
+  const setIdeaStatus = Effect.fn("AiPmService.setIdeaStatus")(function* (
+    input: AiPmSetIdeaStatusInput,
+  ) {
+    const project = input.projectId === undefined ? [] : ["--project", input.projectId ?? "none"];
+    const raw = yield* run(["idea", "status", input.id, input.status, ...project, "--json"], {
+      write: true,
+    });
+    return yield* decodeWritten(raw);
+  });
+  return AiPmService.of({ list, brief, ideas, saveIdea, setIdeaStatus });
 });
 
 export const layer = Layer.effect(AiPmService, make);
