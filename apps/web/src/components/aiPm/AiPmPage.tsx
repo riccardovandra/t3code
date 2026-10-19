@@ -65,7 +65,7 @@ export function AiPmPage({
               description={
                 requestedEnvironmentId
                   ? "The selected environment is unavailable. Choose another environment above."
-                  : "Connect a computer running T3 Code to read its AI PM board."
+                  : "Connect a computer running UP Orchestrator to read its AI PM board."
               }
             />
           )}
