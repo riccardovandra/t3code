@@ -39,6 +39,11 @@ describe("RPC authorization scopes", () => {
   it("keeps AI PM board reads behind project read access", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.aiPmList)).toBe(AuthOrchestrationReadScope);
     expect(requiredScopeForRpcMethod(WS_METHODS.aiPmBrief)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.aiPmIdeas)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.aiPmSaveIdea)).toBe(AuthOrchestrationOperateScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.aiPmSetIdeaStatus)).toBe(
+      AuthOrchestrationOperateScope,
+    );
   });
 
   it("lets readers see doc comments but requires operate access to change them", () => {

@@ -69,6 +69,55 @@ export const AiPmBriefResult = Schema.Struct({
   fetchedAt: Schema.String,
 });
 export type AiPmBriefResult = typeof AiPmBriefResult.Type;
+export const AiPmIdeaId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/));
+export const AiPmIdeaStatus = Schema.Literals(["parked", "exploring", "promoted", "dropped"]);
+export type AiPmIdeaStatus = typeof AiPmIdeaStatus.Type;
+const IdeaText = (max: number) => Schema.String.check(Schema.isMaxLength(max));
+export const AiPmIdeaThread = Schema.Struct({
+  id: IdeaText(200).check(Schema.isMinLength(1)),
+  title: Schema.optionalKey(IdeaText(200)),
+  // A thread id only resolves in the environment that owns it.
+  environment: Schema.optionalKey(IdeaText(200)),
+});
+export type AiPmIdeaThread = typeof AiPmIdeaThread.Type;
+export const AiPmIdeaFile = Schema.Struct({
+  path: IdeaText(4_096).check(Schema.isPattern(/^(\/|[A-Za-z]:[\\/])/)),
+});
+export const AiPmIdea = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  status: AiPmIdeaStatus,
+  summary: Schema.String,
+  next: Schema.String,
+  project: NullableString,
+  threads: Schema.Array(AiPmIdeaThread),
+  files: Schema.Array(Schema.Struct({ path: Schema.String })),
+  created: Schema.String,
+  updated: Schema.String,
+});
+export type AiPmIdea = typeof AiPmIdea.Type;
+export const AiPmIdeasResult = Schema.Struct({
+  ideas: Schema.Array(AiPmIdea),
+  fetchedAt: Schema.String,
+});
+export type AiPmIdeasResult = typeof AiPmIdeasResult.Type;
+export const AiPmSaveIdeaInput = Schema.Struct({
+  id: Schema.optionalKey(AiPmIdeaId),
+  title: IdeaText(200).check(Schema.isMinLength(1)),
+  summary: IdeaText(8_000),
+  next: IdeaText(2_000),
+  status: Schema.optionalKey(AiPmIdeaStatus),
+  threads: Schema.Array(AiPmIdeaThread).check(Schema.isMaxLength(50)),
+  files: Schema.Array(AiPmIdeaFile).check(Schema.isMaxLength(50)),
+});
+export type AiPmSaveIdeaInput = typeof AiPmSaveIdeaInput.Type;
+export const AiPmSetIdeaStatusInput = Schema.Struct({
+  id: AiPmIdeaId,
+  status: AiPmIdeaStatus,
+  // Links a promoted idea to its project; omitted keeps the current link.
+  projectId: Schema.optionalKey(Schema.NullOr(AiPmProjectId)),
+});
+export type AiPmSetIdeaStatusInput = typeof AiPmSetIdeaStatusInput.Type;
 export class AiPmError extends Schema.TaggedError<AiPmError>()("AiPmError", {
   reason: Schema.Literals([
     "unavailable",
@@ -77,6 +126,8 @@ export class AiPmError extends Schema.TaggedError<AiPmError>()("AiPmError", {
     "invalid_data",
     "command_failed",
     "project_not_found",
+    "idea_not_found",
+    "write_failed",
   ]),
 }) {
   override get message(): string {
@@ -93,6 +144,10 @@ export class AiPmError extends Schema.TaggedError<AiPmError>()("AiPmError", {
         return "AI PM could not read the project board.";
       case "project_not_found":
         return "This AI PM project no longer exists. Refresh the project list.";
+      case "idea_not_found":
+        return "This idea no longer exists. Refresh the ideas list.";
+      case "write_failed":
+        return "AI PM could not save the idea.";
     }
   }
 }

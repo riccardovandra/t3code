@@ -237,4 +237,94 @@ describe("AI PM read adapter", () => {
       ),
     ),
   );
+
+  const sourceIdea = {
+    id: "ai-delivery-factory",
+    title: "AI Delivery Factory",
+    status: "parked",
+    summary: "Three concepts and a wizard prototype.",
+    next: "Pick one concept",
+    threads: [{ id: "thread-1", title: "Concepts", environment: "env-1" }],
+    files: [{ path: "/work/wizard.html" }],
+    created: "2026-10-19",
+    updated: "2026-10-19",
+  };
+
+  it.effect("lists ideas with a null project when none is linked", () =>
+    Effect.gen(function* () {
+      const aiPm = yield* AiPmService.AiPmService;
+      const result = yield* aiPm.ideas();
+      expect(result.ideas).toEqual([{ ...sourceIdea, project: null }]);
+    }).pipe(Effect.provide(testLayer(() => Effect.succeed(output([sourceIdea]))))),
+  );
+
+  it.effect("sends idea text over stdin, never as arguments", () => {
+    const calls: ProcessRunner.ProcessRunInput[] = [];
+    const input = {
+      title: "--help",
+      summary: "--replace-links",
+      next: "Pick one",
+      threads: [{ id: "thread-1" }],
+      files: [],
+    };
+    return Effect.gen(function* () {
+      const aiPm = yield* AiPmService.AiPmService;
+      yield* aiPm.saveIdea(input, { mergeLinks: true });
+      yield* aiPm.saveIdea(input, { mergeLinks: false });
+      expect(calls.map((call) => call.args)).toEqual([
+        ["idea", "save", "--stdin", "--json"],
+        ["idea", "save", "--stdin", "--replace-links", "--json"],
+      ]);
+      expect(JSON.parse(calls[0]!.stdin!)).toEqual(input);
+    }).pipe(
+      Effect.provide(
+        testLayer((call) => {
+          calls.push(call);
+          return Effect.succeed(output(sourceIdea));
+        }),
+      ),
+    );
+  });
+
+  it.effect("sets, keeps, and clears the promoted project link", () => {
+    const calls: Array<ReadonlyArray<string>> = [];
+    return Effect.gen(function* () {
+      const aiPm = yield* AiPmService.AiPmService;
+      yield* aiPm.setIdeaStatus({ id: "idea", status: "promoted", projectId: "demo" });
+      yield* aiPm.setIdeaStatus({ id: "idea", status: "promoted", projectId: null });
+      const idea = yield* aiPm.setIdeaStatus({ id: "idea", status: "exploring" });
+      expect(idea.status).toBe("exploring");
+      expect(calls).toEqual([
+        ["idea", "status", "idea", "promoted", "--project", "demo", "--json"],
+        ["idea", "status", "idea", "promoted", "--project", "none", "--json"],
+        ["idea", "status", "idea", "exploring", "--json"],
+      ]);
+    }).pipe(
+      Effect.provide(
+        testLayer(({ args }) => {
+          calls.push(args);
+          return Effect.succeed(output({ ...sourceIdea, status: "exploring" }));
+        }),
+      ),
+    );
+  });
+
+  it.effect.each([
+    ['aipm: no idea "gone"', "idea_not_found"],
+    ['aipm: no project "gone"', "project_not_found"],
+    ["aipm: an idea needs a title", "write_failed"],
+  ] as const)("maps the write refusal %s without its text", ([stderr, reason]) =>
+    Effect.gen(function* () {
+      const aiPm = yield* AiPmService.AiPmService;
+      const error = yield* aiPm.setIdeaStatus({ id: "gone", status: "parked" }).pipe(Effect.flip);
+      expect(error.reason).toBe(reason);
+      expect(error.message).not.toContain("aipm:");
+    }).pipe(
+      Effect.provide(
+        testLayer(() =>
+          Effect.succeed({ ...output(null), stderr, code: ChildProcessSpawner.ExitCode(1) }),
+        ),
+      ),
+    ),
+  );
 });

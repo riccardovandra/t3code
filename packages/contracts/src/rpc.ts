@@ -1,4 +1,13 @@
-import { AiPmBriefInput, AiPmBriefResult, AiPmListResult, AiPmError } from "./aiPm.ts";
+import {
+  AiPmBriefInput,
+  AiPmBriefResult,
+  AiPmError,
+  AiPmIdea,
+  AiPmIdeasResult,
+  AiPmListResult,
+  AiPmSaveIdeaInput,
+  AiPmSetIdeaStatusInput,
+} from "./aiPm.ts";
 import {
   DocCommentCreateInput,
   DocCommentDeleteInput,
@@ -515,6 +524,9 @@ export const WS_METHODS = {
 
   aiPmList: "aiPm.list",
   aiPmBrief: "aiPm.brief",
+  aiPmIdeas: "aiPm.ideas",
+  aiPmSaveIdea: "aiPm.saveIdea",
+  aiPmSetIdeaStatus: "aiPm.setIdeaStatus",
   docsListComments: "docs.listComments",
   docsCreateComment: "docs.createComment",
   docsReplyComment: "docs.replyComment",
@@ -1785,6 +1797,21 @@ const WsAiPmBriefRpc = Rpc.make(WS_METHODS.aiPmBrief, {
   success: AiPmBriefResult,
   error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
 });
+const WsAiPmIdeasRpc = Rpc.make(WS_METHODS.aiPmIdeas, {
+  payload: Schema.Struct({}),
+  success: AiPmIdeasResult,
+  error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
+});
+const WsAiPmSaveIdeaRpc = Rpc.make(WS_METHODS.aiPmSaveIdea, {
+  payload: AiPmSaveIdeaInput,
+  success: AiPmIdea,
+  error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
+});
+const WsAiPmSetIdeaStatusRpc = Rpc.make(WS_METHODS.aiPmSetIdeaStatus, {
+  payload: AiPmSetIdeaStatusInput,
+  success: AiPmIdea,
+  error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
+});
 
 const WsDocsListCommentsRpc = Rpc.make(WS_METHODS.docsListComments, {
   payload: DocCommentsListInput,
@@ -1910,6 +1937,9 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 export const WsRpcGroup = RpcGroup.make(
   WsAiPmListRpc,
   WsAiPmBriefRpc,
+  WsAiPmIdeasRpc,
+  WsAiPmSaveIdeaRpc,
+  WsAiPmSetIdeaStatusRpc,
   WsDocsListCommentsRpc,
   WsDocsCreateCommentRpc,
   WsDocsReplyCommentRpc,

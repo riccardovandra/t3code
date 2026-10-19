@@ -112,6 +112,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetBackgroundPolicy]: AuthOrchestrationReadScope,
   [WS_METHODS.aiPmList]: AuthOrchestrationReadScope,
   [WS_METHODS.aiPmBrief]: AuthOrchestrationReadScope,
+  [WS_METHODS.aiPmIdeas]: AuthOrchestrationReadScope,
   [WS_METHODS.docsListComments]: AuthOrchestrationReadScope,
   [WS_METHODS.docsCreateComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsReplyComment]: AuthOrchestrationOperateScope,

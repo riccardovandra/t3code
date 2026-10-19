@@ -32,6 +32,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useNewProject } from "../../hooks/useNewProject";
 import { groupAiPmProjects, type AiPmScope, type AiPmThreadTask } from "./aiPmBoard";
 import { useAiPmUpProject, useStartAiPmThread } from "./useAiPmUpProject";
+import { AiPmIdeas } from "./AiPmIdeas";
 
 export function AiPmPage({
   projectId,
@@ -54,7 +55,7 @@ export function AiPmPage({
       <WorkspacePageHeader electron={isElectron} className="border-b border-border">
         <ListChecksIcon className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">AI PM</span>
-        <span className="ml-auto text-xs text-muted-foreground">Project overview</span>
+        <span className="ml-auto text-xs text-muted-foreground">Projects and ideas</span>
       </WorkspacePageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <WorkspacePageContainer width="wide">
@@ -160,7 +161,7 @@ export function AiPmEnvironment({
               type="search"
               size="compact"
               aria-label="Search projects"
-              placeholder="Filter projects or clients"
+              placeholder="Filter projects, clients or ideas"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
@@ -230,9 +231,12 @@ export function AiPmEnvironment({
                 description="It may have closed. Choose another project."
               />
             ) : (
-              <p className="hidden py-8 text-center text-sm text-muted-foreground @2xl/ai-pm:block">
-                Choose a project to see its next actions and plan.
-              </p>
+              <AiPmIdeas
+                environmentId={environmentId}
+                filter={filter}
+                projects={projects}
+                onSelectProject={onSelectProject}
+              />
             )}
           </div>
         </div>

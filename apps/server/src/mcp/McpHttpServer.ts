@@ -73,6 +73,10 @@ import {
 import * as DocsHandlers from "./toolkits/docs/handlers.ts";
 import { DocsToolkit } from "./toolkits/docs/tools.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
+import * as AiPmService from "../aiPm/AiPmService.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as AipmHandlers from "./toolkits/aipm/handlers.ts";
+import { AipmToolkit } from "./toolkits/aipm/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
@@ -980,6 +984,10 @@ export const layerDocsToolkit = toolkitRegistration(DocsToolkit, DocsHandlers.la
   Layer.provide(WorkspaceDocs.layer),
 );
 
+export const layerAipmToolkit = toolkitRegistration(AipmToolkit, AipmHandlers.layer).pipe(
+  Layer.provide(AiPmService.layer.pipe(Layer.provide(ProcessRunner.layer))),
+);
+
 export const layerHtmlToolkit = Layer.mergeAll(
   toolkitRegistration(HtmlRenderToolkit, HtmlHandlers.layerRender),
   imageToolRegistration(registerHtmlPreview(), HtmlHandlers.layerPreview),
@@ -1070,4 +1078,5 @@ export const layer = Layer.mergeAll(
   layerDeviceToolkit,
   layerHtmlToolkit,
   layerDocsToolkit,
+  layerAipmToolkit,
 ).pipe(Layer.provideMerge(layerMcpTransport));
