@@ -1,6 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the fake upstream is a plain Node HTTP server.
 import * as NodeHttp from "node:http";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- reads the fake upstream's bound port.
 import type * as NodeNet from "node:net";
 
 import { NodeHttpServer } from "@effect/platform-node";

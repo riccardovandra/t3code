@@ -2,7 +2,6 @@
 import * as NodeCrypto from "node:crypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the fake authorization server is a plain Node HTTP server.
 import * as NodeHttp from "node:http";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- reads the fake server's bound port.
 import type * as NodeNet from "node:net";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
