@@ -1105,6 +1105,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-tasks:live",
       tag: WS_METHODS.scheduledTasksSubscribe,
     }),
+    mcpServersLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:mcp-servers:live",
+      tag: WS_METHODS.mcpServersSubscribe,
+    }),
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan.
     usageSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1349,6 +1353,36 @@ export function createServerEnvironmentAtoms<R, E>(
     rotateScheduledTaskWebhookToken: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:rotate-webhook-token",
       tag: WS_METHODS.scheduledTasksRotateWebhookToken,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    upsertMcpServer: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:mcp-server:upsert",
+      tag: WS_METHODS.mcpServersUpsert,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    setMcpServerEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:mcp-server:set-enabled",
+      tag: WS_METHODS.mcpServersSetEnabled,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    removeMcpServer: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:mcp-server:remove",
+      tag: WS_METHODS.mcpServersRemove,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    // Off the config lane: discovery and client registration wait on the
+    // server's authorization server, which must not stall settings edits.
+    startMcpServerSignIn: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:mcp-server:start-sign-in",
+      tag: WS_METHODS.mcpServersStartSignIn,
+    }),
+    signOutMcpServer: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:mcp-server:sign-out",
+      tag: WS_METHODS.mcpServersSignOut,
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),

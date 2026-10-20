@@ -75,6 +75,7 @@ import {
   MoonIcon,
   PaletteIcon,
   RotateCcwIcon,
+  PlugIcon,
   SettingsIcon,
   SquarePenIcon,
   SunIcon,
@@ -2059,6 +2060,17 @@ function OpenCommandPaletteDialog(props: {
     shortcutCommand: "usage.open",
     run: async () => {
       await navigate({ to: "/usage" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:add-mcp-server",
+    searchTerms: ["add mcp server", "mcp", "model context protocol", "connector", "tools"],
+    title: "Add MCP server",
+    icon: <PlugIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/settings/mcp-servers", search: { add: true } });
     },
   });
 

@@ -7,6 +7,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -179,6 +181,42 @@ it.layer(NodeServices.layer)("McpServerRegistry", (it) => {
         assert.deepStrictEqual(oauth.status, { state: "needs-sign-in" });
         const disabled = yield* registry.setEnabled({ id: oauth.id, enabled: false });
         assert.deepStrictEqual(disabled.status, { state: "disabled" });
+      }).pipe(Effect.provide(layerDependencies)),
+    ),
+  );
+
+  it.effect("pushes the list on config and status changes, once per status", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* startRegistry;
+        const updates = yield* Queue.unbounded<ReadonlyArray<string>>();
+        yield* registry.subscribeList.pipe(
+          Stream.runForEach(({ servers }) =>
+            Queue.offer(
+              updates,
+              servers.map((server) => `${server.name}:${server.status.state}`),
+            ),
+          ),
+          Effect.forkScoped,
+        );
+        assert.deepStrictEqual(yield* Queue.take(updates), []);
+
+        const server = yield* registry.upsert({
+          name: "notion",
+          transport: { type: "http", url: "https://mcp.example.test/mcp" },
+        });
+        assert.deepStrictEqual(yield* Queue.take(updates), ["notion:idle"]);
+
+        yield* registry.reportStatus(server.id, { state: "connected" });
+        assert.deepStrictEqual(yield* Queue.take(updates), ["notion:connected"]);
+
+        // A repeated status is not news; the next push is the error.
+        yield* registry.reportStatus(server.id, { state: "connected" });
+        yield* registry.reportStatus(server.id, { state: "error", message: "down" });
+        assert.deepStrictEqual(yield* Queue.take(updates), ["notion:error"]);
+
+        yield* registry.remove({ id: server.id });
+        assert.deepStrictEqual(yield* Queue.take(updates), []);
       }).pipe(Effect.provide(layerDependencies)),
     ),
   );

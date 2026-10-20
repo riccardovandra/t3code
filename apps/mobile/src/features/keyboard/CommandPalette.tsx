@@ -239,6 +239,17 @@ export function CommandPalette(props: {
           }),
       },
       {
+        key: "mcpServers",
+        kind: "action",
+        title: "MCP servers",
+        searchTerms: ["mcp", "connectors", "tools", "sign in"],
+        run: () =>
+          navigation.navigate("SettingsSheet", {
+            screen: "SettingsContent",
+            params: { screen: "SettingsMcpServers" },
+          }),
+      },
+      {
         key: "usage",
         kind: "action",
         title: "Usage",

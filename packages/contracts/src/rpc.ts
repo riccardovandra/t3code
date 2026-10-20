@@ -554,6 +554,7 @@ export const WS_METHODS = {
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
   mcpServersList: "mcpServers.list",
+  mcpServersSubscribe: "mcpServers.subscribe",
   mcpServersUpsert: "mcpServers.upsert",
   mcpServersRemove: "mcpServers.remove",
   mcpServersSetEnabled: "mcpServers.setEnabled",
@@ -1861,6 +1862,12 @@ const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   success: McpServerListResult,
   error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
 });
+const WsMcpServersSubscribeRpc = Rpc.make(WS_METHODS.mcpServersSubscribe, {
+  payload: Schema.Struct({}),
+  success: McpServerListResult,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+  stream: true,
+});
 const WsMcpServersUpsertRpc = Rpc.make(WS_METHODS.mcpServersUpsert, {
   payload: McpServerUpsertInput,
   success: McpServerEntry,
@@ -2056,6 +2063,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsMcpServersListRpc,
+  WsMcpServersSubscribeRpc,
   WsMcpServersUpsertRpc,
   WsMcpServersRemoveRpc,
   WsMcpServersSetEnabledRpc,

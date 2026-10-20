@@ -556,6 +556,7 @@ const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
  */
 const MCP_SERVER_RPC_METHODS = [
   WS_METHODS.mcpServersList,
+  WS_METHODS.mcpServersSubscribe,
   WS_METHODS.mcpServersUpsert,
   WS_METHODS.mcpServersRemove,
   WS_METHODS.mcpServersSetEnabled,
@@ -1187,6 +1188,7 @@ const layerMcpServersRpc = (
 ) =>
   Layer.mergeAll(
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersList, () => mcpServers.list),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersSubscribe, () => mcpServers.subscribeList),
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersUpsert, (input) =>
       mcpServers
         .upsert(input)
