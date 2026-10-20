@@ -89,6 +89,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.mcpServersUpsert]: "server",
   [WS_METHODS.mcpServersRemove]: "server",
   [WS_METHODS.mcpServersSetEnabled]: "server",
+  [WS_METHODS.mcpServersStartSignIn]: "server",
+  [WS_METHODS.mcpServersSignOut]: "server",
   [WS_METHODS.aiPmList]: "workspace",
   [WS_METHODS.aiPmBrief]: "workspace",
   [WS_METHODS.aiPmIdeas]: "workspace",

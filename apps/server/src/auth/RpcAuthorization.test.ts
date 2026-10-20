@@ -52,6 +52,8 @@ describe("RPC authorization scopes", () => {
       WS_METHODS.mcpServersUpsert,
       WS_METHODS.mcpServersRemove,
       WS_METHODS.mcpServersSetEnabled,
+      WS_METHODS.mcpServersStartSignIn,
+      WS_METHODS.mcpServersSignOut,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
     }

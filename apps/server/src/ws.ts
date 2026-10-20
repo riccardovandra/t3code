@@ -1,4 +1,5 @@
 import * as AiPmService from "./aiPm/AiPmService.ts";
+import * as McpServerOAuth from "./mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
@@ -558,6 +559,8 @@ const MCP_SERVER_RPC_METHODS = [
   WS_METHODS.mcpServersUpsert,
   WS_METHODS.mcpServersRemove,
   WS_METHODS.mcpServersSetEnabled,
+  WS_METHODS.mcpServersStartSignIn,
+  WS_METHODS.mcpServersSignOut,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...MCP_SERVER_RPC_METHODS);
@@ -1177,7 +1180,10 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 
 const layerMcpServersRpc = (
   mcpServers: McpServerRegistry.McpServerRegistry["Service"],
+  mcpServerOAuth: McpServerOAuth.McpServerOAuth["Service"],
   secretRequests: SecretRequests.SecretRequests["Service"],
+  /** The address this client reached the server on, where sign-in returns. */
+  callbackOrigin: string,
 ) =>
   Layer.mergeAll(
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersList, () => mcpServers.list),
@@ -1191,6 +1197,12 @@ const layerMcpServersRpc = (
     ),
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersSetEnabled, (input) =>
       mcpServers.setEnabled(input),
+    ),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersStartSignIn, (input) =>
+      mcpServerOAuth.startSignIn({ id: input.id, callbackOrigin }),
+    ),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersSignOut, (input) =>
+      mcpServerOAuth.signOut(input),
     ),
   );
 
@@ -3141,6 +3153,7 @@ export const layer = Layer.unwrap(
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const mcpServers = yield* McpServerRegistry.McpServerRegistry;
+    const mcpServerOAuth = yield* McpServerOAuth.McpServerOAuth;
     const secretRequests = yield* SecretRequests.SecretRequests;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
@@ -3214,7 +3227,14 @@ export const layer = Layer.unwrap(
               previewAutomationBroker,
               serverBrowser,
             ).pipe(
-              Layer.merge(layerMcpServersRpc(mcpServers, secretRequests)),
+              Layer.merge(
+                layerMcpServersRpc(
+                  mcpServers,
+                  mcpServerOAuth,
+                  secretRequests,
+                  requestUrl.value.origin,
+                ),
+              ),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

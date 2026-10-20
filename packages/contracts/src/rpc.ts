@@ -376,6 +376,9 @@ import {
   McpServerListResult,
   McpServerRemoveInput,
   McpServerSetEnabledInput,
+  McpServerSignInInput,
+  McpServerSignInResult,
+  McpServerSignOutInput,
   McpServerUpsertInput,
 } from "./mcpServers.ts";
 import {
@@ -554,6 +557,8 @@ export const WS_METHODS = {
   mcpServersUpsert: "mcpServers.upsert",
   mcpServersRemove: "mcpServers.remove",
   mcpServersSetEnabled: "mcpServers.setEnabled",
+  mcpServersStartSignIn: "mcpServers.startSignIn",
+  mcpServersSignOut: "mcpServers.signOut",
 
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
@@ -1872,6 +1877,17 @@ const WsMcpServersSetEnabledRpc = Rpc.make(WS_METHODS.mcpServersSetEnabled, {
   error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
 });
 
+const WsMcpServersStartSignInRpc = Rpc.make(WS_METHODS.mcpServersStartSignIn, {
+  payload: McpServerSignInInput,
+  success: McpServerSignInResult,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+const WsMcpServersSignOutRpc = Rpc.make(WS_METHODS.mcpServersSignOut, {
+  payload: McpServerSignOutInput,
+  success: McpServerEntry,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2043,6 +2059,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsMcpServersUpsertRpc,
   WsMcpServersRemoveRpc,
   WsMcpServersSetEnabledRpc,
+  WsMcpServersStartSignInRpc,
+  WsMcpServersSignOutRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,

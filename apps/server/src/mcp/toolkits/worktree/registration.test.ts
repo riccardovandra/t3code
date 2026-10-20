@@ -32,6 +32,7 @@ import * as PreviewManager from "../../../preview/Manager.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
+import * as McpServerOAuth from "../../../mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "../../../mcpHub/McpServerRegistry.ts";
 import * as McpUpstreamClients from "../../../mcpHub/McpUpstreamClients.ts";
 import * as McpSessionRegistry from "../../McpSessionRegistry.ts";
@@ -52,6 +53,7 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(McpServerRegistry.McpServerRegistry)({}),
+  Layer.mock(McpServerOAuth.McpServerOAuth)({}),
   Layer.mock(McpUpstreamClients.McpUpstreamClients)({}),
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),

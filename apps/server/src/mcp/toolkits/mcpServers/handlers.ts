@@ -1,6 +1,8 @@
 import { type McpServerError, OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import * as ServerConfig from "../../../config.ts";
+import * as McpServerOAuth from "../../../mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "../../../mcpHub/McpServerRegistry.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { McpServersToolkit } from "./tools.ts";
@@ -10,7 +12,8 @@ const toFailure = (error: McpServerError) =>
     code:
       error.reason === "read_failed" ||
       error.reason === "write_failed" ||
-      error.reason === "secret_failed"
+      error.reason === "secret_failed" ||
+      error.reason === "sign_in_failed"
         ? "orchestration_error"
         : "invalid_request",
     message: error.message,
@@ -41,6 +44,26 @@ const handlers = {
   mcp_server_set_enabled: McpToolAccess.writesEnvironment((input) =>
     Effect.flatMap(McpServerRegistry.McpServerRegistry, (registry) =>
       registry.setEnabled(input).pipe(
+        Effect.map((server) => ({ server })),
+        Effect.mapError(toFailure),
+      ),
+    ),
+  ),
+  mcp_server_start_sign_in: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      const oauth = yield* McpServerOAuth.McpServerOAuth;
+      const { port } = yield* ServerConfig.ServerConfig;
+      return yield* oauth
+        .startSignIn({
+          id: input.id,
+          callbackOrigin: input.callbackOrigin ?? `http://127.0.0.1:${port}`,
+        })
+        .pipe(Effect.mapError(toFailure));
+    }),
+  ),
+  mcp_server_sign_out: McpToolAccess.writesEnvironment((input) =>
+    Effect.flatMap(McpServerOAuth.McpServerOAuth, (oauth) =>
+      oauth.signOut(input).pipe(
         Effect.map((server) => ({ server })),
         Effect.mapError(toFailure),
       ),
