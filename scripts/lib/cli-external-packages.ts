@@ -54,8 +54,13 @@ export function isRuntimeExternalCliDependency(id: string): boolean {
  * `alwaysBundle`. `alwaysBundle` only forces packages IN — returning false from
  * it means "no opinion", and the default then applies: a declared dependency
  * stays external, but a transitive one gets bundled.
+ *
+ * zod ships on disk only for Cursor's external SDK. Bundled code that imports
+ * it (the MCP SDK does) gets its own inlined copy, because the single
+ * executable cannot load a file-backed ESM import.
  */
 export function isExternalCliDependency(id: string): boolean {
+  if (id === "zod" || id.startsWith("zod/")) return false;
   return isRuntimeExternalCliDependency(id);
 }
 
