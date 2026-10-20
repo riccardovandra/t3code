@@ -34,7 +34,7 @@ const startRegistry = Layer.build(Layer.fresh(McpServerRegistry.layer)).pipe(
   Effect.map((context) => Context.get(context, McpServerRegistry.McpServerRegistry)),
 );
 
-const reasonOf = <A>(effect: Effect.Effect<A, { readonly reason: string }>) =>
+const reasonOf = <A, R>(effect: Effect.Effect<A, { readonly reason: string }, R>) =>
   effect.pipe(
     Effect.flip,
     Effect.map((error) => error.reason),

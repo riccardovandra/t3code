@@ -11,6 +11,7 @@ import { Tool, Toolkit } from "effect/ai";
 
 import * as McpServerRegistry from "../../../mcpHub/McpServerRegistry.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as SecretRequests from "../../../secrets/SecretRequests.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const shared = {
@@ -20,6 +21,7 @@ const shared = {
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
     McpServerRegistry.McpServerRegistry,
+    SecretRequests.SecretRequests,
   ],
 };
 

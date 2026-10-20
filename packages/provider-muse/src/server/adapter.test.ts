@@ -400,6 +400,36 @@ describe("MuseAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
+  it.effect("connects configured MCP servers with the thread credential", () =>
+    Effect.gen(function* () {
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("test-environment"),
+        threadId: THREAD_ID,
+        providerSessionId: "test-session",
+        providerInstanceId: INSTANCE_ID,
+        endpoint: "http://127.0.0.1:43210/mcp",
+        authorizationHeader: "Bearer thread-scoped-test-token",
+        browserToolsAvailable: true,
+        upstreamServers: [
+          { name: "notion", endpoint: "http://127.0.0.1:43210/mcp/upstream/server-notion" },
+        ],
+      });
+      const fake = yield* makeFakeMuse();
+      fake.host.initializeResult.grantedCapabilities.push("sessionMcp");
+      yield* makeHarness(fake, INSTANCE_ID, undefined);
+      const call = yield* fake.takeCall("session/start");
+      assert.deepStrictEqual(
+        (call.params.config as { mcpServers: Record<string, unknown> }).mcpServers.notion,
+        {
+          transport: "streamableHttp",
+          mode: "optional",
+          url: "http://127.0.0.1:43210/mcp/upstream/server-notion",
+          headers: { Authorization: "Bearer thread-scoped-test-token" },
+        },
+      );
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
   it.effect("selects the runtime mode's permission profile on native start and resume", () =>
     Effect.gen(function* () {
       for (const [runtimeMode, profile, approvalMode] of [

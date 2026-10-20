@@ -541,31 +541,48 @@ interface AcpMcpContext {
   readonly authorization?: string;
 }
 
-function acpMcpContext(
+function acpMcpBridgeServer(
+  self: SelfInvocation,
+  name: string,
+  endpoint: string,
+  authorization: string,
+): EffectAcpSchema.McpServer {
+  return {
+    name,
+    command: self.command,
+    args: [...selfInvocationArgs(self, ["acp-mcp-bridge"])],
+    env: [
+      { name: "ELECTRON_RUN_AS_NODE", value: "1" },
+      { name: "T3_ACP_MCP_ENDPOINT", value: endpoint },
+      { name: "T3_ACP_MCP_AUTHORIZATION", value: authorization },
+    ],
+  };
+}
+
+export function acpMcpContext(
   session: McpProviderSession.McpProviderSessionConfig | undefined,
   self: SelfInvocation,
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): AcpMcpContext {
   if (session === undefined) {
     return { servers: [], acpServers: [] };
   }
+  // The MCP-over-ACP bridge reaches only T3's own endpoint, so configured
+  // servers use the stdio bridge in both lists; stdio is the transport every
+  // ACP agent must support.
+  const upstreamServers = McpProviderSession.upstreamServersFor(session, runtimePolicy).map(
+    (server) => acpMcpBridgeServer(self, server.name, server.endpoint, session.authorizationHeader),
+  );
   // Agents that advertise optional http support still routinely fail to wire
   // injected http servers through to their backend (codex-acp 1.2.0 and pi-acp
   // both drop them), so every ACP session gets the `t3 acp-mcp-bridge` stdio
   // server, which forwards JSON-RPC to T3's authenticated MCP endpoint.
   return {
     servers: [
-      {
-        name: "t3-code",
-        command: self.command,
-        args: [...selfInvocationArgs(self, ["acp-mcp-bridge"])],
-        env: [
-          { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-          { name: "T3_ACP_MCP_ENDPOINT", value: session.endpoint },
-          { name: "T3_ACP_MCP_AUTHORIZATION", value: session.authorizationHeader },
-        ],
-      },
+      acpMcpBridgeServer(self, "t3-code", session.endpoint, session.authorizationHeader),
+      ...upstreamServers,
     ],
-    acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
+    acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }, ...upstreamServers],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
     processEnvironment: {
@@ -1287,10 +1304,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
-  const readMcpContext = (threadId: ThreadId | null) =>
+  const readThreadMcpContext = (
+    threadId: ThreadId | null,
+    runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+  ) =>
     threadId === null
-      ? Effect.succeed(acpMcpContext(undefined, self))
-      : mcpSessions.read(threadId).pipe(Effect.map((session) => acpMcpContext(session, self)));
+      ? Effect.succeed(acpMcpContext(undefined, self, runtimePolicy))
+      : mcpSessions
+          .read(threadId)
+          .pipe(Effect.map((session) => acpMcpContext(session, self, runtimePolicy)));
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
   const postSettleContinuationEnabled =
@@ -1304,6 +1326,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
     openSession: Effect.fn("AcpAdapterV2.openSession")(
       function* (input: ProviderAdapter.ProviderAdapterV2OpenSessionInput) {
         const sessionScope = yield* Effect.scope;
+        // Every runtime this session spawns carries the MCP servers it opened with.
+        const readMcpContext = (threadId: ThreadId | null) =>
+          readThreadMcpContext(threadId, input.runtimePolicy);
         let itemIdentityVersion: 2 | undefined =
           input.initialProviderItemIdentityVersion ??
           (input.initialNativeThreadId === undefined ? 2 : undefined);

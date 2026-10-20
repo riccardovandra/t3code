@@ -158,13 +158,12 @@ const layerSessions = Layer.mock(McpSessionRegistry.McpSessionRegistry)({
     ),
 });
 
+const layerSecretRequests = Layer.mock(SecretRequests.SecretRequests)({
+  consume: () => Effect.fail(new SecretRequestError({ reason: "ref_unavailable" })),
+});
+
 const layerHub = McpUpstreamClients.layer.pipe(
   Layer.provideMerge(McpServerRegistry.layer),
-  Layer.provide(
-    Layer.mock(SecretRequests.SecretRequests)({
-      consume: () => Effect.fail(new SecretRequestError({ reason: "ref_unavailable" })),
-    }),
-  ),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-upstream-test-" })),
 );
@@ -209,7 +208,7 @@ const setup = Effect.gen(function* () {
   return { upstream, registry, post, call };
 });
 
-it.layer(NodeServices.layer)("MCP upstream route", (it) => {
+it.layer(Layer.merge(NodeServices.layer, layerSecretRequests))("MCP upstream route", (it) => {
   it.effect("forwards tools, resources, prompts and upstream errors unchanged", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -80,6 +80,8 @@ const durable = { durable: { aggregateID: SESSION, seq: 1, version: 1 } };
 const mcpRules = [
   { action: "t3-code-*", resource: "*", effect: "deny" },
   { action: "t3-code-thread_opencode2-adapter_*", resource: "*", effect: "allow" },
+  { action: "t3-mcp-*", resource: "*", effect: "deny" },
+  { action: "t3-mcp-c26f2f1f-*", resource: "*", effect: "allow" },
 ];
 const t3Rules = [{ action: "*", resource: "*", effect: "allow" }, ...mcpRules];
 const TITLE = "Prime check";
@@ -3244,6 +3246,64 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "registers configured MCP servers under the thread's prefix and removes them on unload",
+    () =>
+      Effect.gen(function* () {
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+          threadId,
+          providerSessionId: "mcp:opencode2-adapter",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:3773/mcp",
+          authorizationHeader: "Bearer thread-credential",
+          browserToolsAvailable: false,
+          upstreamServers: [
+            { name: "notion", endpoint: "http://127.0.0.1:3773/mcp/upstream/server-notion" },
+          ],
+        });
+        yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+        const server = "t3-code-thread_opencode2-adapter";
+        const upstream = "t3-mcp-c26f2f1f-notion";
+        const { runtime, thread } = yield* resumed([
+          out("mcp.add", {
+            server,
+            "location[directory]": WORK,
+            config: {
+              type: "remote",
+              url: "http://127.0.0.1:3773/mcp",
+              headers: { Authorization: "Bearer thread-credential" },
+              oauth: false,
+            },
+          }),
+          reply("mcp.add", null),
+          out("mcp.add", {
+            server: upstream,
+            "location[directory]": WORK,
+            config: {
+              type: "remote",
+              url: "http://127.0.0.1:3773/mcp/upstream/server-notion",
+              headers: { Authorization: "Bearer thread-credential" },
+              oauth: false,
+            },
+          }),
+          reply("mcp.add", null),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("mcp.remove", { server, "location[directory]": WORK }),
+          reply("mcp.remove", null),
+          out("mcp.remove", { server: upstream, "location[directory]": WORK }),
+          reply("mcp.remove", null),
+        ]);
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        yield* runtime.unloadThread!({ providerThread: thread });
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("re-registers T3 MCP each turn and drops its instructions when adding fails", () =>
     Effect.gen(function* () {
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -3325,6 +3385,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
               { action: "*", resource: "*", effect: "allow" },
               { action: "t3-code-*", resource: "*", effect: "deny" },
               { action: `${server}_*`, resource: "*", effect: "allow" },
+              { action: "t3-mcp-*", resource: "*", effect: "deny" },
+              { action: "t3-mcp-aa73fa1e-*", resource: "*", effect: "allow" },
             ],
           }),
         ),
@@ -4314,6 +4376,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             { action: "*", resource: "*", effect: "allow" },
             { action: "t3-code-*", resource: "*", effect: "deny" },
             { action: "t3-code-thread_opencode2-adapter_fork_*", resource: "*", effect: "allow" },
+            { action: "t3-mcp-*", resource: "*", effect: "deny" },
+            { action: "t3-mcp-7c81f4ba-*", resource: "*", effect: "allow" },
           ],
         }),
         reply("session.update", null),

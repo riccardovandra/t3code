@@ -1168,7 +1168,12 @@ describe("CursorAdapterV2", () => {
       browserToolsAvailable: true,
     };
 
-    assert.deepEqual(cursorMcpServers(mcpSession), {
+    const runtimePolicy = {
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: "/workspace",
+    } as const;
+    assert.deepEqual(cursorMcpServers(mcpSession, runtimePolicy), {
       "t3-code": {
         type: "http",
         url: "http://127.0.0.1:43123/mcp",
@@ -1184,19 +1189,48 @@ describe("CursorAdapterV2", () => {
         instanceId: ProviderInstanceId.make("cursor"),
         model: "composer-2.5",
       },
-      runtimePolicy: {
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: "/workspace",
-      },
+      runtimePolicy,
       threadId,
       mcpSession,
     });
-    assert.deepEqual(options.mcpServers, cursorMcpServers(mcpSession));
+    assert.deepEqual(options.mcpServers, cursorMcpServers(mcpSession, runtimePolicy));
 
     const logged = JSON.stringify(CursorAgentSdk.loggedCursorAgentOptions(options));
     assert.notInclude(logged, "secret-cursor-api-key");
     assert.notInclude(logged, "secret-cursor-mcp-token");
+  });
+
+  it("adds configured MCP servers with the thread credential, except in a read-only sandbox", () => {
+    const mcpSession = {
+      environmentId: EnvironmentId.make("environment-cursor-upstream"),
+      threadId: ThreadId.make("thread-cursor-upstream"),
+      providerSessionId: "mcp-session-cursor-upstream",
+      providerInstanceId: ProviderInstanceId.make("cursor"),
+      endpoint: "http://127.0.0.1:43123/mcp",
+      authorizationHeader: "Bearer thread-token",
+      browserToolsAvailable: true,
+      upstreamServers: [
+        { name: "notion", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+      ],
+    };
+    const runtimePolicy = {
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: null,
+    } as const;
+
+    assert.deepEqual(cursorMcpServers(mcpSession, runtimePolicy)?.notion, {
+      type: "http",
+      url: "http://127.0.0.1:43123/mcp/upstream/server-notion",
+      headers: { Authorization: "Bearer thread-token" },
+    });
+    assert.deepEqual(
+      Object.keys(
+        cursorMcpServers(mcpSession, { ...runtimePolicy, sandboxPolicy: { type: "readOnly" } }) ??
+          {},
+      ),
+      ["t3-code"],
+    );
   });
 
   it("recognizes direct and SDK-wrapped abort failures as cancellation", () => {

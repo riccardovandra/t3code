@@ -68,7 +68,7 @@ export class McpServerRegistry extends Context.Service<
     readonly upsert: (
       input: McpServerUpsertInput,
       options?: { readonly projectId?: ProjectId },
-    ) => Effect.Effect<McpServerEntry, McpServerError>;
+    ) => Effect.Effect<McpServerEntry, McpServerError, SecretRequests.SecretRequests>;
     readonly remove: (input: McpServerRemoveInput) => Effect.Effect<void, McpServerError>;
     readonly setEnabled: (
       input: McpServerSetEnabledInput,
@@ -87,7 +87,6 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const secretRequests = yield* SecretRequests.SecretRequests;
   const { settingsPath } = yield* ServerConfig.ServerConfig;
   const filePath = path.join(path.dirname(settingsPath), "mcp-servers.json");
 
@@ -157,6 +156,10 @@ const make = Effect.gen(function* () {
         if (projectId === undefined) {
           return yield* new McpServerError({ reason: "secret_ref_unscoped" });
         }
+        // Required per call rather than at construction: SecretRequests sits above
+        // the provider sessions that read this registry, so a construction-time
+        // dependency would be circular.
+        const secretRequests = yield* SecretRequests.SecretRequests;
         return yield* secretRequests
           .consume({ ref: input.secretRef, projectId })
           .pipe(

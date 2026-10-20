@@ -1322,6 +1322,17 @@ export function codexThreadRuntimeParams(input: {
                   Authorization: mcpSession.authorizationHeader,
                 },
               },
+              ...Object.fromEntries(
+                McpProviderSession.upstreamServersFor(mcpSession, input.runtimePolicy).map(
+                  (server) => [
+                    server.name,
+                    {
+                      url: server.endpoint,
+                      http_headers: { Authorization: mcpSession.authorizationHeader },
+                    },
+                  ],
+                ),
+              ),
             },
           }),
     },

@@ -204,18 +204,20 @@ export function cursorRuntimeAgentPolicy(
 
 export function cursorMcpServers(
   session: McpProviderSession.McpProviderSessionConfig | undefined,
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): Record<string, McpServerConfig> | undefined {
   if (session === undefined) {
     return undefined;
   }
+  const headers = { Authorization: session.authorizationHeader };
   return {
-    "t3-code": {
-      type: "http",
-      url: session.endpoint,
-      headers: {
-        Authorization: session.authorizationHeader,
-      },
-    },
+    "t3-code": { type: "http", url: session.endpoint, headers },
+    ...Object.fromEntries(
+      McpProviderSession.upstreamServersFor(session, runtimePolicy).map((server) => [
+        server.name,
+        { type: "http" as const, url: server.endpoint, headers },
+      ]),
+    ),
   };
 }
 
@@ -308,7 +310,7 @@ export function makeCursorAgentOptions(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
 }): AgentOptions {
   const policy = cursorRuntimeAgentPolicy(input.runtimePolicy);
-  const mcpServers = cursorMcpServers(input.mcpSession);
+  const mcpServers = cursorMcpServers(input.mcpSession, input.runtimePolicy);
   return {
     model: cursorSdkModelSelection(input.modelSelection),
     name: `T3 Code ${input.threadId}`,
@@ -2242,7 +2244,10 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               modelSelection: turnInput.modelSelection,
               runtimePolicy: turnInput.runtimePolicy,
             });
-            const mcpServers = cursorMcpServers(yield* mcpSessions.read(turnInput.threadId));
+            const mcpServers = cursorMcpServers(
+              yield* mcpSessions.read(turnInput.threadId),
+              turnInput.runtimePolicy,
+            );
             const message = yield* resolveUserMessage(turnInput, mcpServers);
             const pendingUpdates: Array<InteractionUpdate> = [];
             let context: ActiveCursorTurn | null = null;
