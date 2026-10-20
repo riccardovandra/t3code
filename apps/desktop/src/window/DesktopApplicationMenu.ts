@@ -74,7 +74,7 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
     yield* electronDialog.showMessageBox({
       type: "info",
       title: "You're up to date!",
-      message: `UP Orchestrator ${updateState.currentVersion} is currently the newest version available.`,
+      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
       buttons: ["OK"],
     });
   } else if (updateState.status === "error") {
@@ -263,6 +263,16 @@ export const make = Effect.gen(function* () {
             visible: false,
             click: zoomClick("in"),
           },
+          ...(environment.platform === "darwin"
+            ? [
+                {
+                  label: "Zoom In",
+                  accelerator: "CmdOrCtrl+Shift+=",
+                  visible: false,
+                  click: zoomClick("in"),
+                },
+              ]
+            : []),
           { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: zoomClick("out") },
           // The numeric keypad sends its own key codes, so the number-row
           // accelerators above never match it.

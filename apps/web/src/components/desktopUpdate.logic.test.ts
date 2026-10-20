@@ -6,6 +6,8 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDisabledReason,
+  getDesktopUpdateIdleTooltip,
   getDesktopUpdateInstallConfirmationMessage,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
@@ -303,7 +305,7 @@ describe("desktop update UI helpers", () => {
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.1",
       }),
-    ).toContain("Install update 1.1.1 and restart UP Orchestrator?");
+    ).toContain("Install update 1.1.1 and restart T3 Code?");
   });
 
   it("falls back to generic install confirmation copy when no version is available", () => {
@@ -312,7 +314,7 @@ describe("desktop update UI helpers", () => {
         availableVersion: null,
         downloadedVersion: null,
       }),
-    ).toContain("Install update and restart UP Orchestrator?");
+    ).toContain("Install update and restart T3 Code?");
   });
 
   it("keeps the same install confirmation copy across desktop platforms", () => {
@@ -322,7 +324,7 @@ describe("desktop update UI helpers", () => {
         downloadedVersion: "1.1.0",
       }),
     ).toBe(
-      "Install update 1.1.0 and restart UP Orchestrator?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
+      "Install update 1.1.0 and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
     );
   });
 });
@@ -389,5 +391,36 @@ describe("getDesktopUpdateButtonTooltip", () => {
     expect(getDesktopUpdateButtonTooltip({ ...baseState, status: "up-to-date" })).toBe(
       "Up to date",
     );
+  });
+});
+
+describe("disabled update reason", () => {
+  const disabledState: DesktopUpdateState = {
+    ...baseState,
+    enabled: false,
+    status: "disabled",
+    message: "Automatic updates are only available in packaged production builds.",
+  };
+
+  it("explains why checking is unavailable", () => {
+    expect(getDesktopUpdateDisabledReason(disabledState)).toBe(
+      "Automatic updates are only available in packaged production builds.",
+    );
+    expect(getDesktopUpdateIdleTooltip(disabledState)).toEqual({
+      title: "Updates unavailable",
+      detail: "Automatic updates are only available in packaged production builds.",
+    });
+    expect(getDesktopUpdateDisabledReason({ ...disabledState, message: null })).toBe(
+      "Automatic updates are not available in this build.",
+    );
+  });
+
+  it("keeps the check prompt when updates are available", () => {
+    expect(getDesktopUpdateDisabledReason(baseState)).toBeNull();
+    expect(getDesktopUpdateDisabledReason(null)).toBeNull();
+    expect(getDesktopUpdateIdleTooltip(baseState)).toEqual({
+      title: "Check for updates",
+      detail: null,
+    });
   });
 });

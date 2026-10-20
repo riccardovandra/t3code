@@ -255,7 +255,7 @@ describe("scoped settings writes", () => {
     const unsupported = [
       {
         label: server.label,
-        message: "This environment does not support this setting. Update UP Orchestrator on it.",
+        message: "This environment does not support this setting. Update T3 Code on it.",
       },
     ];
 
@@ -763,4 +763,60 @@ it("routes legacy model preference keys exclusively to the selected environment"
       patch,
     },
   ]);
+});
+
+describe("model selection patches at project scope", () => {
+  const codex = ProviderInstanceId.make("codex");
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const saved = {
+    instanceId: codex,
+    model: "gpt-5.6",
+    options: [{ id: "reasoningEffort", value: "high" }],
+  };
+  const customized = environment("Server", {
+    settings: {
+      projectSettingsOverrides: {
+        [projectId]: {
+          defaultModelSelection: saved,
+          sourceControlWriterModelSelection: saved,
+          reviewGuideModelSelection: saved,
+          textGenerationModelSelection: saved,
+        },
+      },
+    },
+  });
+
+  it("replaces old options when changing model selections", () => {
+    const plan = planScopedSettingsPatch(checkout, [customized], {
+      defaultModelSelection: { instanceId: claude, model: "claude-opus-4-8" },
+      sourceControlWriterModelSelection: { instanceId: codex, model: "gpt-5.6-mini" },
+      reviewGuideModelSelection: { instanceId: codex, model: "gpt-5.6-mini" },
+      textGenerationModelSelection: { instanceId: claude, model: "claude-sonnet-4-6" },
+    });
+    expect(plan.serverWrites[0]?.patch.projectSettingsOverrides?.[projectId]).toEqual({
+      defaultModelSelection: { instanceId: claude, model: "claude-opus-4-8" },
+      sourceControlWriterModelSelection: { instanceId: codex, model: "gpt-5.6-mini" },
+      reviewGuideModelSelection: { instanceId: codex, model: "gpt-5.6-mini" },
+      textGenerationModelSelection: { instanceId: claude, model: "claude-sonnet-4-6" },
+    });
+  });
+
+  it("completes partial text-generation selections without retaining old options", () => {
+    const modelPlan = planScopedSettingsPatch(checkout, [customized], {
+      textGenerationModelSelection: { model: "gpt-5.6-mini" },
+    });
+    expect(
+      modelPlan.serverWrites[0]?.patch.projectSettingsOverrides?.[projectId]
+        ?.textGenerationModelSelection,
+    ).toEqual({ instanceId: codex, model: "gpt-5.6-mini" });
+
+    const options = [{ id: "reasoningEffort", value: "low" }];
+    const optionsPlan = planScopedSettingsPatch(checkout, [customized], {
+      textGenerationModelSelection: { options },
+    });
+    expect(
+      optionsPlan.serverWrites[0]?.patch.projectSettingsOverrides?.[projectId]
+        ?.textGenerationModelSelection,
+    ).toEqual({ ...saved, options });
+  });
 });

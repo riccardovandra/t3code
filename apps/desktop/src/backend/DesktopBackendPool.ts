@@ -126,7 +126,7 @@ export const layer = Layer.effect(
           );
           yield* electronDialog.showErrorBox(
             "WSL backend is still unavailable",
-            `${reason}\n\nUP Orchestrator will use the Windows backend for this launch and retry WSL the next time the app starts.`,
+            `${reason}\n\nT3 Code will use the Windows backend for this launch and retry WSL the next time the app starts.`,
           );
           yield* appSettings.applyWslWindowsFallbackInMemory;
           return true;
@@ -137,7 +137,7 @@ export const layer = Layer.effect(
         });
         yield* electronDialog.showErrorBox(
           "WSL backend couldn't start",
-          `${reason}\n\nFalling back to the Windows backend so UP Orchestrator can open. Re-enable the WSL backend from Settings > Connections once the WSL distro is fixed.`,
+          `${reason}\n\nFalling back to the Windows backend so T3 Code can open. Re-enable the WSL backend from Settings > Connections once the WSL distro is fixed.`,
         );
         // Clearing wslBackendEnabled alone would leave a stale wslOnly:true that silently re-traps
         // the user in wsl-only mode the next time they enable WSL. If the persisted write fails,
@@ -180,7 +180,7 @@ export const layer = Layer.effect(
         electronDialog
           .showErrorBox(
             "This T3 home is unavailable",
-            "Another UP Orchestrator server, such as the background service, is using this data directory. Stop that server and reopen UP Orchestrator, or set a separate T3CODE_HOME and pair with the running server.",
+            "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });
@@ -249,61 +249,59 @@ export const layer = Layer.effect(
         ),
       );
 
-    const unregister: DesktopBackendPool["Service"]["unregister"] = (id) =>
-      Effect.gen(function* () {
-        if (id === DesktopBackendManager.PRIMARY_INSTANCE_ID) {
-          return yield* new DesktopBackendPoolCannotUnregisterPrimaryError();
-        }
-        const done = yield* Deferred.make<void>();
-        const action = yield* SynchronizedRef.modifyEffect(
-          instancesRef,
-          (
-            current,
-          ): Effect.Effect<
-            readonly [UnregisterAction, ReadonlyMap<BackendInstanceId, RegisteredInstance>]
-          > => {
-            const entry = current.get(id);
-            if (entry === undefined) {
-              return Effect.succeed([{ _tag: "Absent" } as const, current] as const);
-            }
-            if (entry._tag === "Closing") {
-              return Effect.succeed([
-                { _tag: "Wait", done: entry.done } as const,
-                current,
-              ] as const);
-            }
-            const next = new Map(current);
-            next.set(id, { _tag: "Closing", done });
-            return Effect.succeed([
-              { _tag: "Close", entry } as const,
-              next as ReadonlyMap<BackendInstanceId, RegisteredInstance>,
-            ] as const);
-          },
-        );
-
-        if (action._tag === "Absent") return;
-        if (action._tag === "Wait") {
-          yield* Deferred.await(action.done);
-          return;
-        }
-
-        const finish = SynchronizedRef.modifyEffect(instancesRef, (current) => {
-          const closing = current.get(id);
-          if (closing?._tag !== "Closing" || closing.done !== done) {
-            return Effect.succeed([undefined, current] as const);
+    const unregister: DesktopBackendPool["Service"]["unregister"] = Effect.fn(
+      "DesktopBackendPool.unregister",
+    )(function* (id) {
+      if (id === DesktopBackendManager.PRIMARY_INSTANCE_ID) {
+        return yield* new DesktopBackendPoolCannotUnregisterPrimaryError();
+      }
+      const done = yield* Deferred.make<void>();
+      const action = yield* SynchronizedRef.modifyEffect(
+        instancesRef,
+        (
+          current,
+        ): Effect.Effect<
+          readonly [UnregisterAction, ReadonlyMap<BackendInstanceId, RegisteredInstance>]
+        > => {
+          const entry = current.get(id);
+          if (entry === undefined) {
+            return Effect.succeed([{ _tag: "Absent" } as const, current] as const);
+          }
+          if (entry._tag === "Closing") {
+            return Effect.succeed([{ _tag: "Wait", done: entry.done } as const, current] as const);
           }
           const next = new Map(current);
-          next.delete(id);
+          next.set(id, { _tag: "Closing", done });
           return Effect.succeed([
-            undefined,
+            { _tag: "Close", entry } as const,
             next as ReadonlyMap<BackendInstanceId, RegisteredInstance>,
           ] as const);
-        }).pipe(Effect.andThen(Deferred.succeed(done, undefined)), Effect.asVoid);
-        yield* Option.match(action.entry.scope, {
-          onNone: () => Effect.void,
-          onSome: (scope) => Scope.close(scope, Exit.void).pipe(Effect.ignore),
-        }).pipe(Effect.ensuring(finish));
-      });
+        },
+      );
+
+      if (action._tag === "Absent") return;
+      if (action._tag === "Wait") {
+        yield* Deferred.await(action.done);
+        return;
+      }
+
+      const finish = SynchronizedRef.modifyEffect(instancesRef, (current) => {
+        const closing = current.get(id);
+        if (closing?._tag !== "Closing" || closing.done !== done) {
+          return Effect.succeed([undefined, current] as const);
+        }
+        const next = new Map(current);
+        next.delete(id);
+        return Effect.succeed([
+          undefined,
+          next as ReadonlyMap<BackendInstanceId, RegisteredInstance>,
+        ] as const);
+      }).pipe(Effect.andThen(Deferred.succeed(done, undefined)), Effect.asVoid);
+      yield* Option.match(action.entry.scope, {
+        onNone: () => Effect.void,
+        onSome: (scope) => Scope.close(scope, Exit.void).pipe(Effect.ignore),
+      }).pipe(Effect.ensuring(finish));
+    });
 
     return DesktopBackendPool.of({
       get: (id) =>

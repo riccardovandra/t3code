@@ -7,6 +7,8 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
+import { applyForkBranding } from "./fork-brand.ts";
+
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const UPSTREAM_REPOSITORY = "pingdotgg/t3code";
 const SEMVER_TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
@@ -247,11 +249,20 @@ function main(): void {
     );
   }
 
-  NodeChildProcess.execFileSync("node", buildArgs, {
-    cwd: repoRoot,
-    stdio: "inherit",
-    env: { ...process.env, ...buildEnv },
-  });
+  // Ctrl-C reaches the build too; staying alive lets the finally block put the source back.
+  const ignoreInterrupt = () => {};
+  process.on("SIGINT", ignoreInterrupt);
+  const restoreSource = applyForkBranding(repoRoot);
+  try {
+    NodeChildProcess.execFileSync("node", buildArgs, {
+      cwd: repoRoot,
+      stdio: "inherit",
+      env: { ...process.env, ...buildEnv },
+    });
+  } finally {
+    restoreSource();
+    process.off("SIGINT", ignoreInterrupt);
+  }
 
   const missing = artifacts.filter((file) => !NodeFS.existsSync(NodePath.join(repoRoot, file)));
   if (missing.length > 0) throw new Error(`Build did not produce: ${missing.join(", ")}`);

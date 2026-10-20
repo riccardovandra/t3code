@@ -83,11 +83,11 @@ export function resolveProviderCompatibility(
       : "unknown";
   const message =
     status === "broken"
-      ? "This provider version is known to be incompatible with this UP Orchestrator release."
+      ? "This provider version is known to be incompatible with this T3 Code release."
       : status === "unsupported"
-        ? "This provider version is outside the supported range for this UP Orchestrator release."
+        ? "This provider version is outside the supported range for this T3 Code release."
         : status === "graceful"
-          ? "This provider version has limited compatibility with this UP Orchestrator release."
+          ? "This provider version has limited compatibility with this T3 Code release."
           : null;
   const recommendedVersion = policy.recommendedVersion ?? null;
   const recommendedRange = policy.recommendedRange ?? null;
@@ -115,11 +115,20 @@ export function applyProviderCompatibility(
     ? (resolveProviderCompatibility(policies, snapshot.driver, latestVersion) ??
       resolveProviderCompatibility(fallback, snapshot.driver, latestVersion))
     : undefined;
+  const updateCommand = snapshot.versionAdvisory?.updateCommand;
+  // The maintenance resolver emits this command only for confirmed Homebrew installs.
+  const needsHomebrewRefresh =
+    updateCommand?.startsWith("brew upgrade ") &&
+    (advisory?.status === "unsupported" || advisory?.status === "broken") &&
+    (latestAdvisory?.status === "unsupported" || latestAdvisory?.status === "broken");
   return advisory
     ? {
         ...base,
         compatibilityAdvisory: {
           ...advisory,
+          message: needsHomebrewRefresh
+            ? `${advisory.message} Homebrew's local package metadata may be stale. Run brew update && ${updateCommand} on this environment's host, then refresh provider status.`
+            : advisory.message,
           ...(latestAdvisory ? { latestVersionStatus: latestAdvisory.status } : {}),
         },
       }

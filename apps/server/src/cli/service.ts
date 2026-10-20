@@ -58,15 +58,24 @@ export const reconcileService = Effect.fn("cli.service.reconcile")(function* (op
   } satisfies ServiceReconcileResult;
 });
 
+function formatServiceChange(
+  result: Extract<ServiceReconcileResult, { readonly changed: true }>,
+): string {
+  if (result.plan.handedOff === true) {
+    return `Handed the T3 Code service switch to t3@${packageJson.version} to a separate systemd unit, since this session runs inside the service and disconnects when it restarts.\nResult: ${result.plan.logPath}`;
+  }
+  return `${result.previouslyInstalled ? "Updated" : "Installed"} T3 Code service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`;
+}
+
 export function formatServiceStatus(
   status: BootService.BootServiceStatus,
   cliVersion: string,
 ): string {
   if (!status.supported) {
-    return "UP Orchestrator service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
+    return "T3 Code service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
   }
   if (!status.installed) {
-    return "UP Orchestrator service\n  Status: not installed\n  Next: Run `t3 service install`.";
+    return "T3 Code service\n  Status: not installed\n  Next: Run `t3 service install`.";
   }
   const installedVersion = status.installedVersion ?? cliVersion;
   const problems = (status.problems ?? []).map(
@@ -78,7 +87,7 @@ export function formatServiceStatus(
     compareExactServiceVersions(status.installedVersion, cliVersion) > 0
   ) {
     return [
-      "UP Orchestrator service",
+      "T3 Code service",
       `  Status: installed · t3@${installedVersion} (newer than this t3@${cliVersion} CLI)`,
       `  Unit: ${status.unitPath}`,
       `  Logs: ${status.logPath}`,
@@ -87,7 +96,7 @@ export function formatServiceStatus(
     ].join("\n");
   }
   return [
-    "UP Orchestrator service",
+    "T3 Code service",
     `  Status: ${status.current ? `installed · t3@${installedVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
@@ -114,7 +123,7 @@ const serviceReconcileFlags = {
 };
 
 const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pipe(
-  Command.withDescription("Install UP Orchestrator as a background service for this user."),
+  Command.withDescription("Install T3 Code as a background service for this user."),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -122,13 +131,11 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `UP Orchestrator service is already installed with t3@${packageJson.version}.`,
+            `T3 Code service is already installed with t3@${packageJson.version}.`,
           );
           return;
         }
-        yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} UP Orchestrator service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
-        );
+        yield* Console.log(formatServiceChange(result));
       }),
     ),
   ),
@@ -146,12 +153,10 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
         );
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
-          yield* Console.log(`UP Orchestrator service is already using t3@${packageJson.version}.`);
+          yield* Console.log(`T3 Code service is already using t3@${packageJson.version}.`);
           return;
         }
-        yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} UP Orchestrator service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
-        );
+        yield* Console.log(formatServiceChange(result));
       }),
     ),
   ),
@@ -167,11 +172,15 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
       Effect.gen(function* () {
         const service = yield* BootService.BootService;
         const status = yield* service.status;
-        const restarted = yield* service.restart;
+        const outcome = yield* service.restart;
+        const onVersion =
+          status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`;
         yield* Console.log(
-          restarted
-            ? `Restarted the UP Orchestrator service${status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`}.`
-            : "UP Orchestrator service is not installed.",
+          outcome === "restarted"
+            ? `Restarted the T3 Code service${onVersion}.`
+            : outcome === "queued"
+              ? `Queued a restart of the T3 Code service${onVersion}. This session runs inside the service and disconnects when it goes down.\nLogs: ${status.logPath}`
+              : "T3 Code service is not installed.",
         );
       }),
     ),
@@ -179,7 +188,7 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
 );
 
 const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).pipe(
-  Command.withDescription("Stop and remove the UP Orchestrator background service."),
+  Command.withDescription("Stop and remove the T3 Code background service."),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -187,9 +196,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
         const service = yield* BootService.BootService;
         const removed = yield* service.uninstall;
         yield* Console.log(
-          removed
-            ? "Removed the UP Orchestrator service."
-            : "UP Orchestrator service is not installed.",
+          removed ? "Removed the T3 Code service." : "T3 Code service is not installed.",
         );
       }),
     ),
@@ -197,7 +204,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
 );
 
 const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
-  Command.withDescription("Show whether the UP Orchestrator background service is installed."),
+  Command.withDescription("Show whether the T3 Code background service is installed."),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -209,18 +216,18 @@ const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
   ),
 );
 
+export type ServiceOnboardingOutcome = "ready" | "pending" | "skipped";
+
 export const offerServiceDuringOnboarding = Effect.gen(function* () {
   const service = yield* BootService.BootService;
   const status = yield* service.status;
   const { supported, installed, current } = status;
   if (!supported) {
-    return false;
+    return "skipped" as const;
   }
   if (installed && current) {
-    yield* Console.log(
-      "UP Orchestrator is already set up to run in the background on this machine.",
-    );
-    return true;
+    yield* Console.log("T3 Code is already set up to run in the background on this machine.");
+    return "ready" as const;
   }
   for (const problem of status.problems ?? []) {
     yield* Console.warn(`[${problem}] ${BootService.formatBootServiceProblem(problem)}`);
@@ -233,56 +240,66 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     yield* Console.log(
       `A newer t3@${status.installedVersion} background service is installed. Leaving it unchanged.`,
     );
-    return false;
+    return "skipped" as const;
   }
   const platform = yield* HostProcess.Platform;
   const wanted = yield* Prompt.run(
     Prompt.Confirm({
       message: installed
-        ? "The installed UP Orchestrator service needs an update or repair. Update it now?"
+        ? "The installed T3 Code service needs an update or repair. Update it now?"
         : platform === "darwin"
-          ? "Run UP Orchestrator in the background whenever you log in to this Mac? " +
+          ? "Run T3 Code in the background whenever you log in to this Mac? " +
             "It stays reachable through T3 Connect while you are logged in."
-          : "Run UP Orchestrator in the background whenever this machine boots? " +
+          : "Run T3 Code in the background whenever this machine boots? " +
             "It stays reachable through T3 Connect even after you log out.",
       initial: true,
     }),
   );
   if (!wanted) {
-    return false;
+    return "skipped" as const;
   }
   const result = yield* reconcileService();
   if (result.changed) {
     yield* Console.log(
-      `Background service ${result.previouslyInstalled ? "updated" : "installed"}. Logs: ${result.plan.logPath}`,
+      result.plan.handedOff === true
+        ? formatServiceChange(result)
+        : `Background service ${result.previouslyInstalled ? "updated" : "installed"}. Logs: ${result.plan.logPath}`,
     );
   }
-  return true;
+  return result.changed && result.plan.handedOff === true
+    ? ("pending" as const)
+    : ("ready" as const);
 });
 
+const reportServiceSetupFailure = (error: BootService.BootServiceError) =>
+  Console.warn(`Background setup did not finish: ${error.message}`).pipe(
+    Effect.as("skipped" as const),
+  );
+
 export const recoverServiceOnboardingOffer = <R>(
-  offer: Effect.Effect<boolean, BootService.BootServiceError | Terminal.QuitError, R>,
+  offer: Effect.Effect<
+    ServiceOnboardingOutcome,
+    BootService.BootServiceError | Terminal.QuitError,
+    R
+  >,
 ) =>
   offer.pipe(
     Effect.catchTags({
-      QuitError: () => Effect.succeed(false),
+      QuitError: () => Effect.succeed("skipped" as const),
       BootServiceUnsupportedError: (error) =>
-        Console.log(`Skipping background setup: ${error.message}`).pipe(Effect.as(false)),
-      BootServiceCommandError: (error) =>
-        Console.warn(`Background setup did not finish: ${error.message}`).pipe(Effect.as(false)),
-      BootServiceInstallError: (error) =>
-        Console.warn(`Background setup did not finish: ${error.message}`).pipe(Effect.as(false)),
-      BootServicePrerequisiteError: (error) =>
-        Console.warn(`Background setup did not finish: ${error.message}`).pipe(Effect.as(false)),
-      BootServiceUpdatePendingError: (error) =>
-        Console.warn(`Background setup did not finish: ${error.message}`).pipe(Effect.as(false)),
-      BootServiceDowngradeRefusedError: (error) =>
-        Console.warn(`Background setup did not finish: ${error.message}`).pipe(Effect.as(false)),
+        Console.log(`Skipping background setup: ${error.message}`).pipe(
+          Effect.as("skipped" as const),
+        ),
+      BootServiceCommandError: reportServiceSetupFailure,
+      BootServiceInstallError: reportServiceSetupFailure,
+      BootServicePrerequisiteError: reportServiceSetupFailure,
+      BootServiceUpdatePendingError: reportServiceSetupFailure,
+      BootServiceDowngradeRefusedError: reportServiceSetupFailure,
     }),
   );
 
 export const serviceCommand = Command.make("service").pipe(
-  Command.withDescription("Manage the UP Orchestrator background service."),
+  Command.withDescription("Manage the T3 Code background service."),
   Command.withSubcommands([
     serviceInstallCommand,
     serviceRestartCommand,

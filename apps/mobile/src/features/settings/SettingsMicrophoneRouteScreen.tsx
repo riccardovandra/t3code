@@ -1,3 +1,4 @@
+import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -158,7 +159,7 @@ export function SettingsMicrophoneRouteScreen() {
             <Text className="px-2 text-sm text-foreground-muted">
               {permission === "ask"
                 ? "Voice input needs microphone access before it can record or list your microphones."
-                : "Microphone access is off for UP Orchestrator. Turn it on in Settings to use voice input."}
+                : "Microphone access is off for T3 Code. Turn it on in Settings to use voice input."}
             </Text>
           </>
         ) : null}
@@ -166,15 +167,11 @@ export function SettingsMicrophoneRouteScreen() {
           title="Preferred order"
           trailing={
             hasDevices ? (
-              <Pressable
-                accessibilityRole="button"
+              <Button
+                label={editing ? "Done" : "Edit"}
+                tone="text"
                 onPress={() => setEditing((value) => !value)}
-                className="px-2 py-1 active:opacity-70"
-              >
-                <Text className="text-sm font-t3-medium text-foreground">
-                  {editing ? "Done" : "Edit"}
-                </Text>
-              </Pressable>
+              />
             ) : undefined
           }
         >

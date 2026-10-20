@@ -56,6 +56,8 @@ function makeProjection() {
         providerThreadId,
         activeAttemptId: attemptId,
         status: "running",
+        requestedAt: now,
+        completedAt: null,
       },
     ],
     providerThreads: [
@@ -945,6 +947,7 @@ const cutMidTurn = (extra: Record<string, unknown> = {}) => {
       {
         ...base.runs[0]!,
         status: "cancelled",
+        completedAt: now,
         userMessageId: MessageId.make("message:user"),
         ...extra,
       },
@@ -1054,13 +1057,13 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
   }),
 );
 
-it.effect("shows a continuation as an UP Orchestrator notice whose detail is the prompt", () =>
+it.effect("shows a continuation as a T3 Code notice whose detail is the prompt", () =>
   Effect.gen(function* () {
     const [resumed] = yield* continuationDispatches(cutMidTurn());
     assert.deepEqual(resumed?.notification, {
       source: { kind: "system" },
       outcome: "updated",
-      summary: "UP Orchestrator restarted and resumed this turn",
+      summary: "T3 Code restarted and resumed this turn",
       detail: "Continue where you left off.",
     });
   }),
@@ -1142,7 +1145,7 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
   }),
 );
 
-it.effect("stops continuing after three automatic restart continuations in a row", () =>
+it.effect("stops rapid restart loops but allows repeated restarts after normal work", () =>
   Effect.gen(function* () {
     const first = RunId.make("run:first-continuation");
     const second = RunId.make("run:second-continuation");
@@ -1163,7 +1166,24 @@ it.effect("stops continuing after three automatic restart continuations in a row
         run.id === first ? { ...run, restartContinuationOfRunId: RunId.make("run:root") } : run,
       ),
     } as unknown as OrchestrationV2ThreadProjection;
-    assert.lengthOf(yield* continuationTexts(withThreeLinks), 0);
+    for (const { completedAt, oldestRequestAge, expected } of [
+      { completedAt: null, oldestRequestAge: { minutes: 6 }, expected: 0 },
+      { completedAt: null, oldestRequestAge: { minutes: 6, milliseconds: 1 }, expected: 1 },
+      { completedAt: now, oldestRequestAge: { minutes: 6 }, expected: 1 },
+    ]) {
+      const projection = {
+        ...withThreeLinks,
+        runs: withThreeLinks.runs.map((run, index) => ({
+          ...run,
+          completedAt,
+          requestedAt: DateTime.subtract(
+            now,
+            run.id === first ? oldestRequestAge : { minutes: index + 1 },
+          ),
+        })),
+      };
+      assert.lengthOf(yield* continuationTexts(projection), expected);
+    }
   }),
 );
 

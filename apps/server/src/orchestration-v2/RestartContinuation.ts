@@ -31,6 +31,7 @@ import {
 const CONTINUE_PROMPT = "Continue where you left off.";
 
 const MAX_CONTINUATION_CHAIN = 3;
+const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
 
 function restartContinuationBlocked(
   projection: Pick<
@@ -228,11 +229,15 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
     // A turn that keeps crashing the server would otherwise restart it forever.
     let chainLength = 0;
+    const loopWindowStart =
+      DateTime.toEpochMillis(source.completedAt ?? source.requestedAt) -
+      CONTINUATION_LOOP_WINDOW_MS;
     for (
       let run: OrchestrationV2Run | undefined = source;
       run?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
       run = projection.runs.find((candidate) => candidate.id === run?.restartContinuationOfRunId)
     ) {
+      if (DateTime.toEpochMillis(run.requestedAt) < loopWindowStart) break;
       chainLength += 1;
     }
     if (chainLength >= MAX_CONTINUATION_CHAIN) {
@@ -286,8 +291,8 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
           source: { kind: "system" },
           outcome: "updated",
           summary: note.settled
-            ? "UP Orchestrator restarted and stopped background work"
-            : "UP Orchestrator restarted and resumed this turn",
+            ? "T3 Code restarted and stopped background work"
+            : "T3 Code restarted and resumed this turn",
           detail: text,
         },
         attachments: [],

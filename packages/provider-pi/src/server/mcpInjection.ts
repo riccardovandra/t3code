@@ -118,7 +118,7 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
     if (reserved !== undefined) {
       return {
         ok: false,
-        message: `Pi launch argument '${reserved}' is controlled by UP Orchestrator and cannot be overridden.`,
+        message: `Pi launch argument '${reserved}' is controlled by T3 Code and cannot be overridden.`,
       };
     }
     if (arg === "--") {
@@ -153,10 +153,7 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
       continue;
     }
     if (arg.startsWith("-")) {
-      return {
-        ok: false,
-        message: `Pi launch argument '${arg}' is not supported by UP Orchestrator.`,
-      };
+      return { ok: false, message: `Pi launch argument '${arg}' is not supported by T3 Code.` };
     }
     return {
       ok: false,
@@ -252,6 +249,7 @@ export function buildPiRpcLaunch(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly mcpSession: McpProviderSessionConfig | undefined;
   readonly extensionPath: string | undefined;
+  readonly sessionPath?: string | undefined;
   readonly ephemeral?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
@@ -273,7 +271,11 @@ export function buildPiRpcLaunch(input: {
   const args = [
     "--mode",
     "rpc",
-    ...(input.ephemeral === true ? ["--no-session"] : []),
+    ...(input.ephemeral === true
+      ? ["--no-session"]
+      : input.sessionPath !== undefined
+        ? ["--session", input.sessionPath]
+        : []),
     ...launchArgs,
     // Restrictions follow user launch args so a configured --tools or
     // --extension cannot silently re-enable unattended text-generation code.

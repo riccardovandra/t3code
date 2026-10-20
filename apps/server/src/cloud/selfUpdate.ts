@@ -141,34 +141,33 @@ export const withRunningThreadContinuation = Effect.fn(
 
   return ServerSelfUpdate.of({
     update,
-    commitDesktopUpdate: (requestId) =>
-      Effect.gen(function* () {
-        const shouldContinue = yield* Ref.modify(desktopContinuationTokens, (tokens) => [
-          HashSet.has(tokens, requestId),
-          HashSet.remove(tokens, requestId),
-        ]);
-        let handoffAccepted = false;
-        let continuationThreadIds: ReadonlyArray<ThreadId> = [];
-        return yield* clearOnError(
-          Effect.gen(function* () {
-            continuationThreadIds = shouldContinue ? yield* input.prepare : [];
-            return yield* input.selfUpdate.commitDesktopUpdate(requestId, () =>
-              Effect.sync(() => {
-                handoffAccepted = true;
-              }),
-            );
-          }),
-          () => continuationThreadIds,
-          () => handoffAccepted,
-        ).pipe(
-          Effect.catchCause((cause) =>
-            (shouldContinue && !handoffAccepted
-              ? Ref.update(desktopContinuationTokens, HashSet.add(requestId))
-              : Effect.void
-            ).pipe(Effect.andThen(Effect.failCause(cause))),
-          ),
-        );
-      }),
+    commitDesktopUpdate: Effect.fn("selfUpdate.commitDesktopUpdate")(function* (requestId) {
+      const shouldContinue = yield* Ref.modify(desktopContinuationTokens, (tokens) => [
+        HashSet.has(tokens, requestId),
+        HashSet.remove(tokens, requestId),
+      ]);
+      let handoffAccepted = false;
+      let continuationThreadIds: ReadonlyArray<ThreadId> = [];
+      return yield* clearOnError(
+        Effect.gen(function* () {
+          continuationThreadIds = shouldContinue ? yield* input.prepare : [];
+          return yield* input.selfUpdate.commitDesktopUpdate(requestId, () =>
+            Effect.sync(() => {
+              handoffAccepted = true;
+            }),
+          );
+        }),
+        () => continuationThreadIds,
+        () => handoffAccepted,
+      ).pipe(
+        Effect.catchCause((cause) =>
+          (shouldContinue && !handoffAccepted
+            ? Ref.update(desktopContinuationTokens, HashSet.add(requestId))
+            : Effect.void
+          ).pipe(Effect.andThen(Effect.failCause(cause))),
+        ),
+      );
+    }),
   });
 });
 
@@ -202,12 +201,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         return yield* desktopAppUpdate.run(reportProgress);
       }
       return yield* failWith(
-        "This server is managed by the UP Orchestrator desktop app on its machine; update the desktop app to update it.",
+        "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
       );
     }
     if (capability === null) {
       return yield* failWith(
-        "Remote updates require the UP Orchestrator background service. Run `t3 service install` on the server machine.",
+        "Remote updates require the T3 Code background service. Run `t3 service install` on the server machine.",
       );
     }
 

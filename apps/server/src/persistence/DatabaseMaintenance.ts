@@ -17,7 +17,7 @@ export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingErro
   { path: Schema.String },
 ) {
   override get message() {
-    return "No existing UP Orchestrator database was found in this data directory.";
+    return "No existing T3 Code database was found in this data directory.";
   }
 }
 
@@ -26,7 +26,7 @@ export class DatabaseInUseError extends Schema.TaggedError<DatabaseInUseError>()
   { path: Schema.String, cause: Schema.Defect() },
 ) {
   override get message() {
-    return "Stop the UP Orchestrator server and desktop app, including any version before 0.1.0, before repairing the database.";
+    return "Stop the T3 Code server and desktop app, including any version before 0.1.0, before repairing the database.";
   }
 }
 
@@ -35,7 +35,7 @@ export class DatabaseProjectionsInvalidError extends Schema.TaggedError<Database
   { path: Schema.String },
 ) {
   override get message() {
-    return "Database projections need repair before compaction. Start UP Orchestrator once so it rebuilds them, then run doctor again. If this CLI is older than the one that wrote the database, update UP Orchestrator first.";
+    return "Database projections need repair before compaction. Start T3 Code once so it rebuilds them, then run doctor again. If this CLI is older than the one that wrote the database, update T3 Code first.";
   }
 }
 
@@ -126,20 +126,21 @@ const readStorage = Effect.gen(function* () {
  * refused while any other connection has the file open, even an idle one,
  * which is how a running server or desktop app is detected.
  */
-const lockExclusively = (databasePath: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* sql`PRAGMA busy_timeout = 0`;
-    yield* sql`PRAGMA locking_mode = EXCLUSIVE`;
-    yield* sql`BEGIN EXCLUSIVE`.pipe(
-      Effect.mapError((cause) =>
-        isSqlError(cause) && cause.reason._tag === "LockTimeoutError"
-          ? new DatabaseInUseError({ path: databasePath, cause })
-          : cause,
-      ),
-    );
-    yield* sql`COMMIT`;
-  });
+const lockExclusively = Effect.fn("DatabaseMaintenance.lockExclusively")(function* (
+  databasePath: string,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`PRAGMA busy_timeout = 0`;
+  yield* sql`PRAGMA locking_mode = EXCLUSIVE`;
+  yield* sql`BEGIN EXCLUSIVE`.pipe(
+    Effect.mapError((cause) =>
+      isSqlError(cause) && cause.reason._tag === "LockTimeoutError"
+        ? new DatabaseInUseError({ path: databasePath, cause })
+        : cause,
+    ),
+  );
+  yield* sql`COMMIT`;
+});
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

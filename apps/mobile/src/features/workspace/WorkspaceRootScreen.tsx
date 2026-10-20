@@ -42,9 +42,7 @@ function WorkspaceRootTitle(props: {
     <View style={{ width: props.maxWidth, minHeight: 32, justifyContent: "center" }}>
       <WorkspaceConnectionTitle
         brand={
-          <CompactBrandTitle
-            accessibilityLabel={`UP Orchestrator, ${TAB_TITLES[state.selectedTab]}`}
-          />
+          <CompactBrandTitle accessibilityLabel={`T3 Code, ${TAB_TITLES[state.selectedTab]}`} />
         }
         maxWidth={props.maxWidth}
         onPress={props.onOpenEnvironments}
@@ -114,11 +112,12 @@ function WorkspaceRootContent() {
               headerShown: true,
               unstable_headerLeftItems: () => [],
               headerTitle: renderHeaderTitle,
+              ...(state.selectedTab === "threads" ? {} : { nativeSidebarFilter: undefined }),
             }}
           />
         ) : (
           <AndroidScreenHeader
-            title="UP Orchestrator"
+            title="T3 Code"
             titleContent={renderHeaderTitle()}
             actions={[
               {
