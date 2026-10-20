@@ -490,7 +490,8 @@ node scripts/release-fork-desktop.ts             # build, verify, and publish
 Publishing the release triggers `.github/workflows/release-fork-cli.yml`, which builds the
 `linux-x64` CLI archive through `release-desktop.yml` on a GitHub-hosted runner and attaches
 `t3-X.Y.Z-linux-x64.tar.gz` and `SHA256SUMS` to the same release. To add them to an existing
-release, run it by hand: `gh workflow run release-fork-cli.yml -f tag=vX.Y.Z`.
+release, run it by hand: `gh workflow run release-fork-cli.yml -f tag=vX.Y.Z`. Add `-f ref=<commit>`
+to build from a later commit when a build fix landed after the tag.
 
 A Linux host then installs the fork's server with `t3 update`. The release index it reads is always
 upstream's, so name the version explicitly and point downloads at the fork:

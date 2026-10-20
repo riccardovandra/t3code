@@ -56,6 +56,13 @@ describe("shouldBundleCliDependency", () => {
     }
   });
 
+  it("bundles zod for bundled importers while Cursor keeps its on-disk copy", () => {
+    for (const id of ["zod", "zod/v4", "zod/v4-mini"]) {
+      assert.strictEqual(shouldBundleCliDependency(id), true, id);
+    }
+    assert.strictEqual(isRuntimeExternalCliDependency("zod"), true);
+  });
+
   it("treats prefix-matched siblings as external", () => {
     assert.strictEqual(shouldBundleCliDependency("node-gyp-build-optional-packages"), false);
   });
