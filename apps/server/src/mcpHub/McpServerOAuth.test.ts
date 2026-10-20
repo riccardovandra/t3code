@@ -455,4 +455,16 @@ it.layer(Layer.merge(NodeServices.layer, layerSecretRequests))("McpServerOAuth",
       }),
     ),
   );
+
+  it("asks Google for a refresh token and an account choice", () => {
+    const google = McpServerOAuth.withProviderAuthorizationParams(
+      new URL("https://accounts.google.com/o/oauth2/v2/auth?client_id=c&prompt=none"),
+    );
+    assert.strictEqual(google.searchParams.get("access_type"), "offline");
+    assert.strictEqual(google.searchParams.get("prompt"), "consent select_account");
+    assert.strictEqual(google.searchParams.get("client_id"), "c");
+
+    const other = new URL("https://auth.example.com/authorize?client_id=c");
+    assert.strictEqual(McpServerOAuth.withProviderAuthorizationParams(other), other);
+  });
 });

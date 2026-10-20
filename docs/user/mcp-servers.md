@@ -18,6 +18,18 @@ server** from the command palette.
   the command on the environment's machine. Command servers are added from web
   or desktop.
 
+To skip typing, pick a server under **Start from**, such as Gmail, Google
+Drive, Slack, Apify, Notion or GitHub, and the form fills in its name, URL and
+sign-in method. Gmail, Google Drive, Google Calendar and Slack do not let T3
+Code register itself, so they need a client you register with the provider (see
+[Sign in](#sign-in)).
+
+To use two accounts of the same service, such as a work and a personal Gmail
+or two Slack workspaces, add the server once per account. Picking a preset
+again names the copy `gmail-2`, and each copy signs in separately. Google asks
+which account to use every time. For Slack, the app must be installable in each
+workspace you add.
+
 Agents see the tools as `mcp__<name>__<tool>`, so pick a short name.
 
 Changes apply to threads started after you save. Threads that are already
