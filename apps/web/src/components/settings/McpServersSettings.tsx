@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, McpServerEntry } from "@t3tools/contracts";
 import {
+  MCP_SERVERS_UNSUPPORTED_MESSAGE,
   mcpOAuthRedirect,
   mcpServerAuthAction,
   mcpServerDraft,
@@ -114,7 +115,9 @@ export function McpServersSettings({
 }) {
   const { environment, scope } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
-  const canWrite = useAtomValue(serverEnvironment.upsertMcpServer.permissionAtom(environmentId));
+  const permitted = useAtomValue(serverEnvironment.upsertMcpServer.permissionAtom(environmentId));
+  const supported = environment?.serverConfig?.environment.capabilities.mcpServers === true;
+  const canWrite = permitted && supported;
   const [editingState, setEditing] = useState<{ readonly entry: McpServerEntry | null } | null>(
     null,
   );
@@ -142,28 +145,36 @@ export function McpServersSettings({
       <SettingsSection
         title="MCP servers"
         headerAction={
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={!canWrite}
-            onClick={() => setEditing({ entry: null })}
-          >
-            <PlusIcon className="size-3" />
-            Add server
-          </Button>
+          supported ? (
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              disabled={!canWrite}
+              onClick={() => setEditing({ entry: null })}
+            >
+              <PlusIcon className="size-3" />
+              Add server
+            </Button>
+          ) : null
         }
       >
-        <McpServerList
-          environmentId={environmentId}
-          canWrite={canWrite}
-          onEdit={(entry) => setEditing({ entry })}
-        />
+        {supported ? (
+          <McpServerList
+            environmentId={environmentId}
+            canWrite={canWrite}
+            onEdit={(entry) => setEditing({ entry })}
+          />
+        ) : (
+          <SettingsRow title={MCP_SERVERS_UNSUPPORTED_MESSAGE} />
+        )}
       </SettingsSection>
-      <p className="px-3 text-xs text-muted-foreground sm:px-4">
-        Agents in every provider reach these servers through T3 Code, and their credentials stay on
-        this environment. Changes apply to threads started afterwards.
-        {canWrite ? null : " Changing them needs settings access on this environment."}
-      </p>
+      {supported ? (
+        <p className="px-3 text-xs text-muted-foreground sm:px-4">
+          Agents in every provider reach these servers through T3 Code, and their credentials stay
+          on this environment. Changes apply to threads started afterwards.
+          {permitted ? null : " Changing them needs settings access on this environment."}
+        </p>
+      ) : null}
       {editing !== null && canWrite ? (
         <McpServerEditor
           environmentId={environmentId}

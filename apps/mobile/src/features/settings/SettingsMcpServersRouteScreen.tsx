@@ -1,6 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  MCP_SERVERS_UNSUPPORTED_MESSAGE,
   mcpServerAuthAction,
   mcpServerStatusPresentation,
   mcpServerTransportSummary,
@@ -61,13 +62,27 @@ export function SettingsMcpServersRouteScreen() {
 }
 
 function EnvironmentMcpServers({ environment }: { readonly environment: SettingsTarget }) {
+  return (
+    <SettingsSection title={environment.label}>
+      {environment.serverConfig.environment.capabilities.mcpServers === true ? (
+        <EnvironmentMcpServerList environment={environment} />
+      ) : (
+        <Text className="p-4 text-base text-foreground-muted">
+          {MCP_SERVERS_UNSUPPORTED_MESSAGE}
+        </Text>
+      )}
+    </SettingsSection>
+  );
+}
+
+function EnvironmentMcpServerList({ environment }: { readonly environment: SettingsTarget }) {
   const environmentId = environment.environmentId;
   const servers = useEnvironmentQuery(
     serverEnvironment.mcpServersLive({ environmentId, input: {} }),
   );
   const canWrite = useAtomValue(serverEnvironment.upsertMcpServer.permissionAtom(environmentId));
   return (
-    <SettingsSection title={environment.label}>
+    <>
       {servers.error ? (
         <Text className="p-4 text-base text-danger-foreground">{servers.error}</Text>
       ) : !servers.data ? (
@@ -79,7 +94,7 @@ function EnvironmentMcpServers({ environment }: { readonly environment: Settings
           <McpServer key={entry.id} environment={environment} entry={entry} canWrite={canWrite} />
         ))
       )}
-    </SettingsSection>
+    </>
   );
 }
 
