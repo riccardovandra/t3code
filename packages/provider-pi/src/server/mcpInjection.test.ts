@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import {
   PI_T3_MCP_EXTENSION_FILENAME,
   T3_MCP_BEARER_ENV,
+  T3_MCP_UPSTREAM_SERVERS_ENV,
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
@@ -30,6 +31,33 @@ const mcpSession = {
 };
 
 describe("pi T3 MCP injection", () => {
+  it("lists configured MCP servers for the extension, except in a read-only sandbox", () => {
+    const upstreamSession = {
+      ...mcpSession,
+      upstreamServers: [
+        { name: "notion", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+      ],
+    };
+    const launch = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: { [T3_MCP_UPSTREAM_SERVERS_ENV]: "inherited" },
+      mcpSession: upstreamSession,
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+    });
+    assert.deepEqual(JSON.parse(launch.env[T3_MCP_UPSTREAM_SERVERS_ENV] ?? "null"), [
+      { name: "notion", url: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+    ]);
+
+    const readOnly = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: { [T3_MCP_UPSTREAM_SERVERS_ENV]: "inherited" },
+      mcpSession: upstreamSession,
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      sandboxPolicy: { type: "readOnly" },
+    });
+    assert.isUndefined(readOnly.env[T3_MCP_UPSTREAM_SERVERS_ENV]);
+  });
+
   it("always adds the permission bridge and configures MCP when available", () => {
     const resolvedArgs = resolvePiLaunchArgs(
       "--extension=/home/user/.pi/agent/extensions/demo.ts --session-dir=/tmp/pi-sessions --provider=anthropic --model=claude-sonnet --tools='' --name=-review --extension-flag=kept",

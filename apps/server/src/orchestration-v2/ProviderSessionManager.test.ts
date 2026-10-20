@@ -41,6 +41,10 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
+import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
+import * as SecretRequests from "../secrets/SecretRequests.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
@@ -488,6 +492,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly mcpServerRegistryLayer?: Layer.Layer<McpServerRegistry.McpServerRegistry>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -565,9 +570,11 @@ function layerTest(input: {
           layerTestStores,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
+          ...(input.mcpServerRegistryLayer === undefined ? [] : [input.mcpServerRegistryLayer]),
         ),
       ),
     ),
+    ...(input.mcpServerRegistryLayer === undefined ? [] : [input.mcpServerRegistryLayer]),
   ).pipe(Layer.provide(NodeServices.layer));
 }
 
@@ -4907,4 +4914,84 @@ it.effect(
       });
       assert.isFalse(denied?.capabilities?.has("device"));
     }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 offers enabled configured MCP servers without their secrets",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const mcpConfigs = yield* Ref.make<
+        ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
+      >([]);
+      const layerNoSecretRefs = Layer.mock(SecretRequests.SecretRequests)({});
+      const layerMcpServerRegistry = McpServerRegistry.layer.pipe(
+        Layer.provide(ServerSecretStore.layer),
+        Layer.provide(
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-session-mcp-hub-test-" }),
+        ),
+        Layer.provide(NodeServices.layer),
+      );
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const registry = yield* McpServerRegistry.McpServerRegistry;
+        const now = yield* DateTime.now;
+        const notion = yield* registry
+          .upsert({
+            name: "notion",
+            transport: { type: "http", url: "https://notion.example.test/mcp" },
+            auth: { type: "header", header: "Authorization", secret: "upstream-notion-secret" },
+          })
+          .pipe(Effect.provide(layerNoSecretRefs));
+        const linear = yield* registry
+          .upsert({
+            name: "linear",
+            transport: { type: "http", url: "https://linear.example.test/mcp" },
+            auth: { type: "oauth" },
+          })
+          .pipe(Effect.provide(layerNoSecretRefs));
+        yield* registry
+          .upsert({
+            name: "gmail",
+            enabled: false,
+            transport: { type: "http", url: "https://gmail.example.test/mcp" },
+          })
+          .pipe(Effect.provide(layerNoSecretRefs));
+        const threadId = ThreadId.make("thread-provider-session-manager-mcp-hub");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+
+        const config = (yield* Ref.get(mcpConfigs)).at(-1);
+        assert.isDefined(config);
+        // A server that still needs sign-in is offered: its calls report it, and
+        // nothing has to be re-injected after the user signs in.
+        assert.deepEqual(config!.upstreamServers, [
+          { name: "notion", endpoint: `http://127.0.0.1:43123/mcp/upstream/${notion.id}` },
+          { name: "linear", endpoint: `http://127.0.0.1:43123/mcp/upstream/${linear.id}` },
+        ]);
+        const serialized = JSON.stringify(config);
+        assert.notInclude(serialized, "upstream-notion-secret");
+        assert.notInclude(serialized, "notion.example.test");
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            mcpConfigs,
+            mcpServerRegistryLayer: layerMcpServerRegistry,
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped),
 );

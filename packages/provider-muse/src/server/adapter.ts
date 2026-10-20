@@ -1775,6 +1775,19 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                     url: mcpSession.endpoint,
                     headers: { Authorization: mcpSession.authorizationHeader },
                   },
+                  ...Object.fromEntries(
+                    McpProviderSession.upstreamServersFor(mcpSession, args.runtimePolicy).map(
+                      (server) => [
+                        server.name,
+                        {
+                          transport: "streamableHttp" as const,
+                          mode: "optional" as const,
+                          url: server.endpoint,
+                          headers: { Authorization: mcpSession.authorizationHeader },
+                        },
+                      ],
+                    ),
+                  ),
                 },
               }
             : undefined;

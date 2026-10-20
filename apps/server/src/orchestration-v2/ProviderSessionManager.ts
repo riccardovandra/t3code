@@ -43,8 +43,10 @@ import {
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -323,6 +325,33 @@ export const layerWithOptions = (
        */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
+      const mcpServerRegistry = yield* Effect.serviceOption(McpServerRegistry.McpServerRegistry);
+      /**
+       * Read at every prepare so a session opened after an edit sees it; a
+       * running provider keeps the list it started with. Servers that still
+       * need sign-in are injected anyway: a call reports it, and nothing has to
+       * be re-injected once the user signs in.
+       */
+      const upstreamServers = (
+        endpoint: string,
+      ): Effect.Effect<ReadonlyArray<McpProviderSession.McpUpstreamServerEntry>> =>
+        Option.isNone(mcpServerRegistry)
+          ? Effect.succeed([])
+          : mcpServerRegistry.value.list.pipe(
+              Effect.map(({ servers }) =>
+                servers
+                  .filter((server) => server.enabled)
+                  .map((server) => ({
+                    name: server.name,
+                    endpoint: `${endpoint}/upstream/${server.id}`,
+                  })),
+              ),
+              Effect.catch((cause) =>
+                Effect.logWarning("Could not read configured MCP servers; injecting none.", {
+                  cause,
+                }).pipe(Effect.as([])),
+              ),
+            );
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -480,6 +509,10 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable
                   ) {
+                    yield* mcpSessions.set({
+                      ...existing,
+                      upstreamServers: yield* upstreamServers(existing.endpoint),
+                    });
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
                   dropMcpCredentialReservation(threadId, existing.providerSessionId);
@@ -491,7 +524,10 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                 });
-                yield* mcpSessions.set(credential.config);
+                yield* mcpSessions.set({
+                  ...credential.config,
+                  upstreamServers: yield* upstreamServers(credential.config.endpoint),
+                });
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
               }),

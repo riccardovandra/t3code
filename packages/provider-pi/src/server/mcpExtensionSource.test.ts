@@ -286,6 +286,58 @@ describe("Pi MCP tool exposure", () => {
   );
 });
 
+describe("Pi configured MCP servers", () => {
+  it("registers each server's tools under its own name and calls its upstream route", async () => {
+    const bridge = await loadMcpBridge({
+      modern: true,
+      toolSearchAvailable: true,
+      upstreamServers: [{ name: "notion", url: "http://fixture.invalid/mcp/upstream/notion-id" }],
+    });
+    const notionTools = bridge.tools.filter((tool) => tool.name.startsWith("mcp__notion__"));
+    assert.deepEqual(
+      notionTools.map((tool) => [tool.name, tool.exposure]),
+      [
+        ["mcp__notion__orchestrator_capabilities", "deferred"],
+        ["mcp__notion__delegate_task", "deferred"],
+        ["mcp__notion__task_status", "deferred"],
+        ["mcp__notion__preview_snapshot", "deferred"],
+      ],
+    );
+
+    await notionTools[0]!.execute("upstream-call", {});
+    assert.deepEqual(
+      bridge.transports.at(-1)?.url,
+      "http://fixture.invalid/mcp/upstream/notion-id",
+    );
+    assert.equal(bridge.transports.at(-1)?.authorization, "Bearer fixture-token");
+  });
+
+  it("asks before a configured server's tool even when it claims to be read-only", async () => {
+    const bridge = await loadMcpBridge({
+      runtimeMode: "approval-required",
+      upstreamServers: [{ name: "notion", url: "http://fixture.invalid/mcp/upstream/notion-id" }],
+    });
+    const toolCall = bridge.handlers.get("tool_call") as unknown as (
+      event: { toolName: string; input: unknown },
+      ctx: { ui: { confirm: () => Promise<boolean> }; signal: undefined },
+    ) => Promise<unknown>;
+    let asked = 0;
+    const ctx = {
+      ui: {
+        confirm: async () => {
+          asked += 1;
+          return true;
+        },
+      },
+      signal: undefined,
+    };
+    await toolCall({ toolName: "mcp__t3-code__orchestrator_capabilities", input: {} }, ctx);
+    assert.equal(asked, 0);
+    await toolCall({ toolName: "mcp__notion__orchestrator_capabilities", input: {} }, ctx);
+    assert.equal(asked, 1);
+  });
+});
+
 describe("Pi tool discovery permissions", () => {
   it.each(["approval-required", "auto-accept-edits", "auto"])(
     "allows annotated T3 reads in %s while gating mutations and replacements",

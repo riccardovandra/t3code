@@ -1175,11 +1175,16 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-const layerMcpServersRpc = (mcpServers: McpServerRegistry.McpServerRegistry["Service"]) =>
+const layerMcpServersRpc = (
+  mcpServers: McpServerRegistry.McpServerRegistry["Service"],
+  secretRequests: SecretRequests.SecretRequests["Service"],
+) =>
   Layer.mergeAll(
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersList, () => mcpServers.list),
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersUpsert, (input) =>
-      mcpServers.upsert(input),
+      mcpServers
+        .upsert(input)
+        .pipe(Effect.provideService(SecretRequests.SecretRequests, secretRequests)),
     ),
     ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersRemove, (input) =>
       mcpServers.remove(input).pipe(Effect.as({})),
@@ -3136,6 +3141,7 @@ export const layer = Layer.unwrap(
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const mcpServers = yield* McpServerRegistry.McpServerRegistry;
+    const secretRequests = yield* SecretRequests.SecretRequests;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3208,7 +3214,7 @@ export const layer = Layer.unwrap(
               previewAutomationBroker,
               serverBrowser,
             ).pipe(
-              Layer.merge(layerMcpServersRpc(mcpServers)),
+              Layer.merge(layerMcpServersRpc(mcpServers, secretRequests)),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

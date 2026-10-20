@@ -9534,3 +9534,42 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     );
   });
 });
+
+describe("CodexAdapterV2 configured MCP servers", () => {
+  const mcpSession = {
+    environmentId: EnvironmentId.make("environment-codex-upstream"),
+    threadId: ThreadId.make("thread-codex-upstream"),
+    providerSessionId: "mcp-session-codex-upstream",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    endpoint: "http://127.0.0.1:43123/mcp",
+    authorizationHeader: "Bearer thread-token",
+    browserToolsAvailable: true,
+    upstreamServers: [
+      { name: "notion", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+    ],
+  };
+  const runtimePolicy = {
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    cwd: null,
+  } as const;
+
+  it("adds each server to mcp_servers with the thread credential", () => {
+    const { config } = CodexAdapterV2.codexThreadRuntimeParams({ mcpSession, runtimePolicy });
+
+    assert.deepEqual(Object.keys(config.mcp_servers ?? {}), ["t3-code", "notion"]);
+    assert.deepEqual((config.mcp_servers as Record<string, unknown>).notion, {
+      url: "http://127.0.0.1:43123/mcp/upstream/server-notion",
+      http_headers: { Authorization: "Bearer thread-token" },
+    });
+  });
+
+  it("offers no configured servers to a read-only sandbox", () => {
+    const { config } = CodexAdapterV2.codexThreadRuntimeParams({
+      mcpSession,
+      runtimePolicy: { ...runtimePolicy, sandboxPolicy: { type: "readOnly" } },
+    });
+
+    assert.deepEqual(Object.keys(config.mcp_servers ?? {}), ["t3-code"]);
+  });
+});

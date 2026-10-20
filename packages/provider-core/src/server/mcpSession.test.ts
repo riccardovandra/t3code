@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { withAgentDeviceEnvironment } from "./mcpSession.ts";
+import { upstreamServersFor, withAgentDeviceEnvironment } from "./mcpSession.ts";
 
 describe("device CLI environment", () => {
   it("preserves provider credentials and commands while routing devices to the owned daemon", () => {
@@ -26,5 +26,22 @@ describe("device CLI environment", () => {
     const environment = { PATH: "/usr/bin", PROVIDER_KEY: "fixture" };
     expect(withAgentDeviceEnvironment(environment, undefined)).toBe(environment);
     expect(withAgentDeviceEnvironment(environment, {})).toBe(environment);
+  });
+});
+
+describe("configured MCP servers", () => {
+  const config = {
+    upstreamServers: [{ name: "notion", endpoint: "http://127.0.0.1:1/mcp/upstream/notion-id" }],
+  };
+
+  it("offers them to sessions that can write", () => {
+    expect(upstreamServersFor(config, { sandboxPolicy: { type: "workspaceWrite" } })).toEqual(
+      config.upstreamServers,
+    );
+    expect(upstreamServersFor(config, undefined)).toEqual(config.upstreamServers);
+  });
+
+  it("withholds them from read-only sandboxes", () => {
+    expect(upstreamServersFor(config, { sandboxPolicy: { type: "readOnly" } })).toEqual([]);
   });
 });

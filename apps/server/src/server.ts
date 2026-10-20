@@ -624,6 +624,9 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
       McpProviderSessions.layer,
     ),
   ),
+  // Below the provider sessions, which inject enabled servers, and the routes
+  // that edit and forward them, so both share one list and one status map.
+  Layer.provideMerge(McpServerRegistry.layer),
   Layer.provideMerge(
     OpenCodeRuntime.layer.pipe(
       Layer.provide(
@@ -705,8 +708,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),
-  // One pool of upstream clients serves every thread, and both transports edit the same list.
-  Layer.provide(McpUpstreamClients.layer.pipe(Layer.provideMerge(McpServerRegistry.layer))),
+  // One pool of upstream clients serves every thread.
+  Layer.provide(McpUpstreamClients.layer),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(layerPullRequestService),

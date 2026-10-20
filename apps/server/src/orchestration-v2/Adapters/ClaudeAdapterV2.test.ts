@@ -15655,3 +15655,45 @@ describe("ClaudeAdapterV2 query message stream", () => {
     }),
   );
 });
+
+describe("ClaudeAdapterV2 configured MCP servers", () => {
+  const mcpSession: McpProviderSession.McpProviderSessionConfig = {
+    environmentId: EnvironmentId.make("environment-claude-upstream"),
+    threadId: ThreadId.make("thread-claude-upstream"),
+    providerSessionId: "mcp-session-claude-upstream",
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    endpoint: "http://127.0.0.1:43123/mcp",
+    authorizationHeader: "Bearer thread-token",
+    browserToolsAvailable: true,
+    upstreamServers: [
+      { name: "notion", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+    ],
+  };
+
+  it("adds each server beside t3-code with the thread credential and pre-approves its tools", () => {
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: false,
+    });
+
+    assert.deepEqual(overrides.allowedTools, [
+      ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD,
+      "mcp__notion__*",
+    ]);
+    assert.deepEqual(overrides.mcpServers?.notion, {
+      type: "http",
+      url: "http://127.0.0.1:43123/mcp/upstream/server-notion",
+      headers: { Authorization: "Bearer thread-token" },
+    });
+  });
+
+  it("offers no configured servers to a read-only sandbox", () => {
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: true,
+    });
+
+    assert.deepEqual(Object.keys(overrides.mcpServers ?? {}), ["t3-code"]);
+    assert.isFalse(overrides.allowedTools?.includes("mcp__notion__*"));
+  });
+});

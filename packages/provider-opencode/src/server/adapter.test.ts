@@ -5,6 +5,7 @@ import {
   CheckpointId,
   NodeId,
   ProjectId,
+  EnvironmentId,
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
@@ -1530,6 +1531,90 @@ describe("OpenCodeAdapterV2", () => {
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,
     ),
+  );
+
+  it.effect(
+    "adds configured MCP servers with the thread credential, except in a read-only sandbox",
+    () =>
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("thread-opencode-upstream");
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment-opencode-upstream"),
+          threadId,
+          providerSessionId: "mcp-session-opencode-upstream",
+          providerInstanceId: ProviderInstanceId.make("opencode-test"),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer thread-token",
+          browserToolsAvailable: true,
+          upstreamServers: [
+            { name: "notion", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-notion" },
+          ],
+        });
+        const added: Array<{ readonly name: string; readonly config: unknown }> = [];
+        const nativeEvents = asyncEventStream();
+        const client = {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          mcp: {
+            add: async (input: { readonly name: string; readonly config: unknown }) => {
+              added.push(input);
+              return { data: true };
+            },
+          },
+        };
+        const adapter = yield* makeOpenCodeAdapterV2({
+          instanceId: ProviderInstanceId.make("opencode-test"),
+          settings: OPEN_CODE_TEST_SETTINGS,
+          environment: {},
+        }).pipe(
+          Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
+            connectToOpenCodeServer: () =>
+              Effect.succeed({ url: "http://test.invalid", external: false, exitCode: null }),
+            createOpenCodeSdkClient: () => client,
+          } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
+          Effect.provideService(ProviderHost.ProviderHost, {
+            paths: { cwd: "/workspace" },
+            resolveAttachmentPath: () => null,
+          } as unknown as ProviderHost.ProviderHost["Service"]),
+        );
+        const open = (policy: ReturnType<typeof runtimePolicy>) =>
+          adapter.openSession({
+            threadId,
+            providerSessionId: ProviderSessionId.make("session-opencode-upstream"),
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("opencode-test"),
+              model: "anthropic/claude-sonnet",
+              options: [],
+            },
+            runtimePolicy: policy,
+          });
+
+        yield* Effect.scoped(open(runtimePolicy("full-access", { cwd: "/workspace" })));
+        assert.deepEqual(
+          added.map((entry) => entry.name),
+          ["t3-code", "notion"],
+        );
+        assert.deepEqual(added[1]?.config, {
+          type: "remote",
+          url: "http://127.0.0.1:43123/mcp/upstream/server-notion",
+          headers: { Authorization: "Bearer thread-token" },
+          oauth: false,
+        });
+
+        added.length = 0;
+        yield* Effect.scoped(
+          open({
+            ...runtimePolicy("full-access", { cwd: "/workspace" }),
+            sandboxPolicy: { type: "readOnly" },
+          }),
+        );
+        assert.deepEqual(
+          added.map((entry) => entry.name),
+          ["t3-code"],
+        );
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
   );
 
   it.effect("keeps a newly admitted prompt alive across stale idle and delayed busy evidence", () =>

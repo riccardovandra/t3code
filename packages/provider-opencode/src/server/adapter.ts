@@ -57,6 +57,7 @@ import * as Stream from "effect/Stream";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
@@ -971,6 +972,30 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 oauth: false,
               },
             }),
+          );
+          // Each 1.x session runs its own OpenCode server, so plain names cannot collide.
+          yield* Effect.forEach(
+            McpProviderSession.upstreamServersFor(mcpSession, input.runtimePolicy),
+            (server) =>
+              OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
+                client.mcp.add({
+                  name: server.name,
+                  config: {
+                    type: "remote",
+                    url: server.endpoint,
+                    headers: { Authorization: mcpSession.authorizationHeader },
+                    oauth: false,
+                  },
+                }),
+              ).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not add a configured MCP server to OpenCode.", {
+                    server: server.name,
+                    cause,
+                  }),
+                ),
+              ),
+            { discard: true },
           );
         }
 
