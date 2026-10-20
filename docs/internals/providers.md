@@ -130,6 +130,17 @@ checkpoints but cannot roll back its conversation. The [checkpoint boundary](./o
 therefore rejects revert before touching files. Native permission and question option IDs must
 also survive normalization; a display label is not necessarily a valid reply.
 
+## User-configured MCP servers
+
+T3 is the gateway for the MCP servers users add in Settings. Each provider session gets one entry
+per enabled server, pointing at `/mcp/upstream/<serverId>` on T3 with the thread's own T3
+credential; the [forwarding route](../../apps/server/src/mcp/McpHttpServer.ts) attaches the real
+header, OAuth token, or stdio environment on the way out. Upstream secrets therefore never reach a
+provider's argv, config files, or logs, token refresh happens in one place, and adapters share one
+injection path instead of six credential stores. Do not move upstream URLs or tokens into adapters.
+The route never answers 401: a provider would start its own OAuth flow against T3 instead of
+reporting that the upstream server needs sign-in.
+
 ## Attachments and stored history
 
 Attachments live outside the project workspace. The

@@ -86,6 +86,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverReportHostPowerState]: "server",
   [WS_METHODS.serverGetBackgroundPolicy]: "server",
   [WS_METHODS.mcpServersList]: "server",
+  [WS_METHODS.mcpServersSubscribe]: "server",
   [WS_METHODS.mcpServersUpsert]: "server",
   [WS_METHODS.mcpServersRemove]: "server",
   [WS_METHODS.mcpServersSetEnabled]: "server",

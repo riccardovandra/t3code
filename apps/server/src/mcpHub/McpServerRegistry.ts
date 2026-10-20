@@ -103,6 +103,8 @@ export class McpServerRegistry extends Context.Service<
     readonly resetConnection: (id: McpServerId) => Effect.Effect<void>;
     /** Emits the id of every server whose config changed or was removed. */
     readonly changes: Stream.Stream<McpServerId>;
+    /** The list now, then again whenever a config, sign-in or reported status changes. */
+    readonly subscribeList: Stream.Stream<McpServerListResult, McpServerError>;
   }
 >()("t3/mcpHub/McpServerRegistry") {}
 
@@ -118,6 +120,8 @@ const make = Effect.gen(function* () {
   const cache = yield* Ref.make<ReadonlyArray<McpServerConfig> | undefined>(undefined);
   const statuses = yield* Ref.make<ReadonlyMap<McpServerId, McpServerStatus>>(new Map());
   const changed = yield* PubSub.unbounded<McpServerId>();
+  // Subscribers re-read the whole list, so one pending signal covers any burst.
+  const listChanged = yield* PubSub.sliding<void>(1);
 
   // A file that fails to load is not cached, so a later save cannot replace
   // servers the user still has on disk with an empty list.
@@ -169,7 +173,10 @@ const make = Effect.gen(function* () {
       const next = new Map(known);
       next.delete(id);
       return next;
-    }).pipe(Effect.andThen(PubSub.publish(changed, id)));
+    }).pipe(
+      Effect.andThen(PubSub.publish(changed, id)),
+      Effect.andThen(PubSub.publish(listChanged, undefined)),
+    );
 
   const list: McpServerRegistry["Service"]["list"] = Effect.gen(function* () {
     const servers = yield* load;
@@ -381,8 +388,31 @@ const make = Effect.gen(function* () {
       return { headers, env };
     });
 
+  // Status reports do not go through `changes`: that stream drops clients, and
+  // every connect reports a status.
   const reportStatus: McpServerRegistry["Service"]["reportStatus"] = (id, status) =>
-    Ref.update(statuses, (known) => new Map(known).set(id, status));
+    Ref.modify(statuses, (known) => {
+      const previous = known.get(id);
+      const same =
+        previous?.state === status.state &&
+        (previous.state !== "error" ||
+          (status.state === "error" && previous.message === status.message));
+      return [!same, same ? known : new Map(known).set(id, status)] as const;
+    }).pipe(
+      Effect.flatMap((updated) => (updated ? PubSub.publish(listChanged, undefined) : Effect.void)),
+      Effect.asVoid,
+    );
+
+  const subscribeList: McpServerRegistry["Service"]["subscribeList"] = Stream.unwrap(
+    Effect.gen(function* () {
+      // Subscribe before the snapshot so a change between the two is not lost.
+      const subscription = yield* PubSub.subscribe(listChanged);
+      return Stream.concat(
+        Stream.fromEffect(list),
+        Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => list)),
+      );
+    }),
+  );
 
   const resetConnection: McpServerRegistry["Service"]["resetConnection"] = markChanged;
 
@@ -396,6 +426,7 @@ const make = Effect.gen(function* () {
     reportStatus,
     resetConnection,
     changes: Stream.fromPubSub(changed),
+    subscribeList,
   });
 });
 

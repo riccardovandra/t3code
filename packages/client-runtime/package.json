@@ -139,6 +139,10 @@
       "types": "./src/textPaste.ts",
       "default": "./src/textPaste.ts"
     },
+    "./mcp-servers": {
+      "types": "./src/mcpServers.ts",
+      "default": "./src/mcpServers.ts"
+    },
     "./webhook-address": {
       "types": "./src/webhookAddress.ts",
       "default": "./src/webhookAddress.ts"
