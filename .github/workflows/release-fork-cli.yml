@@ -14,6 +14,10 @@ on:
         description: "Existing release tag, for example v0.1.5"
         required: true
         type: string
+      ref:
+        description: "Commit to build, when a build fix landed after the tag. Defaults to the tag."
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -27,6 +31,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
+      ref: ${{ inputs.ref || steps.tag.outputs.tag }}
     steps:
       - id: tag
         shell: bash
@@ -52,7 +57,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.resolve.outputs.tag }}
+          ref: ${{ needs.resolve.outputs.ref }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -95,7 +100,7 @@ jobs:
     uses: ./.github/workflows/release-desktop.yml
     with:
       version: ${{ needs.resolve.outputs.version }}
-      ref: ${{ needs.resolve.outputs.tag }}
+      ref: ${{ needs.resolve.outputs.ref }}
       release_channel: stable
       relay_client_tracing: false
       clerk_publishable_key: ""
