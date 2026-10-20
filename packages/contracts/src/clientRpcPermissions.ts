@@ -54,6 +54,11 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.scheduledTasksRunNow]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksRotateWebhookToken]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
+
+  // A stdio server is a command this environment runs, so changing the list is admin work.
+  [WS_METHODS.mcpServersUpsert]: AuthSettingsWriteScope,
+  [WS_METHODS.mcpServersRemove]: AuthSettingsWriteScope,
+  [WS_METHODS.mcpServersSetEnabled]: AuthSettingsWriteScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 

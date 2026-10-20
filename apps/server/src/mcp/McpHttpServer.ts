@@ -7,13 +7,15 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
+  McpServerId,
   OrchestratorMcpFailure,
   PreviewAutomationError,
   type RunId,
@@ -78,6 +80,10 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as AipmHandlers from "./toolkits/aipm/handlers.ts";
 import { AipmToolkit } from "./toolkits/aipm/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
+import * as McpUpstreamClients from "../mcpHub/McpUpstreamClients.ts";
+import { forwardMcpRequest } from "../mcpHub/McpUpstreamForwarder.ts";
+import * as McpServersHandlers from "./toolkits/mcpServers/handlers.ts";
+import { McpServersToolkit } from "./toolkits/mcpServers/tools.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -1057,6 +1063,66 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
+const layerMcpServersToolkit = toolkitRegistration(McpServersToolkit, McpServersHandlers.layer);
+
+const upstreamFailure = (status: number, error: string, message: string) =>
+  HttpServerResponse.jsonUnsafe(
+    { error, message },
+    { status, headers: { "cache-control": "no-store" } },
+  );
+
+const decodeMcpServerId = Schema.decodeUnknownOption(McpServerId);
+
+/**
+ * A user-configured server, forwarded through T3 Code so its credential stays
+ * here. Failures never answer 401: the provider would start an OAuth flow
+ * against T3 Code instead of reporting that the upstream needs sign-in.
+ */
+const handleUpstreamRequest = (clients: McpUpstreamClients.McpUpstreamClients["Service"]) =>
+  Effect.gen(function* () {
+    const scope = yield* McpInvocationContext.McpInvocationContext;
+    if (scope.thread === undefined) {
+      return upstreamFailure(
+        403,
+        "thread_credential_required",
+        "Configured MCP servers are available to agents running inside T3 Code threads.",
+      );
+    }
+    const serverId = decodeMcpServerId((yield* HttpRouter.params).serverId);
+    if (Option.isNone(serverId)) {
+      return upstreamFailure(404, "mcp_server_not_found", "That MCP server does not exist.");
+    }
+    yield* Effect.annotateCurrentSpan({
+      "orchestration_v2.thread_id": scope.thread.threadId,
+      "mcp.upstream.server_id": serverId.value,
+    });
+    const opened = yield* Effect.result(clients.open(serverId.value));
+    if (Result.isFailure(opened)) {
+      const error = opened.failure;
+      return upstreamFailure(
+        error.reason === "not_found" || error.reason === "disabled" ? 404 : 503,
+        `mcp_server_${error.reason}`,
+        error.message,
+      );
+    }
+    const session = opened.success;
+    const context = yield* Effect.context<never>();
+    return yield* HttpEffect.fromWebHandler((request) =>
+      forwardMcpRequest({
+        session,
+        request,
+        run: (effect, signal) => Effect.runPromiseWith(context)(effect, { signal }),
+      }),
+    );
+  });
+
+export const layerUpstreamRoute = Layer.unwrap(
+  Effect.gen(function* () {
+    const clients = yield* McpUpstreamClients.McpUpstreamClients;
+    return HttpRouter.add("*", "/mcp/upstream/:serverId", handleUpstreamRequest(clients));
+  }),
+).pipe(Layer.provide(layerMcpAuthMiddleware));
+
 export const layerMcpTransport = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -1079,4 +1145,6 @@ export const layer = Layer.mergeAll(
   layerHtmlToolkit,
   layerDocsToolkit,
   layerAipmToolkit,
+  layerMcpServersToolkit,
+  layerUpstreamRoute,
 ).pipe(Layer.provideMerge(layerMcpTransport));

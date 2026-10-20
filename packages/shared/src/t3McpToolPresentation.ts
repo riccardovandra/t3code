@@ -67,7 +67,8 @@ export type T3McpToolSummaryAction =
   | "html-render"
   | "docs"
   | "docs-comments"
-  | "ai-pm-ideas";
+  | "ai-pm-ideas"
+  | "mcp-servers";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -354,6 +355,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   aipm_idea_list: tool(["List", "Listing", "Listed", "AI PM ideas"], "ai-pm-ideas"),
   aipm_idea_save: tool(["Park", "Parking", "Parked", "an idea"], "ai-pm-ideas"),
   aipm_idea_set_status: tool(["Update", "Updating", "Updated", "an idea's status"], "ai-pm-ideas"),
+  mcp_servers_list: tool(["List", "Listing", "Listed", "MCP servers"], "mcp-servers"),
+  mcp_server_upsert: tool(["Save", "Saving", "Saved", "an MCP server"], "mcp-servers"),
+  mcp_server_remove: tool(["Remove", "Removing", "Removed", "an MCP server"], "mcp-servers"),
+  mcp_server_set_enabled: tool(["Toggle", "Toggling", "Toggled", "an MCP server"], "mcp-servers"),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));

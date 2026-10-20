@@ -1,4 +1,5 @@
 import * as AiPmService from "./aiPm/AiPmService.ts";
+import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -548,6 +549,18 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+/**
+ * One handler map for the whole group sits at TypeScript's instantiation depth
+ * limit, so these register through `toLayerHandler` instead.
+ */
+const MCP_SERVER_RPC_METHODS = [
+  WS_METHODS.mcpServersList,
+  WS_METHODS.mcpServersUpsert,
+  WS_METHODS.mcpServersRemove,
+  WS_METHODS.mcpServersSetEnabled,
+] as const;
+
+const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...MCP_SERVER_RPC_METHODS);
 // Replaying each intervening event costs a shell refetch; past this gap a
 // single O(active-threads) snapshot is cheaper and bounded.
 const SHELL_RESUME_MAX_GAP = 1_000;
@@ -1162,6 +1175,20 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+const layerMcpServersRpc = (mcpServers: McpServerRegistry.McpServerRegistry["Service"]) =>
+  Layer.mergeAll(
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersList, () => mcpServers.list),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersUpsert, (input) =>
+      mcpServers.upsert(input),
+    ),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersRemove, (input) =>
+      mcpServers.remove(input).pipe(Effect.as({})),
+    ),
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.mcpServersSetEnabled, (input) =>
+      mcpServers.setEnabled(input),
+    ),
+  );
+
 const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -1169,7 +1196,7 @@ const layerWsRpc = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  ServerWsRpcGroupCore.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1795,7 +1822,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerWsRpcGroup.of({
+      const handlers = ServerWsRpcGroupCore.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3108,6 +3135,7 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
+    const mcpServers = yield* McpServerRegistry.McpServerRegistry;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3180,6 +3208,7 @@ export const layer = Layer.unwrap(
               previewAutomationBroker,
               serverBrowser,
             ).pipe(
+              Layer.merge(layerMcpServersRpc(mcpServers)),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

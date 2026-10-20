@@ -442,6 +442,9 @@ export function summarizeT3ToolCalls(
     case "ai-pm-ideas":
       label = phrase("Used", "use", quantity(selected.length, "AI PM idea tool"));
       break;
+    case "mcp-servers":
+      label = phrase("Used", "use", quantity(selected.length, "MCP server tool"));
+      break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;
