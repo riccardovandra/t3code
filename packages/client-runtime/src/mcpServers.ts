@@ -257,3 +257,171 @@ export function mcpServerDraftDropsSignIn(
   const clientId = draft.registeredClient ? draft.clientId.trim() : undefined;
   return draft.url.trim() !== entry.transport.url || clientId !== entry.auth.client?.clientId;
 }
+
+export interface McpServerPreset {
+  readonly label: string;
+  readonly name: string;
+  readonly transport:
+    | {
+        readonly type: "http";
+        readonly url: string;
+        readonly auth: "none" | "header" | "oauth";
+        /** The provider does not support dynamic client registration. */
+        readonly registeredClient?: boolean;
+      }
+    | { readonly type: "stdio"; readonly command: string; readonly args: ReadonlyArray<string> };
+  /** Setup the provider needs before sign-in works, shown when the preset is picked. */
+  readonly note: string | null;
+}
+
+const GOOGLE_CLIENT_NOTE =
+  "Needs a Google Cloud OAuth client (Web application, marked for an AI agent) with this API's MCP service enabled. Register the redirect URI below.";
+
+/** Well-known servers that prefill the add form. Each still saves through the normal form. */
+export const MCP_SERVER_PRESETS: ReadonlyArray<McpServerPreset> = [
+  {
+    label: "Gmail",
+    name: "gmail",
+    transport: {
+      type: "http",
+      url: "https://gmailmcp.googleapis.com/mcp/v1",
+      auth: "oauth",
+      registeredClient: true,
+    },
+    note: GOOGLE_CLIENT_NOTE,
+  },
+  {
+    label: "Google Drive",
+    name: "gdrive",
+    transport: {
+      type: "http",
+      url: "https://drivemcp.googleapis.com/mcp/v1",
+      auth: "oauth",
+      registeredClient: true,
+    },
+    note: GOOGLE_CLIENT_NOTE,
+  },
+  {
+    label: "Google Calendar",
+    name: "gcalendar",
+    transport: {
+      type: "http",
+      url: "https://calendarmcp.googleapis.com/mcp/v1",
+      auth: "oauth",
+      registeredClient: true,
+    },
+    note: GOOGLE_CLIENT_NOTE,
+  },
+  {
+    label: "Slack",
+    name: "slack",
+    transport: {
+      type: "http",
+      url: "https://mcp.slack.com/mcp",
+      auth: "oauth",
+      registeredClient: true,
+    },
+    note: "Needs a Slack app at api.slack.com/apps with the Model Context Protocol toggle on and user token scopes. Register the redirect URI below.",
+  },
+  {
+    label: "Fireflies",
+    name: "fireflies",
+    transport: { type: "http", url: "https://api.fireflies.ai/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Gamma",
+    name: "gamma",
+    transport: { type: "http", url: "https://mcp.gamma.app/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Eden",
+    name: "eden",
+    transport: { type: "http", url: "https://mcp.eden.so/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Upwork",
+    name: "upwork",
+    transport: { type: "http", url: "https://mcp.upwork.com/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Apify",
+    name: "apify",
+    transport: { type: "http", url: "https://mcp.apify.com", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Notion",
+    name: "notion",
+    transport: { type: "http", url: "https://mcp.notion.com/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Linear",
+    name: "linear",
+    transport: { type: "http", url: "https://mcp.linear.app/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Atlassian",
+    name: "atlassian",
+    transport: { type: "http", url: "https://mcp.atlassian.com/v1/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "GitHub",
+    name: "github",
+    transport: { type: "http", url: "https://api.githubcopilot.com/mcp/", auth: "header" },
+    note: "Paste a GitHub personal access token as Bearer <token>.",
+  },
+  {
+    label: "Sentry",
+    name: "sentry",
+    transport: { type: "http", url: "https://mcp.sentry.dev/mcp", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Stripe",
+    name: "stripe",
+    transport: { type: "http", url: "https://mcp.stripe.com", auth: "oauth" },
+    note: null,
+  },
+  {
+    label: "Playwright",
+    name: "playwright",
+    transport: { type: "stdio", command: "npx", args: ["-y", "@playwright/mcp@latest"] },
+    note: "Runs a browser on this environment's machine. Needs Node.js there.",
+  },
+];
+
+/**
+ * Each account is its own server, so a second Gmail or Slack gets the next free
+ * name, such as gmail-2.
+ */
+export function mcpServerPresetDraft(
+  preset: McpServerPreset,
+  takenNames: ReadonlySet<string> = new Set(),
+): McpServerDraft {
+  let name = preset.name;
+  for (let suffix = 2; takenNames.has(name); suffix++) name = `${preset.name}-${suffix}`;
+  const draft = { ...mcpServerDraft(null), name };
+  const { transport } = preset;
+  if (transport.type === "stdio") {
+    return {
+      ...draft,
+      transport: "stdio",
+      command: transport.command,
+      args: transport.args.join("\n"),
+    };
+  }
+  return {
+    ...draft,
+    transport: "http",
+    url: transport.url,
+    auth: transport.auth,
+    registeredClient: transport.registeredClient ?? false,
+  };
+}

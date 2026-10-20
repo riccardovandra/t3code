@@ -94,6 +94,19 @@ const decodeStoredSession = Schema.decodeUnknownOption(StoredSessionJson);
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
+/**
+ * Google issues a refresh token only for offline access with a consent prompt,
+ * and otherwise signs in silently as the browser's current account, which would
+ * give a second Gmail server the first one's account.
+ */
+export const withProviderAuthorizationParams = (url: URL): URL => {
+  if (url.hostname !== "accounts.google.com") return url;
+  const next = new URL(url);
+  next.searchParams.set("access_type", "offline");
+  next.searchParams.set("prompt", "consent select_account");
+  return next;
+};
+
 /** Forwarding ran into a sign-in it cannot complete without the user. */
 const needsSignIn = () => new UnauthorizedError("This MCP server needs sign-in in T3 Code.");
 
@@ -280,7 +293,7 @@ const make = Effect.gen(function* () {
         try: () =>
           auth(
             signInProvider(config, state, flow, (url) => {
-              authorizationUrl = url;
+              authorizationUrl = withProviderAuthorizationParams(url);
             }),
             { serverUrl: config.transport.url },
           ),

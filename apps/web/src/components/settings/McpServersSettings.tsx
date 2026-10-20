@@ -1,16 +1,19 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, McpServerEntry } from "@t3tools/contracts";
 import {
+  MCP_SERVER_PRESETS,
   MCP_SERVERS_UNSUPPORTED_MESSAGE,
   mcpOAuthRedirect,
   mcpServerAuthAction,
   mcpServerDraft,
   mcpServerDraftDropsSignIn,
+  mcpServerPresetDraft,
   mcpServerStatusPresentation,
   mcpServerTransportSummary,
   mcpServerUpsertInput,
   type McpServerDraft,
   type McpServerEnvDraft,
+  type McpServerPreset,
   type McpServerStatusTone,
 } from "@t3tools/client-runtime/mcp-servers";
 import {
@@ -446,6 +449,10 @@ function McpServerEditorForm({
   readonly onClose: () => void;
 }) {
   const [draft, setDraft] = useState(() => mcpServerDraft(entry));
+  const [preset, setPreset] = useState<McpServerPreset | null>(null);
+  const servers = useEnvironmentQuery(
+    serverEnvironment.mcpServersLive({ environmentId, input: {} }),
+  );
   const [error, setError] = useState<string | null>(null);
   const upsert = useAtomCommand(serverEnvironment.upsertMcpServer, {
     label: "mcp server upsert",
@@ -489,6 +496,35 @@ function McpServerEditorForm({
       </DialogHeader>
       <DialogPanel>
         <fieldset disabled={saving} className="space-y-5">
+          {entry === null ? (
+            <div className="space-y-1.5">
+              <Label>Start from</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {MCP_SERVER_PRESETS.map((option) => (
+                  <Button
+                    key={option.name}
+                    size="xs"
+                    variant={preset === option ? "secondary" : "outline"}
+                    aria-pressed={preset === option}
+                    onClick={() => {
+                      setPreset(option);
+                      setDraft(
+                        mcpServerPresetDraft(
+                          option,
+                          new Set(servers.data?.servers.map((server) => server.name)),
+                        ),
+                      );
+                      setError(null);
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              {preset?.note ? <p className="text-xs text-muted-foreground">{preset.note}</p> : null}
+            </div>
+          ) : null}
+
           <Field label="Name" hint="lowercase, digits, - and _" htmlFor="mcp-server-name">
             <Input
               id="mcp-server-name"

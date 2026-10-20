@@ -2,9 +2,11 @@ import { McpServerId, type McpServerConfig } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  MCP_SERVER_PRESETS,
   mcpOAuthRedirect,
   mcpServerDraft,
   mcpServerDraftDropsSignIn,
+  mcpServerPresetDraft,
   mcpServerUpsertInput,
 } from "./mcpServers.ts";
 
@@ -99,5 +101,37 @@ describe("mcpOAuthRedirect", () => {
     });
     expect(mcpOAuthRedirect("http://127.0.0.1:3773/")?.note).toContain("reject localhost");
     expect(mcpOAuthRedirect(null)).toBeNull();
+  });
+});
+
+describe("MCP_SERVER_PRESETS", () => {
+  it("saves every preset that needs no client details", () => {
+    for (const preset of MCP_SERVER_PRESETS) {
+      const draft = mcpServerPresetDraft(preset);
+      const result = mcpServerUpsertInput(
+        draft.auth === "header" ? { ...draft, headerValue: "Bearer token" } : draft,
+        redirectUri,
+      );
+      if (draft.registeredClient) {
+        expect(result).toEqual({
+          ok: false,
+          error: "Enter the client ID you registered with the provider.",
+        });
+      } else {
+        expect(result.ok, preset.label).toBe(true);
+      }
+    }
+  });
+
+  it("names another account after the ones already added", () => {
+    const slack = MCP_SERVER_PRESETS.find((preset) => preset.name === "slack");
+    if (slack === undefined) throw new Error("Slack preset missing");
+    expect(mcpServerPresetDraft(slack, new Set(["gmail"])).name).toBe("slack");
+    expect(mcpServerPresetDraft(slack, new Set(["slack", "slack-2"])).name).toBe("slack-3");
+  });
+
+  it("uses distinct names", () => {
+    const names = MCP_SERVER_PRESETS.map((preset) => preset.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
