@@ -1,11 +1,5 @@
 # Brand icons
 
-## UP Orchestrator fork
-
-This fork ships the UP Orchestrator logo. `up-logo-512.png` is its source, and the tracked iOS, macOS, Linux, Windows, and web exports in `dev/`, `nightly/`, and `prod/` (plus the copies in `apps/web/public`) were rendered from it with the same file names, so build scripts need no changes. The Icon Composer projects and the Android launcher artwork below still contain the upstream T3 mark: do not run `vp run icons:export` or `vp run icons:export:android`, as they would overwrite the UP icons with T3 ones.
-
-## Upstream pipeline
-
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`

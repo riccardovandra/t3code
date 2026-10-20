@@ -77,7 +77,7 @@ export function PullRequestToolbar(props: {
               brand={
                 <CompactBrandTitle
                   allowFontScaling={false}
-                  accessibilityLabel="UP Orchestrator, Pull requests"
+                  accessibilityLabel="T3 Code, Pull requests"
                   fit
                 />
               }

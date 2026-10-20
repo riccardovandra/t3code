@@ -182,7 +182,7 @@ function namedProjectReadme(name: string): string {
     "",
     `# ${name}`,
     "",
-    "Created in UP Orchestrator.",
+    "Created in [T3 Code](https://t3.codes).",
     "",
   ].join("\n");
 }

@@ -2671,8 +2671,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "UP Orchestrator (Nightly)"
-    : (desktopPackageJson.productName ?? "UP Orchestrator");
+    ? "T3 Code (Nightly)"
+    : (desktopPackageJson.productName ?? "T3 Code");
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2694,7 +2694,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "UP-Orchestrator-${version}-${arch}.${ext}",
+    artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2751,9 +2751,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
         NSLocalNetworkUsageDescription:
-          "UP Orchestrator connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
+          "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
-          "UP Orchestrator captures the active window when you use the window capture shortcut.",
+          "T3 Code captures the active window when you use the window capture shortcut.",
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
         CFBundleDocumentTypes: [
@@ -2767,7 +2767,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       },
       protocols: [
         {
-          name: "UP Orchestrator",
+          name: "T3 Code",
           schemes: ["t3code", "t3code-dev"],
         },
         {
@@ -2824,7 +2824,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       maintainer: "T3 Tools <hello@t3.codes>",
       protocols: [
         {
-          name: "UP Orchestrator",
+          name: "T3 Code",
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -3747,7 +3747,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     private: true,
     packageManager: rootPackageJson.packageManager,
     description:
-      "UP Orchestrator is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
+      "T3 Code is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
     license: "MIT",
     homepage: "https://t3.codes",
     author: "T3 Tools",
@@ -4021,7 +4021,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for UP Orchestrator."),
+  Command.withDescription("Build a desktop artifact for T3 Code."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 
