@@ -9,6 +9,9 @@ import {
 } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 
+export const MCP_SERVERS_UNSUPPORTED_MESSAGE =
+  "This environment runs an older T3 server without MCP server support. Update its server to manage MCP servers here.";
+
 export type McpServerStatusTone = "success" | "warning" | "error" | "muted";
 
 export interface McpServerStatusPresentation {

@@ -265,6 +265,7 @@ function main(): void {
 
   NodeChildProcess.execFileSync("gh", ghArgs, { cwd: repoRoot, stdio: "inherit" });
   print(`\nPublished ${tag}. Installed builds will offer it on their next update check.`);
+  print("The Release fork CLI workflow now attaches the Linux CLI archive to it.");
 }
 
 if (import.meta.main) {

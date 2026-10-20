@@ -487,6 +487,23 @@ node scripts/release-fork-desktop.ts             # build, verify, and publish
   `gh release create` with the tag on the current `HEAD`. The commit must already be on the fork;
   a dirty tree needs `--allow-dirty`.
 
+Publishing the release triggers `.github/workflows/release-fork-cli.yml`, which builds the
+`linux-x64` CLI archive through `release-desktop.yml` on a GitHub-hosted runner and attaches
+`t3-X.Y.Z-linux-x64.tar.gz` and `SHA256SUMS` to the same release. To add them to an existing
+release, run it by hand: `gh workflow run release-fork-cli.yml -f tag=vX.Y.Z`.
+
+A Linux host then installs the fork's server with `t3 update`. The release index it reads is always
+upstream's, so name the version explicitly and point downloads at the fork:
+
+```bash
+T3CODE_RELEASE_BASE_URL=https://github.com/<owner>/<repo>/releases/download \
+  t3 update --version X.Y.Z --yes
+```
+
+Without `--yes` an interactive shell asks before restarting the background service; elsewhere the
+service keeps its old version until `t3 service restart`. A launcher that is a shell script rather
+than a symlink into `~/.t3/runtime/versions` is not repointed and has to be edited by hand.
+
 Unsigned macOS builds are ad-hoc signed, and Squirrel.Mac rejects updates for a bundle without a
 Team ID. Those builds detect this with `codesign` at install time and swap the bundle themselves
 (`apps/desktop/src/updates/MacSelfInstall.ts`). The download and restart buttons behave the same;
