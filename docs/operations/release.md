@@ -486,6 +486,13 @@ node scripts/release-fork-desktop.ts             # build, verify, and publish
   `release/fork-vX.Y.Z/`, checks that the zip's `app-update.yml` names the fork, then runs
   `gh release create` with the tag on the current `HEAD`. The commit must already be on the fork;
   a dirty tree needs `--allow-dirty`.
+- The product name is applied only for the build. `scripts/fork-brand.ts` rewrites the
+  user-facing name in the working tree, the build runs, and the original files are written back.
+  Source keeps upstream's wording so daily upstream merges do not conflict on name strings; icons
+  are the only committed part of the brand. Write new user-facing text as "T3 Code".
+
+After merging upstream, run `node scripts/fork-brand.ts --check`. It fails when a branded file was
+renamed or an edit no longer matches; update the lists in that script to follow upstream.
 
 Publishing the release triggers `.github/workflows/release-fork-cli.yml`, which builds the
 `linux-x64` CLI archive through `release-desktop.yml` on a GitHub-hosted runner and attaches
