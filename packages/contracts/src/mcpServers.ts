@@ -1,0 +1,159 @@
+import * as Schema from "effect/Schema";
+
+import { IsoDateTime, SecretRef, TrimmedNonEmptyString } from "./baseSchemas.ts";
+
+/** Also names the server's secrets on disk, so it stays filename-safe. */
+export const McpServerId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/)).pipe(
+  Schema.brand("McpServerId"),
+);
+export type McpServerId = typeof McpServerId.Type;
+
+/**
+ * Providers show the name in tool names such as `mcp__notion__search`, so it is
+ * a lowercase slug that cannot impersonate T3 Code's own server.
+ */
+export const RESERVED_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
+  "t3-code",
+  "t3_code",
+  "t3code",
+]);
+
+export const McpServerName = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+).annotate({
+  description:
+    "Lowercase letters, digits, '-' and '_'. Agents see it in tool names such as mcp__<name>__<tool>.",
+});
+
+const EnvName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/));
+const HeaderName = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,128}$/));
+const HttpUrl = TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\/\S+$/i)).annotate({
+  description: "The server's Streamable HTTP endpoint.",
+});
+
+export const McpServerTransport = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("http"), url: HttpUrl }),
+  Schema.Struct({
+    type: Schema.Literal("stdio"),
+    command: TrimmedNonEmptyString,
+    args: Schema.Array(Schema.String),
+    env: Schema.Record(EnvName, Schema.String),
+    secretEnv: Schema.Array(EnvName).annotate({
+      description: "Environment variables whose values are stored as secrets.",
+    }),
+  }),
+]);
+export type McpServerTransport = typeof McpServerTransport.Type;
+
+export const McpServerAuth = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("none") }),
+  Schema.Struct({ type: Schema.Literal("header"), header: HeaderName }),
+  Schema.Struct({ type: Schema.Literal("oauth") }),
+]);
+export type McpServerAuth = typeof McpServerAuth.Type;
+
+/** What clients see. Secret values stay on the server. */
+export const McpServerConfig = Schema.Struct({
+  id: McpServerId,
+  name: McpServerName,
+  enabled: Schema.Boolean,
+  transport: McpServerTransport,
+  auth: McpServerAuth,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type McpServerConfig = typeof McpServerConfig.Type;
+
+export const McpServerStatus = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("idle") }),
+  Schema.Struct({ state: Schema.Literal("connected") }),
+  Schema.Struct({ state: Schema.Literal("needs-sign-in") }),
+  Schema.Struct({ state: Schema.Literal("error"), message: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("disabled") }),
+]);
+export type McpServerStatus = typeof McpServerStatus.Type;
+
+export const McpServerEntry = Schema.Struct({
+  ...McpServerConfig.fields,
+  status: McpServerStatus,
+});
+export type McpServerEntry = typeof McpServerEntry.Type;
+
+export const McpServerListResult = Schema.Struct({ servers: Schema.Array(McpServerEntry) });
+export type McpServerListResult = typeof McpServerListResult.Type;
+
+const McpSecretInput = Schema.Struct({
+  secret: Schema.optional(TrimmedNonEmptyString),
+  secretRef: Schema.optional(SecretRef).annotate({
+    description:
+      "A secret the user entered through request_secret, used instead of secret. It is consumed by this save.",
+  }),
+}).annotate({ description: "Omit both secret and secretRef to keep the stored value." });
+export type McpSecretInput = typeof McpSecretInput.Type;
+
+export const McpServerUpsertInput = Schema.Struct({
+  id: Schema.optional(McpServerId).annotate({
+    description: "The server to update. Omit to add a new server.",
+  }),
+  name: McpServerName,
+  enabled: Schema.optional(Schema.Boolean).annotate({ description: "Defaults to true." }),
+  transport: Schema.Union([
+    Schema.Struct({ type: Schema.Literal("http"), url: HttpUrl }),
+    Schema.Struct({
+      type: Schema.Literal("stdio"),
+      command: TrimmedNonEmptyString,
+      args: Schema.optional(Schema.Array(Schema.String)),
+      env: Schema.optional(Schema.Record(EnvName, Schema.String)),
+      secretEnv: Schema.optional(Schema.Record(EnvName, McpSecretInput)).annotate({
+        description:
+          "Environment variables stored as secrets. Listed names are kept; names left out are removed.",
+      }),
+    }),
+  ]),
+  auth: Schema.optional(
+    Schema.Union([
+      Schema.Struct({ type: Schema.Literal("none") }),
+      Schema.Struct({
+        type: Schema.Literal("header"),
+        header: HeaderName.annotate({ description: "Such as Authorization or X-API-Key." }),
+        ...McpSecretInput.fields,
+      }).annotate({ description: "Send a stored secret, such as 'Bearer <token>', as a header." }),
+      Schema.Struct({ type: Schema.Literal("oauth") }),
+    ]),
+  ).annotate({ description: "HTTP servers only. Defaults to none." }),
+});
+export type McpServerUpsertInput = typeof McpServerUpsertInput.Type;
+
+export const McpServerRemoveInput = Schema.Struct({ id: McpServerId });
+export type McpServerRemoveInput = typeof McpServerRemoveInput.Type;
+
+export const McpServerSetEnabledInput = Schema.Struct({
+  id: McpServerId,
+  enabled: Schema.Boolean,
+});
+export type McpServerSetEnabledInput = typeof McpServerSetEnabledInput.Type;
+
+const MCP_SERVER_FAILURE_MESSAGES = {
+  not_found: "That MCP server does not exist.",
+  reserved_name: "That name is reserved for T3 Code's own MCP server.",
+  duplicate_name: "Another MCP server already uses that name.",
+  auth_unsupported: "stdio servers take credentials through secret environment variables.",
+  secret_required: "This server needs a secret. Pass secret or secretRef.",
+  secret_ref_failed:
+    "That secretRef was already used, expired, or does not exist. Ask the user again with request_secret.",
+  secret_ref_unscoped: "A secretRef can only be used from the thread that requested it.",
+  read_failed: "Could not read the MCP server list.",
+  write_failed: "Could not save the MCP server list.",
+  secret_failed: "Could not store or read an MCP server secret.",
+} as const;
+
+export class McpServerError extends Schema.TaggedError<McpServerError>()("McpServerError", {
+  reason: Schema.Literals(
+    Object.keys(MCP_SERVER_FAILURE_MESSAGES) as Array<keyof typeof MCP_SERVER_FAILURE_MESSAGES>,
+  ),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
+  override get message(): string {
+    return MCP_SERVER_FAILURE_MESSAGES[this.reason];
+  }
+}

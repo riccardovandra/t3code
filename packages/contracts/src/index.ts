@@ -68,3 +68,4 @@ export * from "./clientRpcPermissions.ts";
 
 export * from "./aiPm.ts";
 export * from "./docs.ts";
+export * from "./mcpServers.ts";

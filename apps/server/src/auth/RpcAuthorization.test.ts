@@ -46,6 +46,17 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("lets readers list MCP servers but requires settings access to change them", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.mcpServersList)).toBe(AuthOrchestrationReadScope);
+    for (const method of [
+      WS_METHODS.mcpServersUpsert,
+      WS_METHODS.mcpServersRemove,
+      WS_METHODS.mcpServersSetEnabled,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+  });
+
   it("lets readers see doc comments but requires operate access to change them", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.docsListComments)).toBe(AuthOrchestrationReadScope);
     for (const method of [

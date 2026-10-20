@@ -371,6 +371,14 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  McpServerEntry,
+  McpServerError,
+  McpServerListResult,
+  McpServerRemoveInput,
+  McpServerSetEnabledInput,
+  McpServerUpsertInput,
+} from "./mcpServers.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -542,6 +550,10 @@ export const WS_METHODS = {
   secretsAnswerRequest: "secrets.answerRequest",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
+  mcpServersList: "mcpServers.list",
+  mcpServersUpsert: "mcpServers.upsert",
+  mcpServersRemove: "mcpServers.remove",
+  mcpServersSetEnabled: "mcpServers.setEnabled",
 
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
@@ -1839,6 +1851,27 @@ const WsDocsDeleteCommentRpc = Rpc.make(WS_METHODS.docsDeleteComment, {
   error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
 });
 
+const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
+  payload: Schema.Struct({}),
+  success: McpServerListResult,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+const WsMcpServersUpsertRpc = Rpc.make(WS_METHODS.mcpServersUpsert, {
+  payload: McpServerUpsertInput,
+  success: McpServerEntry,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+const WsMcpServersRemoveRpc = Rpc.make(WS_METHODS.mcpServersRemove, {
+  payload: McpServerRemoveInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+const WsMcpServersSetEnabledRpc = Rpc.make(WS_METHODS.mcpServersSetEnabled, {
+  payload: McpServerSetEnabledInput,
+  success: McpServerEntry,
+  error: Schema.Union([McpServerError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2006,6 +2039,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSecretsAnswerRequestRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
+  WsMcpServersListRpc,
+  WsMcpServersUpsertRpc,
+  WsMcpServersRemoveRpc,
+  WsMcpServersSetEnabledRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,

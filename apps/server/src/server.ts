@@ -64,6 +64,8 @@ import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceR
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
+import * as McpUpstreamClients from "./mcpHub/McpUpstreamClients.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -703,6 +705,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),
+  // One pool of upstream clients serves every thread, and both transports edit the same list.
+  Layer.provide(McpUpstreamClients.layer.pipe(Layer.provideMerge(McpServerRegistry.layer))),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(layerPullRequestService),
