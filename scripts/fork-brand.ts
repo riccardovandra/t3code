@@ -148,6 +148,8 @@ export const PROTECTED = [
   "Description=T3 Code server",
   // Refers to real upstream releases.
   "a T3 Code version before",
+  // Spotlight alias, so searching the pre-rebrand name still finds the app.
+  'CFBundleAlternateNames: ["T3 Code"]',
 ];
 
 interface Edit {
@@ -189,12 +191,6 @@ const EDITS: ReadonlyArray<Edit> = [
     file: "scripts/build-desktop-artifact.ts",
     find: 'artifactName: "T3-Code-${version}-${arch}.${ext}"',
     replace: 'artifactName: "UP-Orchestrator-${version}-${arch}.${ext}"',
-  },
-  // Spotlight indexes kMDItemAlternateNames, so searching the old name still finds the app.
-  {
-    file: "scripts/build-desktop-artifact.ts",
-    find: "NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,",
-    replace: `NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,\n        CFBundleAlternateNames: ["${UPSTREAM_NAME}"],`,
   },
 ];
 
