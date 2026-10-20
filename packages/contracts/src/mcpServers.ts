@@ -45,10 +45,32 @@ export const McpServerTransport = Schema.Union([
 ]);
 export type McpServerTransport = typeof McpServerTransport.Type;
 
+/** The only path that receives sign-in redirects, so a registered redirect must point at it. */
+export const MCP_CLIENT_OAUTH_CALLBACK_PATH = "/oauth/mcp-client/callback";
+
+const OAuthRedirectUri = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^https?:\/\/[^/\s?#]+\/oauth\/mcp-client\/callback$/i),
+).annotate({
+  description:
+    "The redirect URI registered with the provider. It must be this T3 Code server's address followed by /oauth/mcp-client/callback.",
+});
+
 export const McpServerAuth = Schema.Union([
   Schema.Struct({ type: Schema.Literal("none") }),
   Schema.Struct({ type: Schema.Literal("header"), header: HeaderName }),
-  Schema.Struct({ type: Schema.Literal("oauth") }),
+  Schema.Struct({
+    type: Schema.Literal("oauth"),
+    client: Schema.optional(
+      Schema.Struct({
+        clientId: TrimmedNonEmptyString,
+        redirectUri: OAuthRedirectUri,
+        hasClientSecret: Schema.Boolean,
+      }),
+    ).annotate({
+      description:
+        "A client registered by hand with the provider. Absent means dynamic registration.",
+    }),
+  }),
 ]);
 export type McpServerAuth = typeof McpServerAuth.Type;
 
@@ -118,7 +140,22 @@ export const McpServerUpsertInput = Schema.Struct({
         header: HeaderName.annotate({ description: "Such as Authorization or X-API-Key." }),
         ...McpSecretInput.fields,
       }).annotate({ description: "Send a stored secret, such as 'Bearer <token>', as a header." }),
-      Schema.Struct({ type: Schema.Literal("oauth") }),
+      Schema.Struct({
+        type: Schema.Literal("oauth"),
+        client: Schema.optional(
+          Schema.Struct({
+            clientId: TrimmedNonEmptyString,
+            redirectUri: OAuthRedirectUri,
+            clientSecret: Schema.optional(McpSecretInput).annotate({
+              description:
+                "The registered client secret. Omit for a public client, or to keep the stored secret.",
+            }),
+          }),
+        ).annotate({
+          description:
+            "Only for providers that reject dynamic client registration or localhost redirects, such as Gamma. Omit to register a client automatically at sign-in.",
+        }),
+      }).annotate({ description: "Sign in through the server's OAuth flow with startSignIn." }),
     ]),
   ).annotate({ description: "HTTP servers only. Defaults to none." }),
 });
@@ -133,6 +170,19 @@ export const McpServerSetEnabledInput = Schema.Struct({
 });
 export type McpServerSetEnabledInput = typeof McpServerSetEnabledInput.Type;
 
+export const McpServerSignInInput = Schema.Struct({ id: McpServerId });
+export type McpServerSignInInput = typeof McpServerSignInInput.Type;
+
+export const McpServerSignInResult = Schema.Struct({
+  authorizationUrl: Schema.String.annotate({
+    description: "Open in a browser to sign in. It expires after 10 minutes and works once.",
+  }),
+});
+export type McpServerSignInResult = typeof McpServerSignInResult.Type;
+
+export const McpServerSignOutInput = Schema.Struct({ id: McpServerId });
+export type McpServerSignOutInput = typeof McpServerSignOutInput.Type;
+
 const MCP_SERVER_FAILURE_MESSAGES = {
   not_found: "That MCP server does not exist.",
   reserved_name: "That name is reserved for T3 Code's own MCP server.",
@@ -145,6 +195,8 @@ const MCP_SERVER_FAILURE_MESSAGES = {
   read_failed: "Could not read the MCP server list.",
   write_failed: "Could not save the MCP server list.",
   secret_failed: "Could not store or read an MCP server secret.",
+  not_oauth: "That MCP server does not use OAuth sign-in.",
+  sign_in_failed: "Could not start sign-in with that MCP server's authorization server.",
 } as const;
 
 export class McpServerError extends Schema.TaggedError<McpServerError>()("McpServerError", {

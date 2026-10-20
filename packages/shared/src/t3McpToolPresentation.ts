@@ -359,6 +359,14 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   mcp_server_upsert: tool(["Save", "Saving", "Saved", "an MCP server"], "mcp-servers"),
   mcp_server_remove: tool(["Remove", "Removing", "Removed", "an MCP server"], "mcp-servers"),
   mcp_server_set_enabled: tool(["Toggle", "Toggling", "Toggled", "an MCP server"], "mcp-servers"),
+  mcp_server_start_sign_in: tool(
+    ["Start", "Starting", "Started", "MCP server sign-in"],
+    "mcp-servers",
+  ),
+  mcp_server_sign_out: tool(
+    ["Sign out", "Signing out", "Signed out", "of an MCP server"],
+    "mcp-servers",
+  ),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));

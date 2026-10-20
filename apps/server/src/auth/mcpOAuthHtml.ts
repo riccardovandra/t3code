@@ -39,3 +39,25 @@ export function renderErrorPage(description: string): string {
     <p>Close this page and start the sign-in again from your agent.</p>`,
   );
 }
+
+/** The page an MCP server's authorization server returns the browser to. */
+export function renderMcpClientSignInPage(
+  result:
+    | { readonly ok: true; readonly serverName: string }
+    | { readonly ok: false; readonly description: string },
+): string {
+  if (result.ok) {
+    return shell(
+      "Signed in",
+      `<h1>Signed in to ${escapeHtml(result.serverName)}</h1>
+    <p>Agents in T3 Code can now use this MCP server.</p>
+    <p>You can close this tab.</p>`,
+    );
+  }
+  return shell(
+    "Sign-in failed",
+    `<h1>Sign-in did not finish</h1>
+    <p>${escapeHtml(result.description)}</p>
+    <p>You can close this tab.</p>`,
+  );
+}

@@ -4931,6 +4931,7 @@ it.effect(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-session-mcp-hub-test-" }),
         ),
         Layer.provide(NodeServices.layer),
+        Layer.orDie,
       );
       const effect = Effect.gen(function* () {
         const eventSink = yield* EventSink.EventSinkV2;

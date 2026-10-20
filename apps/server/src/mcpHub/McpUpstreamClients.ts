@@ -5,6 +5,7 @@
  * process. Upstream credentials are attached here and never leave the server.
  */
 import { type McpServerConfig, type McpServerId, type McpServerStatus } from "@t3tools/contracts";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getDefaultEnvironment,
@@ -14,6 +15,7 @@ import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { OAuthError, ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   ErrorCode,
@@ -35,6 +37,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import packageJson from "../../package.json" with { type: "json" };
+import * as McpServerOAuth from "./McpServerOAuth.ts";
 import * as McpServerRegistry from "./McpServerRegistry.ts";
 
 const UPSTREAM_FAILURE_MESSAGES = {
@@ -86,13 +89,29 @@ interface Entry {
   active: number;
 }
 
-const connectFailure = (config: McpServerConfig, cause: unknown): UpstreamFailureReason => {
+/**
+ * An OAuth server whose tokens cannot be refreshed surfaces as the SDK's
+ * UnauthorizedError or an OAuth error from the token endpoint.
+ */
+const authFailure = (
+  config: McpServerConfig,
+  cause: unknown,
+): UpstreamFailureReason | undefined => {
   if (cause instanceof StreamableHTTPError && (cause.code === 401 || cause.code === 403)) {
     // A server that wants a credential nobody configured is asking for sign-in.
     return config.auth.type === "header" ? "rejected_credential" : "needs_sign_in";
   }
-  return "unavailable";
+  if (
+    cause instanceof UnauthorizedError ||
+    (cause instanceof OAuthError && !(cause instanceof ServerError))
+  ) {
+    return "needs_sign_in";
+  }
+  return undefined;
 };
+
+const connectFailure = (config: McpServerConfig, cause: unknown): UpstreamFailureReason =>
+  authFailure(config, cause) ?? "unavailable";
 
 const statusFor = (reason: UpstreamFailureReason): McpServerStatus =>
   reason === "needs_sign_in"
@@ -101,6 +120,7 @@ const statusFor = (reason: UpstreamFailureReason): McpServerStatus =>
 
 const make = Effect.gen(function* () {
   const registry = yield* McpServerRegistry.McpServerRegistry;
+  const oauth = yield* McpServerOAuth.McpServerOAuth;
   const scope = yield* Effect.scope;
   const entries = new Map<McpServerId, Entry>();
 
@@ -125,10 +145,15 @@ const make = Effect.gen(function* () {
       const credentials = yield* registry
         .credentials(config)
         .pipe(Effect.mapError((cause) => fail("unavailable", cause)));
+      const authProvider = yield* oauth.forwardingProvider(config);
+      if (config.auth.type === "oauth" && authProvider === undefined) {
+        return yield* fail("needs_sign_in");
+      }
       const transport =
         config.transport.type === "http"
           ? new StreamableHTTPClientTransport(new URL(config.transport.url), {
               requestInit: { headers: credentials.headers },
+              ...(authProvider === undefined ? {} : { authProvider }),
             })
           : new StdioClientTransport({
               command: config.transport.command,
@@ -191,7 +216,6 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError((cause) => fail("unavailable", cause)));
       if (config === undefined) return yield* fail("not_found");
       if (!config.enabled) return yield* fail("disabled");
-      if (config.auth.type === "oauth") return yield* fail("needs_sign_in");
 
       const entry = yield* acquire(config);
       const client = yield* Deferred.await(entry.client);
@@ -213,7 +237,7 @@ const make = Effect.gen(function* () {
                 fail(
                   cause instanceof McpError && cause.code !== ErrorCode.ConnectionClosed
                     ? "upstream_error"
-                    : "unavailable",
+                    : (authFailure(config, cause) ?? "unavailable"),
                   cause,
                 ),
             }),
@@ -226,11 +250,11 @@ const make = Effect.gen(function* () {
             ),
         ).pipe(
           Effect.tapError((error) =>
-            error.reason === "unavailable"
-              ? drop(id, entry).pipe(
-                  Effect.andThen(registry.reportStatus(id, statusFor("unavailable"))),
-                )
-              : Effect.void,
+            error.reason === "upstream_error"
+              ? Effect.void
+              : drop(id, entry).pipe(
+                  Effect.andThen(registry.reportStatus(id, statusFor(error.reason))),
+                ),
           ),
           Effect.withSpan("McpUpstreamClients.request", { attributes: { method } }),
         );

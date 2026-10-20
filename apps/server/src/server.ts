@@ -64,6 +64,7 @@ import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceR
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as McpServerOAuth from "./mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as McpUpstreamClients from "./mcpHub/McpUpstreamClients.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
@@ -624,6 +625,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
       McpProviderSessions.layer,
     ),
   ),
+  Layer.provideMerge(McpServerOAuth.layer),
   // Below the provider sessions, which inject enabled servers, and the routes
   // that edit and forward them, so both share one list and one status map.
   Layer.provideMerge(McpServerRegistry.layer),
@@ -695,6 +697,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
+    McpServerOAuth.layerCallbackRoute,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,

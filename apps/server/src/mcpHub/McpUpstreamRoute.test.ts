@@ -36,6 +36,7 @@ import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as McpServerOAuth from "./McpServerOAuth.ts";
 import * as McpServerRegistry from "./McpServerRegistry.ts";
 import * as McpUpstreamClients from "./McpUpstreamClients.ts";
 
@@ -163,6 +164,7 @@ const layerSecretRequests = Layer.mock(SecretRequests.SecretRequests)({
 });
 
 const layerHub = McpUpstreamClients.layer.pipe(
+  Layer.provideMerge(McpServerOAuth.layer),
   Layer.provideMerge(McpServerRegistry.layer),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-upstream-test-" })),

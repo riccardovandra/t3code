@@ -45,13 +45,35 @@ const encodeStored = Schema.encodeEffect(StoredServers);
 
 const headerSecretName = (id: McpServerId) => `mcp-server-${id}-header`;
 const envSecretName = (id: McpServerId, key: string) => `mcp-server-${id}-env-${key}`;
+export const oauthTokensSecretName = (id: McpServerId) => `mcp-server-${id}-oauth-tokens`;
+export const oauthRegistrationSecretName = (id: McpServerId) =>
+  `mcp-server-${id}-oauth-registration`;
+export const oauthClientSecretName = (id: McpServerId) => `mcp-server-${id}-oauth-client-secret`;
+
+/** What a sign-in produced. Signing out, or changing who the client is, deletes these. */
+const oauthSessionSecretNames = (id: McpServerId) => [
+  oauthTokensSecretName(id),
+  oauthRegistrationSecretName(id),
+];
 
 const secretNames = (config: McpServerConfig): ReadonlyArray<string> => [
   ...(config.auth.type === "header" ? [headerSecretName(config.id)] : []),
+  ...(config.auth.type === "oauth"
+    ? [
+        ...oauthSessionSecretNames(config.id),
+        ...(config.auth.client?.hasClientSecret ? [oauthClientSecretName(config.id)] : []),
+      ]
+    : []),
   ...(config.transport.type === "stdio"
     ? config.transport.secretEnv.map((key) => envSecretName(config.id, key))
     : []),
 ];
+
+/** Tokens from one server or client are useless, and possibly unsafe, for another. */
+const oauthIdentity = (config: McpServerConfig) =>
+  config.auth.type === "oauth" && config.transport.type === "http"
+    ? `${config.transport.url} ${config.auth.client?.clientId ?? ""}`
+    : undefined;
 
 /** Values the forwarding client adds to the upstream connection. */
 interface McpServerCredentials {
@@ -77,6 +99,8 @@ export class McpServerRegistry extends Context.Service<
       config: McpServerConfig,
     ) => Effect.Effect<McpServerCredentials, McpServerError>;
     readonly reportStatus: (id: McpServerId, status: McpServerStatus) => Effect.Effect<void>;
+    /** Drops the server's client and reported status after its stored sign-in changed. */
+    readonly resetConnection: (id: McpServerId) => Effect.Effect<void>;
     /** Emits the id of every server whose config changed or was removed. */
     readonly changes: Stream.Stream<McpServerId>;
   }
@@ -121,18 +145,24 @@ const make = Effect.gen(function* () {
 
   const secretFailed = (cause: unknown) => new McpServerError({ reason: "secret_failed", cause });
 
-  const statusOf = (config: McpServerConfig, known: ReadonlyMap<McpServerId, McpServerStatus>) =>
-    !config.enabled
-      ? ({ state: "disabled" } as const)
-      : // Sign-in arrives with the OAuth client; until then nothing can authorize these.
-        config.auth.type === "oauth"
-        ? ({ state: "needs-sign-in" } as const)
-        : (known.get(config.id) ?? ({ state: "idle" } as const));
+  // An unreadable token store reads as signed out: the user can act on that.
+  const hasTokens = (id: McpServerId) =>
+    secrets.get(oauthTokensSecretName(id)).pipe(
+      Effect.map(Option.isSome),
+      Effect.orElseSucceed(() => false),
+    );
+
+  const statusOf = (config: McpServerConfig) =>
+    Effect.gen(function* () {
+      if (!config.enabled) return { state: "disabled" } as const;
+      if (config.auth.type === "oauth" && !(yield* hasTokens(config.id))) {
+        return { state: "needs-sign-in" } as const;
+      }
+      return (yield* Ref.get(statuses)).get(config.id) ?? ({ state: "idle" } as const);
+    });
 
   const toEntry = (config: McpServerConfig) =>
-    Ref.get(statuses).pipe(
-      Effect.map((known): McpServerEntry => ({ ...config, status: statusOf(config, known) })),
-    );
+    statusOf(config).pipe(Effect.map((status): McpServerEntry => ({ ...config, status })));
 
   const markChanged = (id: McpServerId) =>
     Ref.update(statuses, (known) => {
@@ -215,6 +245,17 @@ const make = Effect.gen(function* () {
             );
 
           if (auth.type === "header") yield* keepOrWrite(headerSecretName(id), auth);
+          const oauthClient = auth.type === "oauth" ? auth.client : undefined;
+          let hasClientSecret = false;
+          if (oauthClient !== undefined) {
+            const name = oauthClientSecretName(id);
+            const value =
+              oauthClient.clientSecret === undefined
+                ? undefined
+                : yield* resolveSecret(oauthClient.clientSecret, projectId);
+            if (value !== undefined) writes.set(name, value);
+            hasClientSecret = value !== undefined || stored.has(name);
+          }
           const secretEnv =
             input.transport.type === "stdio" ? Object.entries(input.transport.secretEnv ?? {}) : [];
           for (const [key, secret] of secretEnv) {
@@ -236,7 +277,21 @@ const make = Effect.gen(function* () {
                     env: input.transport.env ?? {},
                     secretEnv: secretEnv.map(([key]) => key),
                   },
-            auth: auth.type === "header" ? { type: "header", header: auth.header } : auth,
+            auth:
+              auth.type === "header"
+                ? { type: "header", header: auth.header }
+                : auth.type === "oauth"
+                  ? oauthClient === undefined
+                    ? { type: "oauth" }
+                    : {
+                        type: "oauth",
+                        client: {
+                          clientId: oauthClient.clientId,
+                          redirectUri: oauthClient.redirectUri,
+                          hasClientSecret,
+                        },
+                      }
+                  : auth,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
           };
@@ -252,6 +307,9 @@ const make = Effect.gen(function* () {
               : servers.map((server) => (server.id === id ? config : server)),
           );
           const kept = new Set(secretNames(config));
+          if (existing !== undefined && oauthIdentity(existing) !== oauthIdentity(config)) {
+            for (const name of oauthSessionSecretNames(id)) kept.delete(name);
+          }
           yield* Effect.forEach(
             [...stored].filter((name) => !kept.has(name)),
             (name) => secrets.remove(name).pipe(Effect.ignore({ log: true })),
@@ -326,6 +384,8 @@ const make = Effect.gen(function* () {
   const reportStatus: McpServerRegistry["Service"]["reportStatus"] = (id, status) =>
     Ref.update(statuses, (known) => new Map(known).set(id, status));
 
+  const resetConnection: McpServerRegistry["Service"]["resetConnection"] = markChanged;
+
   return McpServerRegistry.of({
     list,
     get,
@@ -334,6 +394,7 @@ const make = Effect.gen(function* () {
     setEnabled,
     credentials,
     reportStatus,
+    resetConnection,
     changes: Stream.fromPubSub(changed),
   });
 });
