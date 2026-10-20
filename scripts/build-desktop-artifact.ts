@@ -2750,6 +2750,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
+        // Spotlight indexes these as kMDItemAlternateNames, so searching the
+        // pre-rebrand name still finds the app.
+        CFBundleAlternateNames: ["T3 Code"],
         NSLocalNetworkUsageDescription:
           "UP Orchestrator connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
