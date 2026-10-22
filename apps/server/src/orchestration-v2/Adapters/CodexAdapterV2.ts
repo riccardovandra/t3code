@@ -1346,10 +1346,34 @@ export const CODEX_THREAD_CONFIG = {
 // that limit so the server's own wait timeout ends a long call.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
+/**
+ * Names of the MCP servers in the user's own Codex config, from a
+ * `config/read` response. Anything unexpected reads as none.
+ */
+export function codexConfiguredMcpServerNames(response: unknown): ReadonlySet<string> {
+  if (typeof response !== "object" || response === null || !("config" in response)) {
+    return new Set();
+  }
+  const { config } = response;
+  if (typeof config !== "object" || config === null || !("mcp_servers" in config)) {
+    return new Set();
+  }
+  const { mcp_servers: servers } = config;
+  return typeof servers === "object" && servers !== null
+    ? new Set(Object.keys(servers))
+    : new Set();
+}
+
 export function codexThreadRuntimeParams(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  /**
+   * Servers the user already configured in Codex. Codex merges an override
+   * into the user's server of the same name, so a stdio server would gain a
+   * `url` and Codex would reject the whole config. The user's server wins.
+   */
+  readonly userMcpServerNames?: ReadonlySet<string>;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1373,15 +1397,15 @@ export function codexThreadRuntimeParams(input: {
               },
             },
             ...Object.fromEntries(
-              McpProviderSession.upstreamServersFor(mcpSession, input.runtimePolicy).map(
-                (server) => [
+              McpProviderSession.upstreamServersFor(mcpSession, input.runtimePolicy)
+                .filter((server) => !input.userMcpServerNames?.has(server.name))
+                .map((server) => [
                   `mcp_servers.${server.name}`,
                   {
                     url: server.endpoint,
                     http_headers: { Authorization: mcpSession.authorizationHeader },
                   },
-                ],
-              ),
+                ]),
             ),
           }),
     },
@@ -1841,6 +1865,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             yield* Ref.set(initialized, true);
           }),
         );
+        // Read once per app-server: the user's Codex config is loaded at spawn.
+        const readUserMcpServerNames = yield* Effect.cached(
+          ensureInitialized.pipe(
+            Effect.andThen(client.raw.request("config/read", {})),
+            Effect.map(codexConfiguredMcpServerNames),
+            Effect.catch(() => Effect.succeed(new Set<string>())),
+          ),
+        );
+        // Only a thread T3 adds servers to can collide, so others skip the read.
+        const threadRuntimeParams = (
+          params: Omit<Parameters<typeof codexThreadRuntimeParams>[0], "userMcpServerNames">,
+        ) =>
+          McpProviderSession.upstreamServersFor(params.mcpSession, params.runtimePolicy).length ===
+          0
+            ? Effect.succeed(codexThreadRuntimeParams(params))
+            : readUserMcpServerNames.pipe(
+                Effect.map((userMcpServerNames) =>
+                  codexThreadRuntimeParams({ ...params, userMcpServerNames }),
+                ),
+              );
         const now = yield* DateTime.now;
         const session = providerSession({
           providerSessionId: input.providerSessionId,
@@ -6652,15 +6696,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ensureInitialized.pipe(
               Effect.andThen(mcpSessions.read(threadInput.threadId)),
               Effect.flatMap((mcpSession) =>
-                client.request(
-                  "thread/start",
-                  codexThreadRuntimeParams({
-                    mcpSession,
-                    modelSelection: threadInput.modelSelection,
-                    runtimePolicy: threadInput.runtimePolicy,
-                  }),
-                ),
+                threadRuntimeParams({
+                  mcpSession,
+                  modelSelection: threadInput.modelSelection,
+                  runtimePolicy: threadInput.runtimePolicy,
+                }),
               ),
+              Effect.flatMap((params) => client.request("thread/start", params)),
               Effect.map((response): OrchestrationV2ProviderThread =>
                 providerThreadFromCodexThread({
                   appThreadId: threadInput.threadId,
@@ -6687,7 +6729,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const resume = client.raw.request("thread/resume", {
                 threadId: nativeThreadId,
                 excludeTurns: true,
-                ...codexThreadRuntimeParams({
+                ...(yield* threadRuntimeParams({
                   mcpSession: yield* readMcpSession(
                     threadInput.threadId ?? threadInput.providerThread.appThreadId,
                   ),
@@ -6697,7 +6739,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ...(threadInput.runtimePolicy === undefined
                     ? {}
                     : { runtimePolicy: threadInput.runtimePolicy }),
-                }),
+                })),
               });
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
@@ -7427,11 +7469,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* client.raw.request("thread/resume", {
                   threadId,
                   excludeTurns: true,
-                  ...codexThreadRuntimeParams({
+                  ...(yield* threadRuntimeParams({
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
-                  }),
+                  })),
                 });
               }
               const response = yield* ensureInitialized.pipe(
@@ -7479,7 +7521,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     ...(boundary.lastTurnId === undefined
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
-                    ...codexThreadRuntimeParams({
+                    ...(yield* threadRuntimeParams({
                       mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
                       ...(threadInput.modelSelection === undefined
                         ? {}
@@ -7487,7 +7529,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       ...(threadInput.runtimePolicy === undefined
                         ? {}
                         : { runtimePolicy: threadInput.runtimePolicy }),
-                    }),
+                    })),
                   }),
                 ),
                 Effect.mapError(

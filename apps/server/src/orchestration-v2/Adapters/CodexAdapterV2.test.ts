@@ -6184,4 +6184,34 @@ describe("CodexAdapterV2 configured MCP servers", () => {
 
     assert.deepEqual(mcpServerKeys(config), ["mcp_servers.t3-code"]);
   });
+
+  it("leaves a server the user configured in Codex under the same name alone", () => {
+    const { config } = CodexAdapterV2.codexThreadRuntimeParams({
+      mcpSession: {
+        ...mcpSession,
+        upstreamServers: [
+          ...mcpSession.upstreamServers,
+          { name: "google", endpoint: "http://127.0.0.1:43123/mcp/upstream/server-google" },
+        ],
+      },
+      runtimePolicy,
+      userMcpServerNames: new Set(["google"]),
+    });
+
+    assert.deepEqual(mcpServerKeys(config), ["mcp_servers.t3-code", "mcp_servers.notion"]);
+  });
+
+  it("reads the user's Codex MCP server names from config/read", () => {
+    assert.deepEqual(
+      [
+        ...CodexAdapterV2.codexConfiguredMcpServerNames({
+          config: { mcp_servers: { google: { command: "uvx" }, railway: { url: "x" } } },
+          origins: {},
+        }),
+      ],
+      ["google", "railway"],
+    );
+    assert.equal(CodexAdapterV2.codexConfiguredMcpServerNames({ config: {} }).size, 0);
+    assert.equal(CodexAdapterV2.codexConfiguredMcpServerNames(null).size, 0);
+  });
 });
