@@ -1,13 +1,20 @@
 // The agent tools behind `/mcp`. Reads go through `docs.ts`; every write to an
 // existing doc goes through `deps.rooms` so open editors receive it live.
 
-import { DOC_ROLES, isDocRole, type DocMember, type DocRole } from "../shared/access.ts";
+import {
+  DOC_ROLES,
+  isDocRole,
+  type DocMember,
+  type DocRole,
+  type LibraryDoc,
+} from "../shared/access.ts";
 import {
   findQuote,
   markdownToText,
   parseStructuredAnchor,
   resolveStructuredAnchor,
 } from "../shared/anchors.ts";
+import { MAX_PROJECT_KEY_LENGTH, normalizeProjectKey } from "../shared/embed.ts";
 import {
   DOC_STATUSES,
   type Comment,
@@ -100,6 +107,50 @@ function requireVersion(args: Args, key: string): number {
     return fail("invalid_argument", `"${key}" must be an integer tab version.`);
   }
   return value;
+}
+
+function projectKeyArg(args: Args): string | undefined {
+  const raw = optionalString(args, "projectKey", MAX_PROJECT_KEY_LENGTH);
+  if (raw === undefined) return undefined;
+  return (
+    normalizeProjectKey(raw) ??
+    fail("invalid_argument", '"projectKey" must be a key from list_projects or docs_cloud_project.')
+  );
+}
+
+/**
+ * The project a doc goes in: `projectId`, else `projectKey` (created from it
+ * and `projectName` when new, by the admin only), else no project. Null means
+ * no project. Someone else only files into a project they can already see.
+ */
+async function targetProject(ctx: ToolContext, args: Args): Promise<string | null> {
+  const projectId = optionalString(args, "projectId");
+  const projectKey = projectKeyArg(args);
+  if (projectId !== undefined && projectKey !== undefined) {
+    fail("invalid_argument", 'Pass "projectId" or "projectKey", not both.');
+  }
+  const { userId } = ctx.principal;
+  if (projectId !== undefined) {
+    if (!(await Access.canSeeProject(ctx.deps.db, projectId, userId))) {
+      fail("not_found", "No project with that id.");
+    }
+    return (await load(Docs.getProject(ctx.deps.db, projectId), "project")).id;
+  }
+  if (projectKey === undefined) return null;
+  const existing = await Docs.findProjectByKey(ctx.deps.db, projectKey);
+  if (existing) {
+    if (!(await Access.canSeeProject(ctx.deps.db, existing.id, userId))) {
+      fail("not_found", "No project with that key.");
+    }
+    return existing.id;
+  }
+  if (!Access.isAdmin(userId)) fail("forbidden", "Only the workspace admin creates projects.");
+  const project = await Docs.ensureProject(ctx.deps.db, {
+    key: projectKey,
+    name: optionalString(args, "projectName"),
+    now: ctx.deps.now(),
+  });
+  return project.id;
 }
 
 /** Rejects markdown whose ```t3-table blocks do not parse, before anything is written. */
@@ -219,7 +270,7 @@ async function tabWith(ctx: ToolContext, tabId: string, minimum: DocRole): Promi
 
 const scopedLibrary = async (ctx: ToolContext) =>
   Access.scopeLibrary(ctx.deps.db, {
-    projects: await Docs.listLibrary(ctx.deps.db),
+    library: await Docs.listLibrary(ctx.deps.db),
     userId: ctx.principal.userId,
     owners: ctx.deps.owners,
   });
@@ -334,38 +385,68 @@ function findDiagram(ctx: ToolContext, tab: Tab, diagramId: string) {
 export const TOOLS = [
   {
     name: "list_projects",
-    description: "List projects (each holds a library of docs) with their doc counts.",
+    description:
+      "List projects with their doc counts. Projects are T3 Code projects: key is the repository (github.com/owner/repo), or title:<name> for a project without a git remote. noProjectDocCount counts docs in no project.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "create_project",
-    description: "Create a project to organize docs.",
+    description:
+      "Create a project, or return the existing one with the same key. Omit key to make one by name (key title:<name>). T3 Code creates its projects itself, so this is rarely needed.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" } },
+      properties: {
+        name: { type: "string" },
+        key: { type: "string", description: "The T3 Code project key." },
+      },
       required: ["name"],
     },
   },
   {
     name: "list_docs",
-    description: "List docs, most recently updated first, optionally only one project's.",
+    description:
+      "List docs, most recently updated first. Narrow to one project with projectId or projectKey, or pass noProject: true for the docs in no project.",
     inputSchema: {
       type: "object",
-      properties: { projectId: { type: "string" } },
+      properties: {
+        projectId: { type: "string" },
+        projectKey: { type: "string" },
+        noProject: { type: "boolean" },
+      },
     },
   },
   {
     name: "create_doc",
     description:
-      "Create a doc in a project. Pass the skeleton (section headings with one-line placeholders) as markdown for the first tab, then share the returned url with the user before filling it in.",
+      "Create a doc. File it with projectKey (the T3 Code project's key from docs_cloud_project or list_projects; the project is created from projectKey and projectName if new) or projectId; omit both for no project. Pass the skeleton (section headings with one-line placeholders) as markdown for the first tab, then share the returned url with the user before filling it in.",
     inputSchema: {
       type: "object",
       properties: {
+        projectKey: { type: "string" },
+        projectName: {
+          type: "string",
+          description: "Name for a project created from projectKey; ignored when it exists.",
+        },
         projectId: { type: "string" },
         title: { type: "string" },
         markdown: { type: "string", description: "Initial markdown for the first tab." },
       },
-      required: ["projectId", "title"],
+      required: ["title"],
+    },
+  },
+  {
+    name: "move_doc",
+    description:
+      "Move a doc to another project by projectKey (created from it and projectName if new) or projectId, or to no project with projectId: null.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string" },
+        projectKey: { type: "string" },
+        projectName: { type: "string" },
+        projectId: { type: ["string", "null"] },
+      },
+      required: ["docId"],
     },
   },
   {
@@ -609,11 +690,13 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
   list_projects: async (_args, ctx) => {
     const library = await scopedLibrary(ctx);
     return {
-      projects: library.map((project) => ({
+      projects: library.projects.map((project) => ({
         projectId: project.id,
+        key: project.key,
         name: project.name,
         docCount: project.docs.length,
       })),
+      noProjectDocCount: library.noProjectDocs.length,
     };
   },
 
@@ -621,38 +704,47 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     if (!Access.isAdmin(ctx.principal.userId)) {
       fail("forbidden", "Only the workspace admin creates projects.");
     }
-    const project = await Docs.createProject(
-      ctx.deps.db,
-      requireString(args, "name"),
-      ctx.deps.now(),
-    );
-    return { projectId: project.id, name: project.name };
+    const name = requireString(args, "name");
+    const key = projectKeyArg(args);
+    const now = ctx.deps.now();
+    const project =
+      key === undefined
+        ? await Docs.createProject(ctx.deps.db, name, now)
+        : await Docs.ensureProject(ctx.deps.db, { key, name, now });
+    return { projectId: project.id, key: project.key, name: project.name };
   },
 
   list_docs: async (args, ctx) => {
     const projectId = optionalString(args, "projectId");
+    const projectKey = projectKeyArg(args);
     const library = await scopedLibrary(ctx);
-    const projects = projectId ? library.filter((project) => project.id === projectId) : library;
-    if (projectId && projects.length === 0) fail("not_found", "No project with that id.");
-    const docs = projects
-      .flatMap((project) => project.docs)
-      .toSorted((a, b) => b.updatedAt - a.updatedAt);
+    let docs: ReadonlyArray<LibraryDoc>;
+    if (args.noProject === true) {
+      docs = library.noProjectDocs;
+    } else if (projectId !== undefined || projectKey !== undefined) {
+      const project = library.projects.find(
+        (candidate) => candidate.id === projectId || candidate.key === projectKey,
+      );
+      if (!project) return fail("not_found", "No project with that id or key.");
+      docs = project.docs;
+    } else {
+      docs = [...library.projects.flatMap((project) => project.docs), ...library.noProjectDocs];
+    }
     return {
-      docs: docs.map((doc) => ({
-        ...docSummary(ctx, doc, undefined),
-        role: doc.role,
-        owner: doc.owner?.email ?? null,
-      })),
+      docs: docs
+        .toSorted((a, b) => b.updatedAt - a.updatedAt)
+        .map((doc) => ({
+          ...docSummary(ctx, doc, undefined),
+          role: doc.role,
+          owner: doc.owner?.email ?? null,
+        })),
     };
   },
 
   create_doc: async (args, ctx) => {
-    const projectId = requireString(args, "projectId");
     const title = requireString(args, "title");
     const markdown = markdownArg(args, "markdown", false);
-    if (!(await Access.canSeeProject(ctx.deps.db, projectId, ctx.principal.userId))) {
-      fail("not_found", "No project with that id.");
-    }
+    const projectId = await targetProject(ctx, args);
     if (markdown) checkTables(markdown);
     if (markdown) assertWidgets(markdown);
     const created = await load(
@@ -675,6 +767,21 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       if (result.ok) tab = result.tab;
     }
     return { doc: docSummary(ctx, created.doc, tab.id), tab: tabSummary(ctx, tab) };
+  },
+
+  move_doc: async (args, ctx) => {
+    const docId = requireString(args, "docId");
+    const toNoProject = args.projectId === null && args.projectKey === undefined;
+    if (!toNoProject && args.projectId === undefined && args.projectKey === undefined) {
+      fail(
+        "invalid_argument",
+        'Pass "projectKey", "projectId", or "projectId": null for no project.',
+      );
+    }
+    await need(ctx, docId, "editor");
+    const projectId = toNoProject ? null : await targetProject(ctx, args);
+    const doc = await load(ctx.deps.rooms.setDocProject(docId, { projectId, origin: null }), "doc");
+    return { doc: docSummary(ctx, doc, undefined) };
   },
 
   read_doc: async (args, ctx) => {

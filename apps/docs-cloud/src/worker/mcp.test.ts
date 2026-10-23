@@ -207,6 +207,72 @@ describe("MCP tools", () => {
     expect(everything.body.docs[0]).toMatchObject({ docId: doc.docId, status: "plan" });
   });
 
+  it("files docs by project key, creating the project once, or in no project", async () => {
+    const mcp = await makeMcpHarness();
+    const key = "github.com/riccardovandra/t3code";
+    const first = await mcp.tool("create_doc", {
+      projectKey: key,
+      projectName: "T3 Code",
+      title: "Plan",
+    });
+    expect(first.isError).toBe(false);
+    const second = await mcp.tool("create_doc", {
+      projectKey: key,
+      projectName: "Renamed by an agent",
+      title: "Notes",
+    });
+    expect(second.body.doc.projectId).toBe(first.body.doc.projectId);
+    const loose = await mcp.tool("create_doc", { title: "Loose" });
+    expect(loose.body.doc.projectId).toBeNull();
+
+    const projects = await mcp.tool("list_projects", {});
+    expect(projects.body).toEqual({
+      projects: [{ projectId: first.body.doc.projectId, key, name: "T3 Code", docCount: 2 }],
+      noProjectDocCount: 1,
+    });
+    const byKey = await mcp.tool("list_docs", { projectKey: key });
+    expect(byKey.body.docs).toHaveLength(2);
+    const unfiled = await mcp.tool("list_docs", { noProject: true });
+    expect(unfiled.body.docs.map((doc: { docId: string }) => doc.docId)).toEqual([
+      loose.body.doc.docId,
+    ]);
+
+    const both = await mcp.tool("create_doc", {
+      projectKey: key,
+      projectId: first.body.doc.projectId,
+      title: "x",
+    });
+    expect(both.isError).toBe(true);
+    const unknownId = await mcp.tool("create_doc", { projectId: "missing", title: "x" });
+    expect(unknownId.body.error).toBe("not_found");
+  });
+
+  it("moves a doc by key, by id and to no project", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc } = await mcp.seedDoc();
+    const toKey = await mcp.tool("move_doc", {
+      docId: doc.docId,
+      projectKey: "title:Herbox Netherlands",
+    });
+    expect(toKey.isError).toBe(false);
+    const projects = await mcp.tool("list_projects", {});
+    const herbox = projects.body.projects.find(
+      (project: { key: string }) => project.key === "title:herbox netherlands",
+    );
+    expect(herbox).toMatchObject({ name: "herbox netherlands", docCount: 1 });
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({
+      type: "doc.updated",
+      doc: { id: doc.docId, projectId: herbox.projectId },
+    });
+
+    const toNone = await mcp.tool("move_doc", { docId: doc.docId, projectId: null });
+    expect(toNone.body.doc.projectId).toBeNull();
+    const nowhere = await mcp.tool("move_doc", { docId: doc.docId });
+    expect(nowhere.isError).toBe(true);
+    const missing = await mcp.tool("move_doc", { docId: "missing", projectId: null });
+    expect(missing.body.error).toBe("not_found");
+  });
+
   it("builds URLs from the public origin, not the request URL", async () => {
     const mcp = await makeMcpHarness("https://docs.upliftedconsulting.com");
     const { doc, tab } = await mcp.seedDoc();

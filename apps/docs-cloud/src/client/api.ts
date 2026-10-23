@@ -1,5 +1,5 @@
 import type {
-  AccessibleLibraryProject,
+  AccessibleLibrary,
   DocMember,
   DocRole,
   DocView,
@@ -56,9 +56,11 @@ export const api = {
   verifyCode: (email: string, code: string) =>
     request<{ email: string }>("POST", "/api/auth/verify", { email, code }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  library: () => request<{ projects: Array<AccessibleLibraryProject> }>("GET", "/api/library"),
-  createProject: (name: string) => request<{ project: Project }>("POST", "/api/projects", { name }),
-  createDoc: (projectId: string, title: string) =>
+  library: () => request<AccessibleLibrary>("GET", "/api/library"),
+  /** Admin only. Returns the existing project when one already has the key (or, without one, the name). */
+  createProject: (name: string, key?: string) =>
+    request<{ project: Project }>("POST", "/api/projects", key ? { name, key } : { name }),
+  createDoc: (projectId: string | null, title: string) =>
     request<DocWithTabs>("POST", "/api/docs", { projectId, title }),
   doc: (docId: string) => request<DocView>("GET", `/api/docs/${docId}`),
   members: (docId: string) =>

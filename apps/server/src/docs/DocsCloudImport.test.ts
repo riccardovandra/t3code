@@ -1,6 +1,12 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, describe, it } from "@effect/vitest";
-import { type McpServerEntry, ProjectId, type Project as ProjectRecord } from "@t3tools/contracts";
+import {
+  type McpServerEntry,
+  type OrchestrationProjectShell,
+  ProjectId,
+  type Project as ProjectRecord,
+  type RepositoryIdentity,
+} from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,6 +20,7 @@ import {
 import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
 import * as DocCommentsService from "./DocCommentsService.ts";
 import * as DocsCloudImport from "./DocsCloudImport.ts";
@@ -28,7 +35,9 @@ interface FakeTab {
 }
 
 /** An in-memory Docs Cloud that answers the REST routes the importer uses. */
-const makeDocsCloud = (options: { projects?: Array<{ id: string; name: string }> } = {}) => {
+const makeDocsCloud = (
+  options: { projects?: Array<{ id: string; key: string; name: string }> } = {},
+) => {
   const state = {
     mode: "ok" as "ok" | "unreachable" | "unauthorized",
     projects: options.projects ?? [],
@@ -60,13 +69,18 @@ const makeDocsCloud = (options: { projects?: Array<{ id: string; name: string }>
     if (request.headers["authorization"] !== "Bearer dct_good" || state.mode === "unauthorized") {
       return respond(request, 401, { error: "unauthorized" });
     }
-    if (pathname === "/api/library") {
-      return respond(request, 200, { projects: state.projects.map((p) => ({ ...p, docs: [] })) });
-    }
-    if (pathname === "/api/projects") {
-      const project = { id: id("project"), name: String(body.name) };
-      state.projects.push(project);
-      return respond(request, 201, { project });
+    if (pathname === "/api/projects/sync") {
+      const synced = (body.projects as Array<{ key: string; name: string }>).map((entry) => {
+        const existing = state.projects.find((project) => project.key === entry.key);
+        if (existing) {
+          existing.name = entry.name;
+          return existing;
+        }
+        const project = { id: id("project"), ...entry };
+        state.projects.push(project);
+        return project;
+      });
+      return respond(request, 200, { projects: synced });
     }
     if (pathname === "/api/docs" && request.method === "POST") {
       const docId = id("doc");
@@ -133,9 +147,22 @@ const files = new Map<string, string>([
   ["docs/notes.md", "Loose notes without a heading.\n"],
 ]);
 
+const identity = (canonicalKey: string, origin?: string): RepositoryIdentity => ({
+  canonicalKey,
+  locator: { source: "git-remote", remoteName: "origin", remoteUrl: `https://${canonicalKey}.git` },
+  ...(origin ? { origin: { canonicalKey: origin } } : {}),
+});
+
 const makeLayer = (
   docsCloud: ReturnType<typeof makeDocsCloud>,
-  options: { title?: string; token?: string; configured?: boolean } = {},
+  options: {
+    title?: string;
+    token?: string;
+    configured?: boolean;
+    /** Remote per workspace root; a checkout without one has no remote. */
+    remotes?: Record<string, RepositoryIdentity>;
+    shells?: Array<Pick<OrchestrationProjectShell, "title" | "workspaceRoot">>;
+  } = {},
 ) => {
   const server = {
     id: "server-docs-cloud",
@@ -163,7 +190,15 @@ const makeLayer = (
           Effect.succeedSome({
             title: options.title ?? "Uplifted Site",
             workspaceRoot: "/checkout",
+            repositoryIdentity: null,
           } as ProjectRecord),
+        listShells: () =>
+          Effect.succeed((options.shells ?? []) as Array<OrchestrationProjectShell>),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+        resolve: (cwd) => Effect.succeed(options.remotes?.[cwd] ?? null),
       }),
     ),
     Layer.provide(
@@ -209,29 +244,88 @@ describe("DocsCloudImport", () => {
     );
   });
 
-  it.effect("uses the same-named project ignoring case and spacing, creating it only once", () => {
-    const docsCloud = makeDocsCloud({ projects: [{ id: "existing", name: "  uplifted   SITE " }] });
+  it.effect("resolves this project by repository key, creating it only once", () => {
+    const docsCloud = makeDocsCloud({
+      projects: [{ id: "existing", key: "github.com/up/site", name: "Old title" }],
+    });
     return Effect.gen(function* () {
       const cloud = yield* DocsCloudImport.DocsCloudImport;
       const project = yield* cloud.project({ projectId });
-      assert.strictEqual(project.id, "existing");
-      assert.isFalse(docsCloud.state.requests.includes("POST /api/projects"));
-    }).pipe(Effect.provide(makeLayer(docsCloud)));
+      assert.deepStrictEqual(project, {
+        id: "existing",
+        key: "github.com/up/site",
+        name: "Uplifted Site",
+        url: "https://docs.example.test/",
+      });
+      assert.strictEqual(docsCloud.state.projects.length, 1);
+    }).pipe(
+      Effect.provide(
+        makeLayer(docsCloud, { remotes: { "/checkout": identity("github.com/up/site") } }),
+      ),
+    );
   });
 
-  it.effect("creates the project on first use and finds it afterwards", () => {
+  it.effect("falls back to the title key for a project without a remote", () => {
     const docsCloud = makeDocsCloud();
     return Effect.gen(function* () {
       const cloud = yield* DocsCloudImport.DocsCloudImport;
       const first = yield* cloud.project({ projectId });
       const second = yield* cloud.project({ projectId });
+      assert.strictEqual(first.key, "title:client work");
       assert.strictEqual(first.name, "Client Work");
       assert.strictEqual(second.id, first.id);
-      assert.strictEqual(
-        docsCloud.state.requests.filter((request) => request === "POST /api/projects").length,
-        1,
-      );
+      assert.strictEqual(docsCloud.state.projects.length, 1);
     }).pipe(Effect.provide(makeLayer(docsCloud, { title: " Client Work " })));
+  });
+
+  it.effect("syncs every project, folding checkouts of one repository together", () => {
+    const docsCloud = makeDocsCloud();
+    const shells = [
+      { title: "T3 Code", workspaceRoot: "/laptop/t3code" },
+      { title: "T3 Code + AI PM", workspaceRoot: "/vps/t3code" },
+      { title: "Herbox Netherlands", workspaceRoot: "/herbox" },
+    ];
+    const remotes = {
+      "/laptop/t3code": identity("github.com/riccardovandra/t3code"),
+      "/vps/t3code": identity("github.com/riccardovandra/t3code"),
+    };
+    return Effect.gen(function* () {
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      yield* cloud.syncProjects;
+      const again = yield* cloud.syncProjects;
+      assert.deepStrictEqual(
+        docsCloud.state.projects.map(({ key, name }) => [key, name]),
+        [
+          ["github.com/riccardovandra/t3code", "T3 Code + AI PM"],
+          ["title:herbox netherlands", "Herbox Netherlands"],
+        ],
+      );
+      assert.deepStrictEqual(
+        again.map((project) => project.key),
+        [
+          "github.com/riccardovandra/t3code",
+          "github.com/riccardovandra/t3code",
+          "title:herbox netherlands",
+        ],
+      );
+    }).pipe(Effect.provide(makeLayer(docsCloud, { shells, remotes })));
+  });
+
+  it.effect("does not sync when Docs Cloud is not set up", () => {
+    const docsCloud = makeDocsCloud();
+    return Effect.gen(function* () {
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      const error = yield* Effect.flip(cloud.syncProjects);
+      assert.strictEqual(error.reason, "not_configured");
+      assert.deepStrictEqual(docsCloud.state.requests, []);
+    }).pipe(
+      Effect.provide(
+        makeLayer(docsCloud, {
+          configured: false,
+          shells: [{ title: "Site", workspaceRoot: "/site" }],
+        }),
+      ),
+    );
   });
 
   it.effect("imports each doc once, recording it, and updates only when asked", () => {
