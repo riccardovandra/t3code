@@ -119,7 +119,8 @@ export async function reopenClosedView(
   switch (surface.kind) {
     case "docs":
       panels.open(ref, "docs");
-      panels.selectDoc(ref, surface.docPath);
+      if (surface.source === "cloud") panels.selectDocsCloud(ref, surface.cloudPath);
+      else if (surface.source === "files") panels.selectDoc(ref, surface.docPath);
       break;
     case "ai-pm":
       panels.open(ref, "ai-pm");

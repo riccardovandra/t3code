@@ -101,6 +101,7 @@ import {
 import { ACP_EMPTY_OPTION_VALUE, ACP_SESSION_MODE_OPTION_ID } from "./sessionConfig.ts";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import {
+  hasDocsCloud,
   t3AcpPromptWithInstructions,
   type T3AcpInstructionState,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
@@ -606,6 +607,7 @@ function negotiatedCapabilities(
 interface AcpMcpContext {
   readonly servers: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly acpServers: ReadonlyArray<EffectAcpSchema.McpServer>;
+  readonly docsCloud: boolean;
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly endpoint?: string;
   readonly authorization?: string;
@@ -669,13 +671,14 @@ export function acpMcpContext(
   resolveCommand: (command: string) => string = (command) => command,
 ): AcpMcpContext {
   if (session === undefined) {
-    return { servers: [], acpServers: [] };
+    return { servers: [], acpServers: [], docsCloud: false };
   }
   // The MCP-over-ACP bridge reaches only T3's own endpoint, so hub servers
   // use the stdio bridge in both lists; stdio is the transport every ACP agent
   // must support.
-  const upstreamServers = McpProviderSession.upstreamServersFor(session, runtimePolicy).map(
-    (server) => acpMcpBridgeServer(self, server.name, server.endpoint, session.authorizationHeader),
+  const upstreams = McpProviderSession.upstreamServersFor(session, runtimePolicy);
+  const upstreamServers = upstreams.map((server) =>
+    acpMcpBridgeServer(self, server.name, server.endpoint, session.authorizationHeader),
   );
   // Both lists carry them: an agent that takes T3's server over ACP gets
   // only `acpServers`, so the user's servers would otherwise be lost.
@@ -696,6 +699,7 @@ export function acpMcpContext(
       ...upstreamServers,
       ...userServers,
     ],
+    docsCloud: hasDocsCloud(upstreams),
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
     processEnvironment: {
@@ -7235,9 +7239,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           sessionId: string,
         ) {
           const prompt: Array<EffectAcpSchema.ContentBlock> = [];
+          const mcpContext = yield* readMcpContext(turnInput.threadId);
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
-            hasT3Mcp: (yield* readMcpContext(turnInput.threadId)).servers.length > 0,
+            hasT3Mcp: mcpContext.servers.length > 0,
+            docsCloud: mcpContext.docsCloud,
           } satisfies T3AcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);

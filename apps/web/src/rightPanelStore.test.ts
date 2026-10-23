@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { useClosedViewStore } from "./closedViewStore";
 import { reopenClosedView } from "./reopenClosedView";
 import {
+  docsSurfaceSource,
   migratePersistedRightPanelState,
   pullRequestSurface,
   pullRequestSurfaceId,
@@ -107,6 +108,45 @@ describe("rightPanelStore", () => {
     expect(surfaces()).toEqual([
       { id: "docs", kind: "docs", docPath: "docs/plan.md", source: "cloud" },
     ]);
+  });
+
+  it("shows Docs Cloud by default only when it is configured", () => {
+    const docs = { id: "docs", kind: "docs" } as const;
+    const pinned = { ...docs, source: "files" } as const;
+    expect(docsSurfaceSource(docs, { cloudConfigured: true, hasFiles: true })).toBe("cloud");
+    expect(docsSurfaceSource(pinned, { cloudConfigured: true, hasFiles: true })).toBe("files");
+    expect(docsSurfaceSource(pinned, { cloudConfigured: true, hasFiles: false })).toBe("cloud");
+    expect(docsSurfaceSource(docs, { cloudConfigured: false, hasFiles: true })).toBe("files");
+    expect(
+      docsSurfaceSource({ ...docs, source: "cloud" }, { cloudConfigured: false, hasFiles: true }),
+    ).toBe("files");
+    expect(docsSurfaceSource(docs, { cloudConfigured: false, hasFiles: false })).toBeNull();
+  });
+
+  it("returns an open Docs tab to the default source from a Docs entry point", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "docs");
+    store.selectDoc(refA, "docs/plan.md");
+    store.open(refA, "docs");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md" }]);
+  });
+
+  it("reopens a closed Docs Cloud tab on Docs Cloud", async () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "docs");
+    store.selectDocsCloud(refA, "/d/doc-1/tab-1");
+    store.closeSurface(refA, "docs");
+    await reopenClosedView(useClosedViewStore.getState().entries[0]!, {
+      workspaceAvailable: true,
+      openPreview: () => {
+        throw new Error("A Docs tab must not create a browser session");
+      },
+    });
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "docs", kind: "docs", source: "cloud", cloudPath: "/d/doc-1/tab-1" }]);
   });
 
   it("remembers a closed AI PM surface for reopening", () => {

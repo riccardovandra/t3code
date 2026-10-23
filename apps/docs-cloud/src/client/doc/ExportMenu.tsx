@@ -2,9 +2,9 @@ import { postToEmbedParent } from "../embedBridge.ts";
 import { docPath } from "../router.ts";
 import { readyWidgetsForPrint } from "../editor/widget/WidgetView.ts";
 
-const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
+export const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
 
-function download(path: string) {
+export function download(path: string) {
   const link = document.createElement("a");
   link.href = path;
   link.download = "";
@@ -17,17 +17,9 @@ async function fetchMarkdown(path: string): Promise<string> {
   return response.text();
 }
 
-export interface ExportAction {
-  readonly id: string;
-  readonly label: string;
-  /**
-   * Must be called straight from the click: copying starts the clipboard
-   * write before any await. Resolves to a short status, if any.
-   */
-  readonly run: () => Promise<string | null>;
-}
-
-async function copyMarkdown(markdown: Promise<string>): Promise<void> {
+/** Copies an export route's Markdown, after `flush` lands pending edits. Call straight from a click. */
+export async function copyMarkdown(flush: () => Promise<void>, path: string): Promise<void> {
+  const markdown = flush().then(() => fetchMarkdown(path));
   // Handing the clipboard a promise keeps the click's user activation in
   // Safari, which rejects a write that starts after an await.
   if (typeof ClipboardItem !== "undefined") {
@@ -36,6 +28,16 @@ async function copyMarkdown(markdown: Promise<string>): Promise<void> {
   } else {
     await navigator.clipboard.writeText(await markdown);
   }
+}
+
+export interface ExportAction {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * Must be called straight from the click: copying starts the clipboard
+   * write before any await. Resolves to a short status, if any.
+   */
+  readonly run: () => Promise<string | null>;
 }
 
 /** The doc's export entries, for the title menu. */
@@ -65,7 +67,7 @@ export function exportActions(props: {
         id: "copy-tab",
         label: "Copy tab as Markdown",
         run: async () => {
-          await copyMarkdown(flush().then(() => fetchMarkdown(tabExportPath(tabId))));
+          await copyMarkdown(flush, tabExportPath(tabId));
           return "Copied the tab as Markdown.";
         },
       },

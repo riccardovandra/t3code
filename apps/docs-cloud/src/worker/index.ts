@@ -59,6 +59,10 @@ export default {
     if (pathname === "/mcp" || pathname.startsWith("/mcp/")) {
       return handleMcp(request, apiDeps(env, ctx));
     }
-    return withEmbedPolicy(await env.ASSETS.fetch(request), parseEmbedOrigins(env.FRAME_ANCESTORS));
+    return withEmbedPolicy(
+      await env.ASSETS.fetch(request),
+      parseEmbedOrigins(env.FRAME_ANCESTORS),
+      env.PUBLIC_ORIGIN,
+    );
   },
 } satisfies ExportedHandler<Env>;

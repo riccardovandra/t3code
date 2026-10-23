@@ -4,6 +4,7 @@ import type {
   DocRole,
   DocView,
   Me,
+  UserSummary,
 } from "../shared/access.ts";
 import type { DocAnchor } from "../shared/anchors.ts";
 import type {
@@ -47,6 +48,9 @@ export const clientId = crypto.randomUUID();
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
   setName: (name: string) => request<Me>("PATCH", "/api/me", { name }),
+  /** People on any doc the caller is on, for the share picker. */
+  people: () =>
+    request<{ people: Array<Pick<UserSummary, "name" | "email">> }>("GET", "/api/people"),
   requestCode: (email: string) =>
     request<{ ok: true }>("POST", "/api/auth/request-code", { email }),
   verifyCode: (email: string, code: string) =>

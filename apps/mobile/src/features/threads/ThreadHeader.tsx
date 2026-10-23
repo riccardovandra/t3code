@@ -56,8 +56,8 @@ export function ThreadHeader(
     });
     if (onOpenDocsCloud) {
       actions.push({
-        accessibilityLabel: "Open Docs Cloud",
-        icon: "cloud",
+        accessibilityLabel: "Open Docs",
+        icon: "doc.text",
         onPress: onOpenDocsCloud,
       });
     }
