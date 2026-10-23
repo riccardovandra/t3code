@@ -1,5 +1,12 @@
-import type { AccessibleLibrary, DocMember, DocRole, DocView, Me } from "../shared/access.ts";
-import type { DocAnchor } from "../shared/anchors.ts";
+import type {
+  AccessibleLibrary,
+  DocMember,
+  DocRole,
+  DocView,
+  Me,
+  UserSummary,
+} from "../shared/access.ts";
+import type { DocAnchor, StructuredAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
   Comment,
@@ -41,6 +48,9 @@ export const clientId = crypto.randomUUID();
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
   setName: (name: string) => request<Me>("PATCH", "/api/me", { name }),
+  /** People on any doc the caller is on, for the share picker. */
+  people: () =>
+    request<{ people: Array<Pick<UserSummary, "name" | "email">> }>("GET", "/api/people"),
   requestCode: (email: string) =>
     request<{ ok: true }>("POST", "/api/auth/request-code", { email }),
   verifyCode: (email: string, code: string) =>
@@ -101,8 +111,10 @@ export const api = {
     ),
   comments: (docId: string) =>
     request<{ comments: Array<Comment> }>("GET", `/api/docs/${docId}/comments`),
-  createComment: (tabId: string, input: DocAnchor & { body: string }) =>
-    request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
+  createComment: (
+    tabId: string,
+    input: DocAnchor & { body: string; anchor?: StructuredAnchor | null },
+  ) => request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
   replyComment: (commentId: string, body: string) =>
     request<{ comment: Comment }>("POST", `/api/comments/${commentId}/replies`, {
       body,

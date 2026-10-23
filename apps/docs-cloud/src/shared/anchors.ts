@@ -3,6 +3,14 @@
 // editor builds that text from its document; the Worker derives it from the
 // tab's markdown, so both sides can locate the same anchor.
 // Adapted from apps/web/src/components/docs/docAnchors.ts.
+//
+// Blocks with their own structure (rich tables, diagrams) use a structured
+// anchor instead, naming the block and the part by id, so a comment follows
+// its cell or label through edits and is orphaned only when that part goes.
+
+import { cellText, findTables, TABLE_LANGUAGE } from "./table.ts";
+import { findWidgetFences } from "./widget/fence.ts";
+import { analyzeWidget } from "./widget/validate.ts";
 
 export interface DocAnchor {
   readonly quote: string;
@@ -11,6 +19,67 @@ export interface DocAnchor {
 }
 
 export const ANCHOR_CONTEXT_LENGTH = 48;
+
+/** One cell of a ```t3-table block, or one typed label of a diagram block. */
+export type StructuredAnchor =
+  | {
+      readonly kind: "cell";
+      readonly blockId: string;
+      readonly rowId: string;
+      readonly colId: string;
+    }
+  | { readonly kind: "label"; readonly blockId: string; readonly textId: string };
+
+const ANCHOR_ID = /^[A-Za-z0-9_:.-]{1,128}$/;
+const anchorId = (value: unknown): value is string =>
+  typeof value === "string" && ANCHOR_ID.test(value);
+
+/** Reads a structured anchor from untrusted input (a request body or the stored JSON). */
+export function parseStructuredAnchor(value: unknown): StructuredAnchor | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.kind === "cell" && anchorId(raw.blockId) && anchorId(raw.rowId) && anchorId(raw.colId)) {
+    return { kind: "cell", blockId: raw.blockId, rowId: raw.rowId, colId: raw.colId };
+  }
+  if (raw.kind === "label" && anchorId(raw.blockId) && anchorId(raw.textId)) {
+    return { kind: "label", blockId: raw.blockId, textId: raw.textId };
+  }
+  return null;
+}
+
+/** The part a structured anchor names, with its current words. */
+export interface StructuredAnchorTarget {
+  readonly kind: StructuredAnchor["kind"];
+  readonly text: string;
+}
+
+/**
+ * Finds the part a structured anchor names in a tab's markdown, or null when
+ * the block, row, column or label is gone. Cells resolve by ids alone, so
+ * reordering rows or editing other cells never moves a comment.
+ */
+export function resolveStructuredAnchor(
+  markdown: string,
+  anchor: StructuredAnchor,
+): StructuredAnchorTarget | null {
+  if (anchor.kind === "cell") {
+    for (const { parsed } of findTables(markdown)) {
+      if (!parsed.ok || parsed.table.id !== anchor.blockId) continue;
+      const row = parsed.table.rows.find((candidate) => candidate.id === anchor.rowId);
+      const column = parsed.table.columns.find((candidate) => candidate.id === anchor.colId);
+      if (!row || !column) return null;
+      return { kind: "cell", text: cellText(row.cells[column.id]) };
+    }
+    return null;
+  }
+  // A diagram label: the ```t3-widget id=<blockId> block's label with that text id.
+  for (const fence of findWidgetFences(markdown)) {
+    if (fence.id !== anchor.blockId) continue;
+    const label = analyzeWidget(fence.source).labels.find((entry) => entry.id === anchor.textId);
+    return label ? { kind: "label", text: label.text } : null;
+  }
+  return null;
+}
 
 /**
  * Finds the quote in `text`. With several matches, the one whose surroundings
@@ -124,15 +193,18 @@ export function findQuote(text: string, quote: string): QuoteMatch {
 export function markdownToText(markdown: string): string {
   const lines: Array<string> = [];
   let fence: string | null = null;
+  // Rich table bodies are JSON; their cells are commented through cell anchors.
+  let hidden = false;
   for (const raw of markdown.replace(/\r\n?/g, "\n").split("\n")) {
     if (fence !== null) {
       if (raw.trim().startsWith(fence)) fence = null;
-      else lines.push(raw);
+      else if (!hidden) lines.push(raw);
       continue;
     }
-    const opening = /^\s*(`{3,}|~{3,})/.exec(raw);
+    const opening = /^\s*(`{3,}|~{3,})\s*(\S*)/.exec(raw);
     if (opening) {
       fence = opening[1]!;
+      hidden = opening[2] === TABLE_LANGUAGE;
       continue;
     }
     const line = raw.trim();

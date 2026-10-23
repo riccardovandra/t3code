@@ -1,6 +1,7 @@
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 import { anchorAt, locateAnchor, type DocAnchor } from "../../shared/anchors.ts";
+import { isTableNode } from "../editor/table/TableView.ts";
 
 /**
  * The editor's visible text, with a newline between blocks, in the same shape
@@ -30,6 +31,8 @@ export function buildDocTextIndex(doc: ProseMirrorNode): DocTextIndex {
       }
       return false;
     }
+    // A rich table's text is its JSON; its cells take cell anchors instead.
+    if (isTableNode(node)) return false;
     if (node.type.name === "hardBreak" || node.isTextblock) separate();
     return true;
   });

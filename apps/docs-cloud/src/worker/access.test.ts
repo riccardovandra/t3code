@@ -355,6 +355,42 @@ describe("last owner", () => {
   });
 });
 
+describe("people suggestions", () => {
+  it("suggests everyone on the caller's docs, never the caller or strangers", async () => {
+    const { api, owner, as, projectId, person, share } = await setup();
+    const editor = await person("e@example.com", "editor");
+    await share("pending@example.com", "viewer");
+    // On a doc the editor is not on.
+    const other = await body<DocWithTabs>(
+      await api.call("POST", "/api/docs", {
+        body: { projectId, title: "Private" },
+        headers: as(owner),
+      }),
+    );
+    await api.call("POST", `/api/docs/${other.doc.id}/members`, {
+      body: { email: "stranger@example.com", role: "viewer" },
+      headers: as(owner),
+    });
+    await api.call("PATCH", "/api/me", { body: { name: "Eve" }, headers: as(editor) });
+
+    const people = async (cookie: string) =>
+      (
+        await body<{ people: Array<{ name: string; email: string }> }>(
+          await api.call("GET", "/api/people", { headers: as(cookie) }),
+        )
+      ).people;
+    expect(await people(owner)).toEqual([
+      { name: "Eve", email: "e@example.com" },
+      { name: "", email: "pending@example.com" },
+      { name: "", email: "stranger@example.com" },
+    ]);
+    expect(await people(editor)).toEqual([
+      { name: "", email: "pending@example.com" },
+      { name: "Riccardo Vandra", email: OWNER },
+    ]);
+  });
+});
+
 describe("doc sockets", () => {
   const upgrade = (cookie: string) => ({ Cookie: cookie, Upgrade: "websocket" });
 
@@ -556,5 +592,44 @@ describe("migration 0004 backfill", () => {
       name: "Riccardo Vandra",
       email: "a@example.com",
     });
+  });
+});
+
+describe("rich table access", () => {
+  it("lets a commenter comment on a cell but only an editor change the table", async () => {
+    const { api, owner, as, tab, person } = await setup();
+    const table = {
+      id: "t1",
+      columns: [{ id: "a", name: "A", type: "text" }],
+      rows: [{ id: "r1", cells: { a: "x" } }],
+    };
+    await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: {
+        baseVersion: tab.version,
+        markdown: `\`\`\`t3-table\n${JSON.stringify(table)}\n\`\`\``,
+      },
+      headers: as(owner),
+    });
+    const commenter = await mintToken(api, await person("c@example.com", "commenter"));
+    const editor = await mintToken(api, await person("e@example.com", "editor"));
+    const cell = { tabId: tab.id, tableId: "t1", rowId: "r1", colId: "a", value: "y" };
+    const anchor = { kind: "cell", blockId: "t1", rowId: "r1", colId: "a" };
+
+    const comment = await mcpTool(api, commenter, "create_comment", {
+      tabId: tab.id,
+      anchor,
+      body: "?",
+    });
+    expect(comment.isError).toBe(false);
+    for (const [name, args] of [
+      ["update_table_cell", cell],
+      ["add_table_row", { tabId: tab.id, tableId: "t1", cells: {} }],
+    ] as const) {
+      expect(await mcpTool(api, commenter, name, args)).toMatchObject({
+        isError: true,
+        body: { error: "forbidden" },
+      });
+    }
+    expect((await mcpTool(api, editor, "update_table_cell", cell)).isError).toBe(false);
   });
 });

@@ -346,7 +346,8 @@ describe("MCP tools", () => {
     expect(open.body.threads).toEqual([
       expect.objectContaining({
         commentId: threadId,
-        anchor: "anchored",
+        anchor: null,
+        status: "anchored",
         resolved: false,
         replies: [expect.objectContaining({ body: "Moved to Monday." })],
       }),
@@ -358,7 +359,7 @@ describe("MCP tools", () => {
 
     await mcp.tool("write_tab", { tabId: tab.tabId, markdown: "Rewritten.", baseVersion: 3 });
     const all = await mcp.tool("list_comments", { docId: doc.docId, includeResolved: true });
-    expect(all.body.threads[0]).toMatchObject({ resolved: true, anchor: "text_removed" });
+    expect(all.body.threads[0]).toMatchObject({ resolved: true, status: "text_removed" });
   });
 
   it("names the token as author without clientInfo, and refuses a missing or ambiguous quote", async () => {
@@ -386,6 +387,180 @@ describe("MCP tools", () => {
     expect(created.body.comment.author).toBe("agent:agent");
     const unknown = await mcp.tool("reply_comment", { commentId: "nope", body: "x" });
     expect(unknown).toMatchObject({ isError: true, body: { error: "not_found" } });
+  });
+});
+
+const TABLE = {
+  id: "requests",
+  columns: [
+    { id: "req", name: "Request", type: "text" },
+    {
+      id: "status",
+      name: "Status",
+      type: "select",
+      options: [
+        { value: "Not started", color: "gray" },
+        { value: "Done", color: "green" },
+      ],
+    },
+    { id: "ticket", name: "Tickets", type: "link" },
+  ],
+  rows: [
+    { id: "r1", cells: { req: "Fix Bing MCP", status: "Not started" } },
+    { id: "r2", cells: { req: "GitHub group", status: "Done" } },
+  ],
+};
+const tableMarkdown = (table: unknown = TABLE) =>
+  `# Requests\n\n\`\`\`t3-table\n${JSON.stringify(table)}\n\`\`\`\n\nAfter.\n`;
+
+describe("MCP table tools", () => {
+  it("rejects writes whose t3-table JSON is invalid, with the reason", async () => {
+    const mcp = await makeMcpHarness();
+    const { tab } = await mcp.seedDoc("Start.");
+    const broken = await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      markdown: '```t3-table\n{"id": "t", "columns": [}\n```',
+      baseVersion: 2,
+    });
+    expect(broken).toMatchObject({ isError: true, body: { error: "table_invalid" } });
+    expect(broken.body.message).toContain("not valid JSON");
+
+    const badOption = await mcp.tool("edit_tab", {
+      tabId: tab.tabId,
+      find: "Start.",
+      replace: tableMarkdown({ ...TABLE, rows: [{ id: "r1", cells: { status: "Blocked" } }] }),
+    });
+    expect(badOption).toMatchObject({ isError: true, body: { error: "table_invalid" } });
+    expect(badOption.body.message).toContain('"Blocked", which is not one of its options');
+
+    const created = await mcp.tool("create_tab", {
+      docId: (await mcp.tool("list_docs", {})).body.docs[0].docId,
+      title: "T",
+      markdown: tableMarkdown({ ...TABLE, columns: [{ id: "a", name: "A", type: "money" }] }),
+    });
+    expect(created.body.message).toContain('"type" must be one of');
+  });
+
+  it("updates a cell and adds rows through the room, so open editors get the tab", async () => {
+    const mcp = await makeMcpHarness();
+    const { tab } = await mcp.seedDoc(tableMarkdown());
+    const before = mcp.api.broadcasts.length;
+
+    const updated = await mcp.tool("update_table_cell", {
+      tabId: tab.tabId,
+      tableId: "requests",
+      rowId: "r1",
+      colId: "ticket",
+      value: { text: "PENG-5575", url: "https://example.test/PENG-5575" },
+    });
+    expect(updated.isError).toBe(false);
+    expect(mcp.api.broadcasts.length).toBe(before + 1);
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({ type: "tab.updated", origin: null });
+
+    const added = await mcp.tool("add_table_row", {
+      tabId: tab.tabId,
+      tableId: "requests",
+      cells: { Request: "Add Iterable", status: "Done" },
+      afterRowId: "r1",
+    });
+    const rowId = added.body.row.rowId as string;
+
+    const { markdown } = await Docs.getTab(mcp.api.db, tab.tabId);
+    expect(markdown.startsWith("# Requests\n\n```t3-table\n{\n")).toBe(true);
+    expect(markdown.endsWith("\n```\n\nAfter.\n")).toBe(true);
+    const body = JSON.parse(markdown.slice(markdown.indexOf("{"), markdown.lastIndexOf("}") + 1));
+    expect(body.rows.map((row: { id: string }) => row.id)).toEqual(["r1", rowId, "r2"]);
+    expect(body.rows[0].cells.ticket).toEqual({
+      text: "PENG-5575",
+      url: "https://example.test/PENG-5575",
+    });
+    expect(body.rows[1].cells).toEqual({ req: "Add Iterable", status: "Done" });
+  });
+
+  it("explains a bad id or value and writes nothing", async () => {
+    const mcp = await makeMcpHarness();
+    const { tab } = await mcp.seedDoc(tableMarkdown());
+    const before = await Docs.getTab(mcp.api.db, tab.tabId);
+    const cases: Array<[Record<string, unknown>, string, string]> = [
+      [{ tableId: "nope", rowId: "r1", colId: "req", value: "x" }, "table_not_found", "requests"],
+      [{ tableId: "requests", rowId: "r9", colId: "req", value: "x" }, "invalid_value", '"r1"'],
+      [
+        { tableId: "requests", rowId: "r1", colId: "status", value: "Late" },
+        "invalid_value",
+        "Done",
+      ],
+      [
+        {
+          tableId: "requests",
+          rowId: "r1",
+          colId: "ticket",
+          value: { text: "x", url: "javascript:1" },
+        },
+        "invalid_value",
+        "http(s)",
+      ],
+    ];
+    for (const [args, error, hint] of cases) {
+      const result = await mcp.tool("update_table_cell", { tabId: tab.tabId, ...args });
+      expect(result).toMatchObject({ isError: true, body: { error } });
+      expect(result.body.message).toContain(hint);
+    }
+    const unknownColumn = await mcp.tool("add_table_row", {
+      tabId: tab.tabId,
+      tableId: "requests",
+      cells: { Owner: "me" },
+    });
+    expect(unknownColumn.body.message).toContain("not a column id");
+    expect((await Docs.getTab(mcp.api.db, tab.tabId)).version).toBe(before.version);
+  });
+
+  it("comments on a cell, keeps it through other edits, and orphans it with its row", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc(tableMarkdown());
+    const anchor = { kind: "cell", blockId: "requests", rowId: "r2", colId: "req" };
+    const created = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      anchor,
+      body: "Who owns this?",
+    });
+    expect(created.body.comment).toMatchObject({ quote: "GitHub group", anchor });
+    const missing = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      anchor: { ...anchor, rowId: "r9" },
+      body: "?",
+    });
+    expect(missing).toMatchObject({ isError: true, body: { error: "anchor_not_found" } });
+
+    // Other cells change and the rows swap; the thread keeps its cell.
+    const current = await Docs.getTab(mcp.api.db, tab.tabId);
+    await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      baseVersion: current.version,
+      markdown: tableMarkdown({
+        ...TABLE,
+        rows: [
+          { id: "r2", cells: { req: "GitHub marketing group" } },
+          { id: "r1", cells: { req: "Fix Bing", status: "Done" } },
+        ],
+      }),
+    });
+    const listed = await mcp.tool("list_comments", { docId: doc.docId });
+    expect(listed.body.threads).toEqual([
+      expect.objectContaining({ anchor, status: "anchored", quote: "GitHub group" }),
+    ]);
+
+    await mcp.tool("reply_comment", { commentId: created.body.comment.commentId, body: "Me." });
+    const after = await Docs.getTab(mcp.api.db, tab.tabId);
+    await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      baseVersion: after.version,
+      markdown: tableMarkdown({ ...TABLE, rows: [TABLE.rows[0]] }),
+    });
+    const orphaned = await mcp.tool("list_comments", { docId: doc.docId });
+    expect(orphaned.body.threads[0]).toMatchObject({
+      status: "orphaned",
+      replies: [expect.anything()],
+    });
   });
 });
 
@@ -471,5 +646,33 @@ describe("MCP diagrams", () => {
     const [example] = findWidgetFences(MCP_INSTRUCTIONS);
     expect(example?.id).toBe("release-flow");
     expect(analyzeWidget(example!.source).diagnostics).toEqual([]);
+  });
+
+  it("comments on a diagram label, and orphans the thread when the label goes", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc(diagram("release-flow", FLOW_EXAMPLE));
+    const anchor = { kind: "label", blockId: "release-flow", textId: "notify" };
+    const created = await mcp.tool("create_comment", { tabId: tab.tabId, anchor, body: "Who?" });
+    expect(created.body.comment).toMatchObject({ anchor, quote: "Notify the author" });
+    const missing = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      anchor: { ...anchor, textId: "gone" },
+      body: "?",
+    });
+    expect(missing.body.error).toBe("anchor_not_found");
+
+    const withoutLabel = FLOW_EXAMPLE.replace(
+      /<text data-claude-text-id='notify'[^>]*>Notify the author<\/text>/,
+      "",
+    );
+    const current = await Docs.getTab(mcp.api.db, tab.tabId);
+    const written = await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      baseVersion: current.version,
+      markdown: diagram("release-flow", withoutLabel),
+    });
+    expect(written.isError).toBe(false);
+    const listed = await mcp.tool("list_comments", { docId: doc.docId });
+    expect(listed.body.threads[0]).toMatchObject({ anchor, status: "orphaned" });
   });
 });

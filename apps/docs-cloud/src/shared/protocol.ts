@@ -1,5 +1,7 @@
 // Wire types shared by the Worker, the DocRoom socket and the SPA.
 
+import type { StructuredAnchor } from "./anchors.ts";
+
 export type DocStatus = "thinking" | "plan" | "in_progress" | "done";
 
 export const DOC_STATUSES: ReadonlyArray<DocStatus> = ["thinking", "plan", "in_progress", "done"];
@@ -82,6 +84,8 @@ export interface Comment {
   readonly quote: string;
   readonly prefix: string;
   readonly suffix: string;
+  /** Set on roots anchored to a part of a block; `quote` then holds that part's text. */
+  readonly anchor: StructuredAnchor | null;
   readonly body: string;
   readonly author: string;
   readonly resolvedAt: number | null;

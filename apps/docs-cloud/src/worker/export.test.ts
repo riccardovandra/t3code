@@ -94,6 +94,23 @@ describe("markdown assembly", () => {
   });
 });
 
+describe("rich tables in exports", () => {
+  it("render as GFM tables so the download reads without the app", () => {
+    const json = JSON.stringify({
+      id: "t1",
+      columns: [
+        { id: "a", name: "Request", type: "text" },
+        { id: "s", name: "Status", type: "select", options: [{ value: "Done", color: "green" }] },
+      ],
+      rows: [{ id: "r1", cells: { a: "Ship", s: "Done" } }],
+    });
+    const markdown = `Intro\n\n\`\`\`t3-table\n${json}\n\`\`\`\n`;
+    expect(tabMarkdown(tab("a", null, 0, "Plan", markdown))).toBe(
+      "# Plan\n\nIntro\n\n| Request | Status |\n| --- | --- |\n| Ship | Done |\n",
+    );
+  });
+});
+
 describe("export routes", () => {
   async function seed(api: ReturnType<typeof makeApiHarness>, cookie: string) {
     const headers = { Cookie: cookie };
