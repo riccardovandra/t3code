@@ -174,8 +174,10 @@ export const layer = McpToolAccess.toLayer(ToolsToolkit, {
       Effect.gen(function* () {
         const library = yield* SkillLibrary.SkillLibrary;
         const target = yield* projectTarget(input.projectId);
-        yield* library.remove({ name: input.name, target }).pipe(Effect.mapError(libraryFailure));
-        return {};
+        const entry = yield* library
+          .remove({ name: input.name, target })
+          .pipe(Effect.mapError(libraryFailure));
+        return { id: entry.id, name: entry.name, paths: entry.paths };
       }),
     ),
   ),

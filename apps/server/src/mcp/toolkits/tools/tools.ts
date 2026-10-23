@@ -6,6 +6,7 @@ import {
   SkillInstallInput,
   SkillInstallResult,
   SkillSource,
+  SkillTrashEntry,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -91,7 +92,12 @@ const SkillsRemoveTool = Tool.make("t3_skills_remove", {
   description:
     "Move a skill from the agents' own skill folders for this environment or one project into T3 Code's skill trash, with every agent's link to it and its lock entry: one installed from a source (with t3_skills_install, the Tools page, or `npx skills`) or put there by hand. Find it with t3_skills_trash_list and put it back with t3_skills_restore. Plugin and built-in skills can only be switched off with t3_tools_update. Requires a live full-access/default calling thread.",
   parameters: Schema.Struct({ ...Scope, name: InstalledSkillName }),
-  success: Schema.Struct({}),
+  // The trash entry's id, for t3_skills_restore, and every path it moved there.
+  success: Schema.Struct({
+    id: SkillTrashEntry.fields.id,
+    name: SkillTrashEntry.fields.name,
+    paths: SkillTrashEntry.fields.paths,
+  }),
 }).annotate(Tool.Destructive, true);
 
 export const ToolsToolkit = Toolkit.make(

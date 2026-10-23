@@ -33,6 +33,7 @@ import {
   SkillLibraryError,
   type SkillPreviewInput,
   type SkillPreviewResult,
+  type SkillTrashEntry,
   type SkillTrashEntryInput,
   type SkillTrashError,
   type SkillTrashListResult,
@@ -83,13 +84,16 @@ export class SkillLibrary extends Context.Service<
     /**
      * Move a skill from the agents' skill folders at one level into the
      * trash: with its lock entry when the CLI installed it, else each folder's
-     * copy of that name.
+     * copy of that name. Returns the trash entry it made.
      */
-    readonly remove: (input: InstalledSkillInput) => Effect.Effect<void, SkillLibraryError>;
+    readonly remove: (
+      input: InstalledSkillInput,
+    ) => Effect.Effect<SkillTrashEntry, SkillLibraryError>;
     readonly listTrash: Effect.Effect<SkillTrashListResult>;
+    /** Returns the entry it put back. */
     readonly restoreFromTrash: (
       input: SkillTrashEntryInput,
-    ) => Effect.Effect<void, SkillTrashError>;
+    ) => Effect.Effect<SkillTrashEntry, SkillTrashError>;
     readonly deleteFromTrash: (input: SkillTrashEntryInput) => Effect.Effect<void, SkillTrashError>;
     /** Pack the folder an agent reports for a skill, to copy it to another environment. */
     readonly exportSkill: (
@@ -619,7 +623,7 @@ const make = Effect.gen(function* () {
   const remove: SkillLibrary["Service"]["remove"] = Effect.fn("SkillLibrary.remove")(
     function* (input) {
       const target = yield* resolveTarget(input.target);
-      yield* removeLocked(target, input.name).pipe(changes.withPermits(1));
+      return yield* removeLocked(target, input.name).pipe(changes.withPermits(1));
     },
   );
 
@@ -632,7 +636,7 @@ const make = Effect.gen(function* () {
       const paths = targetPaths(target);
       const folder = skillFolderName(locked.key);
       const roots = yield* skillRoots(target);
-      yield* moveToTrash(
+      return yield* moveToTrash(
         target,
         name,
         [paths.folder, ...roots].map((root) => path.join(root, folder)),
@@ -648,7 +652,7 @@ const make = Effect.gen(function* () {
   ) =>
     trash.put({ name, target, paths, ...(lock === undefined ? {} : { lock }) }).pipe(
       Effect.mapError((error) => cliFailed(error.message)),
-      Effect.andThen(refreshAgents(target)),
+      Effect.tap(() => refreshAgents(target)),
     );
 
   const listTrash: SkillLibrary["Service"]["listTrash"] = trash.list.pipe(
@@ -660,6 +664,7 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const entry = yield* trash.restore(input.id).pipe(changes.withPermits(1));
     yield* refreshAgents(entry.target);
+    return entry;
   });
 
   const deleteFromTrash: SkillLibrary["Service"]["deleteFromTrash"] = Effect.fn(
@@ -713,7 +718,7 @@ const make = Effect.gen(function* () {
           }
         }
       }
-      yield* moveToTrash(target, name, [...reported]);
+      return yield* moveToTrash(target, name, [...reported]);
     });
 
   /**
