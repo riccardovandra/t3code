@@ -2,8 +2,12 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type { ApiTokenSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
+import { setMe, useMe } from "../me.ts";
 
 export function SettingsPage() {
+  const me = useMe();
+  const [displayName, setDisplayName] = useState(me?.user.name ?? "");
+  const [nameSaved, setNameSaved] = useState(false);
   const [tokens, setTokens] = useState<ReadonlyArray<ApiTokenSummary>>([]);
   const [name, setName] = useState("");
   const [created, setCreated] = useState<string | null>(null);
@@ -25,6 +29,12 @@ export function SettingsPage() {
     await reload();
   };
 
+  const saveName = async (event: FormEvent) => {
+    event.preventDefault();
+    setMe(await api.setName(displayName.trim()));
+    setNameSaved(true);
+  };
+
   const revoke = async (id: string) => {
     await api.revokeToken(id);
     await reload();
@@ -33,6 +43,25 @@ export function SettingsPage() {
   return (
     <main className="page">
       <h1>Settings</h1>
+      <h2>Profile</h2>
+      <p className="muted">
+        People you share docs with see this name. Signed in as {me?.emails.join(", ")}.
+      </p>
+      <form onSubmit={saveName} className="inline-form">
+        <input
+          placeholder="Display name"
+          maxLength={100}
+          value={displayName}
+          onChange={(event) => {
+            setDisplayName(event.target.value);
+            setNameSaved(false);
+          }}
+        />
+        <button type="submit" className="button">
+          Save
+        </button>
+        {nameSaved ? <span className="muted">Saved</span> : null}
+      </form>
       <h2>API tokens</h2>
       <p className="muted">
         Agents and T3 Code use these as <code>Authorization: Bearer …</code> on <code>/api</code>{" "}
