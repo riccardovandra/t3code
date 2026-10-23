@@ -1,7 +1,7 @@
 /**
- * Docs Cloud's projects are T3 Code projects, identified by a key: the git
- * remote's canonical key such as `github.com/owner/repo`, so every checkout of
- * a repository on every machine shares one project, else `title:` and the
+ * Docs Cloud's projects are T3 Code projects, identified by a key: the user's
+ * own git remote such as `github.com/owner/repo`, so every checkout of a
+ * repository on every machine shares one project, else `title:` and the
  * normalised title. The T3 server, its clients and Docs Cloud all derive keys
  * here so they agree.
  */
@@ -15,14 +15,61 @@ export const MAX_PROJECT_KEY_LENGTH = 300;
 
 export const titleProjectKey = (name: string): string => TITLE_KEY_PREFIX + projectNameKey(name);
 
+interface ProjectRepository {
+  readonly canonicalKey: string;
+  readonly rootPath?: string | undefined;
+  readonly origin?: { readonly canonicalKey: string } | null | undefined;
+}
+
 /**
- * A T3 project's key. It uses the project's own remote, not the fork parent
- * in `repositoryIdentity.origin`, so forks stay separate projects.
+ * A T3 project's key: the user's own remote. T3's `canonicalKey` prefers the
+ * `upstream` remote, so a fork's checkout would join its parent's project;
+ * `origin` is set only when it differs from that, and is the fork itself.
  */
 export const docsCloudProjectKey = (project: {
   readonly title: string;
-  readonly repositoryIdentity?: { readonly canonicalKey: string } | null | undefined;
-}): string => project.repositoryIdentity?.canonicalKey ?? titleProjectKey(project.title);
+  readonly repositoryIdentity?: ProjectRepository | null | undefined;
+}): string =>
+  project.repositoryIdentity?.origin?.canonicalKey ??
+  project.repositoryIdentity?.canonicalKey ??
+  titleProjectKey(project.title);
+
+const trimTrailingSeparators = (path: string) => path.replace(/[\\/]+$/, "");
+
+/**
+ * One sync entry per key. Several T3 projects can share a repository (its
+ * checkout and agent-made projects on worktrees or subfolders), and the name
+ * comes from the checkout itself, else the project with the shortest root.
+ */
+export function docsCloudSyncEntries(
+  projects: ReadonlyArray<{
+    readonly title: string;
+    readonly workspaceRoot: string;
+    readonly repositoryIdentity?: ProjectRepository | null | undefined;
+  }>,
+): ReadonlyArray<{ readonly key: string; readonly name: string }> {
+  const rank = (project: (typeof projects)[number]) => {
+    const root = trimTrailingSeparators(project.workspaceRoot);
+    const repositoryRoot = project.repositoryIdentity?.rootPath;
+    const atRoot = repositoryRoot !== undefined && trimTrailingSeparators(repositoryRoot) === root;
+    return [atRoot ? 0 : 1, root.length] as const;
+  };
+  const best = new Map<string, (typeof projects)[number]>();
+  for (const project of projects) {
+    const key = docsCloudProjectKey(project);
+    const current = best.get(key);
+    if (current === undefined) {
+      best.set(key, project);
+      continue;
+    }
+    const [atRoot, length] = rank(project);
+    const [currentAtRoot, currentLength] = rank(current);
+    if (atRoot < currentAtRoot || (atRoot === currentAtRoot && length < currentLength)) {
+      best.set(key, project);
+    }
+  }
+  return [...best].map(([key, project]) => ({ key, name: project.title.trim() }));
+}
 
 /** A key in its stored form (title keys normalised), or null when it is not a usable key. */
 export function normalizeProjectKey(key: string): string | null {

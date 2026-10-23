@@ -230,7 +230,8 @@ export const DocsCloudImportFileResult = Schema.Struct({
 export type DocsCloudImportFileResult = typeof DocsCloudImportFileResult.Type;
 
 export const DocsCloudImportResult = Schema.Struct({
-  project: DocsCloudProject,
+  /** Null when the docs went to Docs Cloud's No project, from T3's scratch project. */
+  project: Schema.NullOr(DocsCloudProject),
   results: Schema.Array(DocsCloudImportFileResult),
 });
 export type DocsCloudImportResult = typeof DocsCloudImportResult.Type;

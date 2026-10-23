@@ -1,5 +1,5 @@
 import type { EnvironmentId, McpServerListResult, ScopedThreadRef } from "@t3tools/contracts";
-import { docsCloudConfig } from "@t3tools/client-runtime/docs-cloud";
+import { docsCloudBaseUrl } from "@t3tools/client-runtime/docs-cloud";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
@@ -11,7 +11,7 @@ import { serverEnvironment } from "~/state/server";
 const selectBaseUrl = (result: AsyncResult.AsyncResult<McpServerListResult, unknown>) =>
   Option.match(AsyncResult.value(result), {
     onNone: () => null,
-    onSome: (list) => docsCloudConfig(list.servers)?.baseUrl ?? null,
+    onSome: (list) => docsCloudBaseUrl(list.servers),
   });
 
 /** The Docs Cloud origin this environment's MCP hub points at, or null when it is not set up. */

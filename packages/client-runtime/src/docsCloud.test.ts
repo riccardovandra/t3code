@@ -3,6 +3,7 @@ import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  docsCloudBaseUrl,
   docsCloudConfig,
   docsCloudPath,
   docsCloudToolEvent,
@@ -45,6 +46,14 @@ describe("docsCloudConfig", () => {
     expect(docsCloudConfig([entry()])).toEqual({ serverId, baseUrl: BASE, enabled: true });
     expect(docsCloudConfig([entry({ name: "notion" as McpServerEntry["name"] })])).toBeNull();
     expect(docsCloudConfig([])).toBeNull();
+  });
+});
+
+describe("docsCloudBaseUrl", () => {
+  it("is null while the hub entry is disabled", () => {
+    expect(docsCloudBaseUrl([entry()])).toBe(BASE);
+    expect(docsCloudBaseUrl([entry({ enabled: false })])).toBeNull();
+    expect(docsCloudBaseUrl([])).toBeNull();
   });
 });
 

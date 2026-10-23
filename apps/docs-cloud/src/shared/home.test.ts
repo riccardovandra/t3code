@@ -61,19 +61,15 @@ describe("searchSnippet", () => {
   it("centres on the match and marks cut edges", () => {
     const before = "lead ".repeat(40);
     const after = " tail".repeat(60);
-    const snippet = searchSnippet(`${before}the Needle here${after}`, "needle", {
-      cutBefore: false,
-      cutAfter: false,
-    });
-    expect(snippet.startsWith("…")).toBe(true);
-    expect(snippet.endsWith("…")).toBe(true);
+    const snippet = searchSnippet(`${before}the Needle here${after}`, "needle");
+    expect(snippet!.startsWith("…")).toBe(true);
+    expect(snippet!.endsWith("…")).toBe(true);
     expect(snippet).toContain("the Needle here");
-    expect(snippet.length).toBeLessThan(200);
+    expect(snippet!.length).toBeLessThan(200);
   });
 
-  it("marks an ellipsis where the window was cut from a longer tab", () => {
-    expect(searchSnippet("a needle", "needle", { cutBefore: true, cutAfter: false })).toBe(
-      "…a needle",
-    );
+  it("is null when the visible text does not hold the match", () => {
+    expect(searchSnippet("a needle", "needle")).toBe("a needle");
+    expect(searchSnippet("a haystack", "needle")).toBeNull();
   });
 });

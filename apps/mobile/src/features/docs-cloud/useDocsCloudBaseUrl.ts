@@ -1,4 +1,4 @@
-import { docsCloudConfig } from "@t3tools/client-runtime/docs-cloud";
+import { docsCloudBaseUrl } from "@t3tools/client-runtime/docs-cloud";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { useEnvironmentQuery } from "../../state/query";
@@ -15,5 +15,5 @@ export function useDocsCloudBaseUrl(environmentId: EnvironmentId | null): string
       ? serverEnvironment.mcpServersLive({ environmentId, input: {} })
       : null,
   );
-  return servers.data ? (docsCloudConfig(servers.data.servers)?.baseUrl ?? null) : null;
+  return servers.data ? docsCloudBaseUrl(servers.data.servers) : null;
 }

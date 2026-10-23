@@ -23,6 +23,16 @@ export function docsCloudConfig(servers: ReadonlyArray<McpServerEntry>): DocsClo
   return baseUrl === null ? null : { serverId: entry.id, baseUrl, enabled: entry.enabled };
 }
 
+/**
+ * The origin the Docs panel embeds, or null while the entry is missing or
+ * disabled. Agents only get Docs Cloud from an enabled entry, so a disabled
+ * one leaves both on the project's markdown files.
+ */
+export function docsCloudBaseUrl(servers: ReadonlyArray<McpServerEntry>): string | null {
+  const config = docsCloudConfig(servers);
+  return config?.enabled ? config.baseUrl : null;
+}
+
 function docsCloudOrigin(value: string): string | null {
   try {
     const url = new URL(value.trim());
