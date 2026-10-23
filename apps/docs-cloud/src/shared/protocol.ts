@@ -1,5 +1,7 @@
 // Wire types shared by the Worker, the DocRoom socket and the SPA.
 
+import type { StructuredAnchor } from "./anchors.ts";
+
 export type DocStatus = "thinking" | "plan" | "in_progress" | "done";
 
 export const DOC_STATUSES: ReadonlyArray<DocStatus> = ["thinking", "plan", "in_progress", "done"];
@@ -11,15 +13,18 @@ export const DOC_STATUS_LABEL: Readonly<Record<DocStatus, string>> = {
   done: "Done",
 };
 
+/** A T3 Code project's docs; `key` is how T3 Code finds it (see `normalizeProjectKey`). */
 export interface Project {
   readonly id: string;
+  readonly key: string;
   readonly name: string;
   readonly createdAt: number;
 }
 
 export interface DocSummary {
   readonly id: string;
-  readonly projectId: string;
+  /** Null for a doc in no project. */
+  readonly projectId: string | null;
   readonly title: string;
   readonly status: DocStatus;
   readonly createdAt: number;
@@ -39,6 +44,12 @@ export interface Tab {
 
 export interface LibraryProject extends Project {
   readonly docs: ReadonlyArray<DocSummary>;
+}
+
+/** `GET /api/library`: projects by name, and the docs in no project. */
+export interface Library {
+  readonly projects: ReadonlyArray<LibraryProject>;
+  readonly noProjectDocs: ReadonlyArray<DocSummary>;
 }
 
 export interface DocWithTabs {
@@ -73,6 +84,8 @@ export interface Comment {
   readonly quote: string;
   readonly prefix: string;
   readonly suffix: string;
+  /** Set on roots anchored to a part of a block; `quote` then holds that part's text. */
+  readonly anchor: StructuredAnchor | null;
   readonly body: string;
   readonly author: string;
   readonly resolvedAt: number | null;
@@ -115,6 +128,7 @@ export type RoomMessage =
       readonly origin: string | null;
     }
   | { readonly type: "doc.updated"; readonly doc: DocSummary; readonly origin: string | null }
+  | { readonly type: "doc.deleted"; readonly docId: string; readonly origin: string | null }
   | {
       readonly type: "doc.threads";
       readonly threads: ReadonlyArray<DocThreadLink>;

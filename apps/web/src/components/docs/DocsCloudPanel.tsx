@@ -1,5 +1,6 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -56,16 +57,21 @@ export function DocsCloudPanel(props: {
   const [src] = useState(() => `${origin}${path ?? "/"}`);
   const reported = useRef<string | null>(null);
   const [copyRequest, setCopyRequest] = useState<CopyToClaudeDocRequest | null>(null);
-  // The library opens on the Docs Cloud project named after this T3 project.
-  const projectName =
-    useProject(
-      props.projectId === null
-        ? null
-        : { environmentId: threadRef.environmentId, projectId: props.projectId },
-    )?.title ?? null;
+  // The library opens on this T3 project's Docs Cloud project. The key
+  // changes once the repository identity resolves, so the context is resent.
+  const project = useProject(
+    props.projectId === null
+      ? null
+      : { environmentId: threadRef.environmentId, projectId: props.projectId },
+  );
+  const projectName = project?.title ?? null;
+  const projectKey = project ? docsCloudProjectKey(project) : null;
   useEffect(() => {
-    frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin);
-  }, [origin, projectName]);
+    frame.current?.contentWindow?.postMessage(
+      { type: "t3-docs:context", projectName, projectKey },
+      origin,
+    );
+  }, [origin, projectName, projectKey]);
   // Docs Cloud follows T3 Code's appearance and palette, custom themes included.
   const { appearance, colors } = useActiveThemeColors();
   useEffect(() => {
@@ -211,7 +217,7 @@ export function DocsCloudPanel(props: {
             },
             origin,
           );
-          postToFrame({ type: "t3-docs:context", projectName });
+          postToFrame({ type: "t3-docs:context", projectName, projectKey });
           postToFrame({ type: "t3-docs:theme", appearance, colors });
         }}
       />

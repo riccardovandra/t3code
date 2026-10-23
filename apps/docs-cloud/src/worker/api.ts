@@ -7,7 +7,13 @@ import {
   type TabPlacement,
 } from "../shared/protocol.ts";
 import { isDocRole, type DocRole } from "../shared/access.ts";
-import { locateAnchor, markdownToText } from "../shared/anchors.ts";
+import {
+  locateAnchor,
+  markdownToText,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+} from "../shared/anchors.ts";
+import { normalizeProjectKey } from "../shared/embed.ts";
 import * as Access from "./access.ts";
 import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
@@ -16,7 +22,10 @@ import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
+import * as Images from "./images.ts";
+import { IMAGE_TYPES, isImageDocId } from "../shared/images.ts";
 import { widgetProblems } from "./widgets.ts";
+import { checkTablesIn } from "../shared/table.ts";
 
 /** The ordered write path for a doc; production routes it to the doc's DocRoom. */
 export interface DocRooms {
@@ -57,6 +66,16 @@ export interface DocRooms {
     docId: string,
     input: { readonly status: DocStatus; readonly origin: string | null },
   ): Promise<DocSummary>;
+  renameDoc(
+    docId: string,
+    input: { readonly title: string; readonly origin: string | null },
+  ): Promise<DocSummary>;
+  /** Deletes the doc and closes every open socket on it. */
+  deleteDoc(docId: string, input: { readonly origin: string | null }): Promise<void>;
+  setDocProject(
+    docId: string,
+    input: { readonly projectId: string | null; readonly origin: string | null },
+  ): Promise<DocSummary>;
   commentOp(
     docId: string,
     input: { readonly op: Comments.CommentOp; readonly origin: string | null },
@@ -80,6 +99,7 @@ export interface ApiDeps {
   readonly publicOrigin: string;
   readonly owners: ReadonlySet<string>;
   readonly rooms: DocRooms;
+  readonly images: Images.ImageStore;
   readonly sendLoginCode: (email: string, code: string) => Promise<void>;
   readonly sendDocInvite: (invite: DocInvite) => Promise<void>;
   readonly waitUntil: (promise: Promise<unknown>) => void;
@@ -92,6 +112,8 @@ const json = (body: unknown, status = 200, headers: HeadersInit = {}) =>
 const error = (status: number, code: string) => json({ error: code }, status);
 const widgetInvalid = (problems: ReadonlyArray<WidgetProblem>) =>
   json({ error: "widget_invalid", problems }, 422);
+
+const tableInvalid = (message: string) => json({ error: "table_invalid", message }, 422);
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
@@ -106,6 +128,31 @@ const str = (value: unknown, max = 200): string | null =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max ? value.trim() : null;
 
 const MAX_MARKDOWN_LENGTH = 1_000_000;
+/** One T3 Code environment's projects per sync call. */
+const MAX_SYNCED_PROJECTS = 500;
+
+/** `undefined` when absent, null for "no project", a string id, or `false` when malformed. */
+function projectIdArg(value: unknown): string | null | undefined | false {
+  if (value === undefined || value === null) return value;
+  return str(value) ?? false;
+}
+
+function syncedProjects(
+  value: unknown,
+): ReadonlyArray<{ readonly key: string; readonly name: string }> | null {
+  if (!Array.isArray(value) || value.length > MAX_SYNCED_PROJECTS) return null;
+  const byKey = new Map<string, string>();
+  for (const entry of value as Array<unknown>) {
+    if (!entry || typeof entry !== "object") return null;
+    const fields = entry as Record<string, unknown>;
+    const key = typeof fields.key === "string" ? normalizeProjectKey(fields.key) : null;
+    const name = str(fields.name);
+    if (!key || !name) return null;
+    // Two checkouts of one repository share a key; the last title wins.
+    byKey.set(key, name);
+  }
+  return [...byKey].map(([key, name]) => ({ key, name }));
+}
 
 /**
  * Cookies are SameSite=None so the app works inside T3 Code's iframe, which
@@ -121,7 +168,9 @@ function isSameOriginWrite(request: Request, deps: ApiDeps): boolean {
   const origin = request.headers.get("Origin");
   if (origin !== null && !isOwnOrigin(origin, request, deps)) return false;
   if (request.method !== "POST") return true;
-  return (request.headers.get("Content-Type") ?? "").startsWith("application/json");
+  const type = request.headers.get("Content-Type") ?? "";
+  // Image uploads send raw bytes; image types are not CORS-safelisted either.
+  return type.startsWith("application/json") || Object.hasOwn(IMAGE_TYPES, type);
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -206,31 +255,50 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (path === "/api/library" && method === "GET") {
-      const projects = await Access.scopeLibrary(deps.db, {
-        projects: await Docs.listLibrary(deps.db),
-        userId: principal.userId,
-        owners: deps.owners,
-      });
-      return json({ projects });
+      return json(
+        await Access.scopeLibrary(deps.db, {
+          library: await Docs.listLibrary(deps.db),
+          userId: principal.userId,
+          owners: deps.owners,
+        }),
+      );
     }
 
     if (path === "/api/projects" && method === "POST") {
       if (!Access.isAdmin(principal.userId)) return error(403, "forbidden");
-      const name = str((await readJson(request)).name);
+      const body = await readJson(request);
+      const name = str(body.name);
       if (!name) return error(400, "invalid_name");
-      return json({ project: await Docs.createProject(deps.db, name, now) }, 201);
+      if (body.key === undefined) {
+        return json({ project: await Docs.createProject(deps.db, name, now) }, 201);
+      }
+      const key = typeof body.key === "string" ? normalizeProjectKey(body.key) : null;
+      if (!key) return error(400, "invalid_key");
+      return json({ project: await Docs.ensureProject(deps.db, { key, name, now }) }, 201);
+    }
+
+    // T3 Code upserts its environment's projects here, so every machine converges on one list.
+    if (path === "/api/projects/sync" && method === "POST") {
+      if (!Access.isAdmin(principal.userId)) return error(403, "forbidden");
+      const projects = syncedProjects((await readJson(request)).projects);
+      if (!projects) return error(400, "invalid_projects");
+      const synced = await Docs.syncProjects(deps.db, projects, now);
+      return json({ projects: synced.map(({ id, key, name }) => ({ id, key, name })) });
     }
 
     if (path === "/api/docs" && method === "POST") {
       const body = await readJson(request);
-      const projectId = str(body.projectId);
+      const projectId = projectIdArg(body.projectId);
       const title = str(body.title);
-      if (!projectId || !title) return error(400, "invalid_doc");
-      if (!(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
+      if (projectId === false || !title) return error(400, "invalid_doc");
+      if (projectId && !(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
         return error(404, "not_found");
       }
       const ownerId = principal.userId;
-      return json(await Docs.createDoc(deps.db, { projectId, title, ownerId, now }), 201);
+      return json(
+        await Docs.createDoc(deps.db, { projectId: projectId ?? null, title, ownerId, now }),
+        201,
+      );
     }
 
     if (resource === "docs" && id && !sub && method === "GET") {
@@ -247,13 +315,55 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     if (resource === "docs" && id && !sub && method === "PATCH") {
       await need(id, "editor");
       const body = await readJson(request);
+      const origin = str(body.clientId);
+      if (body.title !== undefined) {
+        const title = str(body.title);
+        if (!title) return error(400, "invalid_title");
+        if (body.status !== undefined || body.projectId !== undefined) {
+          return error(400, "one_change_at_a_time");
+        }
+        return json({ doc: await deps.rooms.renameDoc(id, { title, origin }) });
+      }
       const status = body.status;
-      if (!DOC_STATUSES.includes(status as DocStatus)) return error(400, "invalid_status");
-      const doc = await deps.rooms.setDocStatus(id, {
-        status: status as DocStatus,
-        origin: str(body.clientId),
-      });
+      if (status !== undefined && !DOC_STATUSES.includes(status as DocStatus)) {
+        return error(400, "invalid_status");
+      }
+      const projectId = projectIdArg(body.projectId);
+      if (projectId === false) return error(400, "invalid_project");
+      if (status === undefined && projectId === undefined) return error(400, "empty_write");
+      let doc: DocSummary | undefined;
+      if (projectId !== undefined) {
+        if (projectId && !(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
+          return error(404, "not_found");
+        }
+        doc = await deps.rooms.setDocProject(id, { projectId, origin });
+      }
+      if (status !== undefined) {
+        doc = await deps.rooms.setDocStatus(id, { status: status as DocStatus, origin });
+      }
       return json({ doc });
+    }
+
+    if (resource === "docs" && id && !sub && method === "DELETE") {
+      await need(id, "owner");
+      await deps.rooms.deleteDoc(id, { origin: url.searchParams.get("clientId") });
+      deps.waitUntil(deps.images.deletePrefix(Images.docImagesPrefix(id)));
+      return json({ ok: true });
+    }
+
+    if (resource === "docs" && id && sub === "images" && !subId && method === "POST") {
+      await need(id, "editor");
+      const result = await Images.uploadImage(deps.images, { docId: id, request });
+      return result.ok ? json({ url: result.url }, 201) : error(result.status, result.error);
+    }
+
+    if (resource === "images" && id && sub && !subId && method === "GET") {
+      if (!isImageDocId(id)) return error(404, "not_found");
+      await need(id, "viewer");
+      return (
+        (await Images.imageResponse(deps.images, { docId: id, file: sub })) ??
+        error(404, "not_found")
+      );
     }
 
     if (resource === "docs" && id && sub === "threads") {
@@ -279,6 +389,8 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       await need(id, "editor");
       const problems = widgetProblems(markdown);
       if (problems) return widgetInvalid(problems);
+      const tableProblem = checkTablesIn(markdown);
+      if (tableProblem) return tableInvalid(tableProblem);
       const tab = await deps.rooms.createTab(id, {
         parentTabId,
         title,
@@ -317,6 +429,9 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       await need(current.docId, "editor");
       const problems = markdown === undefined ? null : widgetProblems(markdown, current.markdown);
       if (problems) return widgetInvalid(problems);
+      const tableProblem =
+        markdown === undefined ? null : checkTablesIn(markdown, current.markdown);
+      if (tableProblem) return tableInvalid(tableProblem);
       const result = await deps.rooms.writeTab(current.docId, {
         tabId: id,
         baseVersion,
@@ -478,7 +593,10 @@ async function handleComments(
 
   if (resource === "tabs" && id && sub === "comments" && method === "POST") {
     const body = await readJson(request);
-    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, true);
+    // A cell or label anchor; the quote then only labels the thread.
+    const structured = body.anchor == null ? null : parseStructuredAnchor(body.anchor);
+    if (body.anchor != null && structured === null) return error(400, "invalid_anchor");
+    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, structured === null);
     const prefix = anchorText(body.prefix, Comments.MAX_CONTEXT_LENGTH, false);
     const suffix = anchorText(body.suffix, Comments.MAX_CONTEXT_LENGTH, false);
     if (quote === null || prefix === null || suffix === null) return error(400, "invalid_anchor");
@@ -486,8 +604,12 @@ async function handleComments(
     if (!text) return error(400, "invalid_body");
     const tab = await Docs.getTab(deps.db, id);
     const actor = await actorOn(tab.docId, "commenter");
+    const target = structured ? resolveStructuredAnchor(tab.markdown, structured) : null;
+    // A structured anchor must name a part that exists; there is no text to fall back on.
+    if (structured && !target) return error(409, "anchor_not_found");
     // Imports ask for this so a comment whose passage is gone is reported, not stored detached.
     if (
+      !structured &&
       body.requireAnchor === true &&
       !locateAnchor(markdownToText(tab.markdown), { quote, prefix, suffix })
     ) {
@@ -497,7 +619,10 @@ async function handleComments(
       op: {
         kind: "create",
         tabId: id,
-        anchor: { quote, prefix, suffix },
+        anchor: target
+          ? { quote: Comments.structuredQuote(target, quote), prefix: "", suffix: "" }
+          : { quote, prefix, suffix },
+        structuredAnchor: structured,
         body: text,
         author: Comments.actorAuthor(actor),
       },

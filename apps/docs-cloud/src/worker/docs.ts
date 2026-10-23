@@ -3,11 +3,12 @@
 // Writes to an existing doc must go through the DocRoom (see `rooms.ts`) so
 // open editors hear about them; these functions only touch D1.
 
+import { projectNameFromKey, titleProjectKey } from "../shared/embed.ts";
 import type {
   DocStatus,
   DocSummary,
   DocWithTabs,
-  LibraryProject,
+  Library,
   Project,
   Tab,
   TabPlacement,
@@ -17,7 +18,7 @@ import { randomId } from "./crypto.ts";
 
 interface DocRow {
   id: string;
-  project_id: string;
+  project_id: string | null;
   title: string;
   status: DocStatus;
   created_at: number;
@@ -89,51 +90,138 @@ export function reviveError(cause: unknown): unknown {
   return cause;
 }
 
-export async function listLibrary(db: D1Database): Promise<ReadonlyArray<LibraryProject>> {
+interface ProjectRow {
+  id: string;
+  key: string;
+  name: string;
+  created_at: number;
+}
+
+const toProject = (row: ProjectRow): Project => ({
+  id: row.id,
+  key: row.key,
+  name: row.name,
+  createdAt: row.created_at,
+});
+
+export async function listLibrary(db: D1Database): Promise<Library> {
   const [projects, docs] = await db.batch<Record<string, unknown>>([
-    db.prepare("SELECT id, name, created_at FROM projects ORDER BY name COLLATE NOCASE"),
+    db.prepare("SELECT * FROM projects ORDER BY name COLLATE NOCASE"),
     db.prepare("SELECT * FROM docs ORDER BY updated_at DESC"),
   ]);
-  const docsByProject = new Map<string, Array<DocSummary>>();
+  const docsByProject = new Map<string | null, Array<DocSummary>>();
   for (const row of (docs?.results ?? []) as unknown as Array<DocRow>) {
     const list = docsByProject.get(row.project_id) ?? [];
     list.push(toDoc(row));
     docsByProject.set(row.project_id, list);
   }
-  return (
-    (projects?.results ?? []) as unknown as Array<{ id: string; name: string; created_at: number }>
-  ).map((row) => ({
-    id: row.id,
-    name: row.name,
-    createdAt: row.created_at,
-    docs: docsByProject.get(row.id) ?? [],
-  }));
+  return {
+    projects: ((projects?.results ?? []) as unknown as Array<ProjectRow>).map((row) => ({
+      ...toProject(row),
+      docs: docsByProject.get(row.id) ?? [],
+    })),
+    noProjectDocs: docsByProject.get(null) ?? [],
+  };
 }
 
-export async function createProject(db: D1Database, name: string, now: number): Promise<Project> {
-  const project = { id: randomId(), name, createdAt: now };
-  await db
-    .prepare("INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)")
-    .bind(project.id, project.name, now)
-    .run();
-  return project;
+export async function getProject(db: D1Database, projectId: string): Promise<Project> {
+  const row = await db
+    .prepare("SELECT * FROM projects WHERE id = ?")
+    .bind(projectId)
+    .first<ProjectRow>();
+  if (!row) throw new NotFoundError("project");
+  return toProject(row);
+}
+
+export async function findProjectByKey(db: D1Database, key: string): Promise<Project | null> {
+  const row = await db
+    .prepare("SELECT * FROM projects WHERE key = ?")
+    .bind(key)
+    .first<ProjectRow>();
+  return row ? toProject(row) : null;
+}
+
+function upsertProjectStatement(
+  db: D1Database,
+  input: { readonly key: string; readonly name?: string | undefined; readonly rename: boolean },
+  now: number,
+) {
+  return db
+    .prepare(
+      `INSERT INTO projects (id, key, name, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET name = CASE WHEN ? THEN excluded.name ELSE name END
+       RETURNING *`,
+    )
+    .bind(
+      randomId(),
+      input.key,
+      input.name?.trim() || projectNameFromKey(input.key),
+      now,
+      input.rename ? 1 : 0,
+    );
+}
+
+/**
+ * The project with this key, created when missing. An existing project keeps
+ * its name: T3 Code's sync owns names, and an agent filing a doc must not
+ * relabel the project. Keys must already be normalised (`normalizeProjectKey`).
+ */
+export async function ensureProject(
+  db: D1Database,
+  input: { readonly key: string; readonly name?: string | undefined; readonly now: number },
+): Promise<Project> {
+  const row = await upsertProjectStatement(
+    db,
+    { ...input, rename: false },
+    input.now,
+  ).first<ProjectRow>();
+  return toProject(row!);
+}
+
+/**
+ * Upserts T3 Code's projects by key, in one transaction, and returns them in
+ * input order. Names follow the latest T3 Code title. A repository's first
+ * sync takes over the same-titled project made by name before it (in the
+ * library or by an agent), so those docs stay with it. Keys must already be
+ * normalised.
+ */
+export async function syncProjects(
+  db: D1Database,
+  projects: ReadonlyArray<{ readonly key: string; readonly name: string }>,
+  now: number,
+): Promise<ReadonlyArray<Project>> {
+  if (projects.length === 0) return [];
+  const results = await db.batch<ProjectRow>(
+    projects.flatMap((project) => [
+      db
+        .prepare(
+          `UPDATE projects SET key = ?1
+           WHERE key = ?2 AND ?1 NOT LIKE 'title:%'
+             AND NOT EXISTS (SELECT 1 FROM projects WHERE key = ?1)`,
+        )
+        .bind(project.key, titleProjectKey(project.name)),
+      upsertProjectStatement(db, { ...project, rename: true }, now),
+    ]),
+  );
+  return projects.map((_, index) => toProject(results[index * 2 + 1]!.results[0]!));
+}
+
+/** A project made by name: the one with its title key when that already exists. */
+export function createProject(db: D1Database, name: string, now: number): Promise<Project> {
+  return ensureProject(db, { key: titleProjectKey(name), name, now });
 }
 
 /** Creates a doc with one empty top-level tab, owned by `ownerId`. */
 export async function createDoc(
   db: D1Database,
   input: {
-    readonly projectId: string;
+    readonly projectId: string | null;
     readonly title: string;
     readonly ownerId: string;
     readonly now: number;
   },
 ): Promise<DocWithTabs> {
-  const project = await db
-    .prepare("SELECT id FROM projects WHERE id = ?")
-    .bind(input.projectId)
-    .first();
-  if (!project) throw new NotFoundError("project");
+  if (input.projectId !== null) await getProject(db, input.projectId);
   const doc: DocSummary = {
     id: randomId(),
     projectId: input.projectId,
@@ -184,6 +272,38 @@ export async function setDocStatus(
     .first<DocRow>();
   if (!row) throw new NotFoundError("doc");
   return toDoc(row);
+}
+
+export async function renameDoc(
+  db: D1Database,
+  input: { readonly docId: string; readonly title: string; readonly now: number },
+): Promise<DocSummary> {
+  const row = await db
+    .prepare("UPDATE docs SET title = ?, updated_at = ? WHERE id = ? RETURNING *")
+    .bind(input.title, input.now, input.docId)
+    .first<DocRow>();
+  if (!row) throw new NotFoundError("doc");
+  return toDoc(row);
+}
+
+/** Moves a doc to another project, or to none. Call through the DocRoom. */
+export async function setDocProject(
+  db: D1Database,
+  input: { readonly docId: string; readonly projectId: string | null },
+): Promise<DocSummary> {
+  if (input.projectId !== null) await getProject(db, input.projectId);
+  const row = await db
+    .prepare("UPDATE docs SET project_id = ? WHERE id = ? RETURNING *")
+    .bind(input.projectId, input.docId)
+    .first<DocRow>();
+  if (!row) throw new NotFoundError("doc");
+  return toDoc(row);
+}
+
+/** Deletes a doc; foreign keys cascade to its tabs, comments, linked threads and members. */
+export async function deleteDoc(db: D1Database, docId: string): Promise<void> {
+  const row = await db.prepare("DELETE FROM docs WHERE id = ? RETURNING id").bind(docId).first();
+  if (!row) throw new NotFoundError("doc");
 }
 
 export async function getTab(db: D1Database, tabId: string): Promise<Tab> {

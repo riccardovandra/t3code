@@ -13,17 +13,23 @@ import { callTool, McpToolError, TOOLS } from "./mcpTools.ts";
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 export const MCP_INSTRUCTIONS = `Docs Cloud holds living markdown docs that the user watches update live in their editor.
+Projects are T3 Code projects, identified by key: the git repository (github.com/owner/repo), or title:<name> for a project without a remote. Inside T3 Code, docs_cloud_project gives the current project's key.
 Workflow:
-1. When asked for a doc, plan or write-up, create it first: create_doc with the title and a skeleton (the section headings, each with a one-line placeholder). Do this before research.
+1. When asked for a doc, plan or write-up, create it first: create_doc with projectKey (and projectName), the title and a skeleton (the section headings, each with a one-line placeholder). Do this before research. Omit projectKey only when the doc belongs to no project.
 2. Give the user the doc URL from the response right away, then work.
 3. Fill sections one at a time with edit_tab (replace a placeholder with the finished section), so the user watches the doc build. Use write_tab only for a new or fully rewritten tab.
 4. Use tabs (create_tab) for distinct parts such as research, plan and decisions; nest with parentTabId.
 5. Draw diagrams as \`\`\`t3-widget blocks (below). Existing \`\`\`mermaid blocks keep working; edit them in place, never convert them.
 6. Keep findings in the doc, not the chat. End with one line and the URL.
+Move a doc with move_doc (projectId: null for no project).
 Re-read a tab (read_doc with tabId) before editing it if the user may have changed it.
-Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab.
+Rich tables (status chips, links, per-cell comments): a \`\`\`t3-table block whose body is JSON. Ids are yours to pick (letters, digits, _ and -) and must stay stable. Column types: text, select (cells hold one of its options' values; colors gray, blue, green, yellow, orange, red, purple, pink), link (cells are {"text","url"}), number, date ("YYYY-MM-DD"). Example:
+\`\`\`t3-table
+{"id":"requests","columns":[{"id":"req","name":"Request","type":"text"},{"id":"status","name":"Status","type":"select","options":[{"value":"Not started","color":"gray"},{"value":"Done","color":"green"}]},{"id":"ticket","name":"Ticket","type":"link"}],"rows":[{"id":"r1","cells":{"req":"Fix Bing MCP","status":"Not started","ticket":{"text":"PENG-5575","url":"https://example.atlassian.net/browse/PENG-5575"}}}]}
+\`\`\`
+Change one cell with update_table_cell and add rows with add_table_row rather than rewriting the block. Plain markdown tables still work for static data.
+Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab; on a table cell, pass anchor {"kind":"cell","blockId":<table id>,"rowId","colId"} instead, and on a diagram label {"kind":"label","blockId":<diagram id>,"textId"}.
 Sharing: docs are private to the people on them. share_doc gives someone access by email (owner, editor, commenter or viewer); list_members and unshare_doc manage it. You act with the role of the person whose token you use.
-
 Diagrams use Claude's widget format: a fenced block \`\`\`t3-widget id=<slug>\` whose body is ONE JS/JSX module, \`export default () => <svg viewBox='0 0 760 H' role='img' aria-label='<title words>'>…</svg>;\` (a block body with consts and lowercase helpers is fine). The id names the diagram in its tab and never changes. Writes with an invalid diagram are refused with rule names and line:col.
 - Every <text> or <tspan> whose words you type carries its own LITERAL data-claude-text-id='<slug>' (letters, digits, _ -, max 64, unique). Words are literal JSX text, written out one by one, never computed or inside .map()/helpers. Two lines = two <tspan data-claude-text-id>; no id on a <text> that holds tspans. The first <text> is the title: say the finding, not the topic.
 - Wrap each box with its labels in <g data-claude-anchor='<slug>'> (a literal, or a template literal in a loop).
