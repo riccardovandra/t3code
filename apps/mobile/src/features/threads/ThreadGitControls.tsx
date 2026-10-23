@@ -346,10 +346,10 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
     },
     docsCloud: props.onOpenDocsCloud
       ? {
-          accessibilityLabel: "Open Docs Cloud",
-          icon: { name: "cloud", type: "sfSymbol" },
+          accessibilityLabel: "Open Docs",
+          icon: { name: "doc.text", type: "sfSymbol" },
           identifier: "thread-right-docs-cloud",
-          label: "Docs Cloud",
+          label: "Docs",
           onPress: props.onOpenDocsCloud,
           sharesBackground: true,
           type: "button",
@@ -525,8 +525,8 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
       ) : null}
       {showActionControls && props.onOpenDocsCloud ? (
         <Toolbar.Button
-          accessibilityLabel="Open Docs Cloud"
-          icon="cloud"
+          accessibilityLabel="Open Docs"
+          icon="doc.text"
           onPress={props.onOpenDocsCloud}
           separateBackground
         />

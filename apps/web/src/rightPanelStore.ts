@@ -468,6 +468,18 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+/**
+ * Which docs a Docs surface shows. An unset source means Docs Cloud when it is
+ * configured; Project files need a thread with a project folder.
+ */
+export function docsSurfaceSource(
+  surface: Extract<RightPanelSurface, { kind: "docs" }>,
+  options: { readonly cloudConfigured: boolean; readonly hasFiles: boolean },
+): "cloud" | "files" | null {
+  if (options.cloudConfigured && (surface.source !== "files" || !options.hasFiles)) return "cloud";
+  return options.hasFiles ? "files" : null;
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
@@ -711,6 +723,21 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             if (kind === "preview") {
               const existing = current.surfaces.find((surface) => surface.kind === "preview");
               return upsertSurface(current, existing ?? browserSurface(null));
+            }
+            if (kind === "docs") {
+              // Every Docs entry point lands on the default source, Docs Cloud when it
+              // is configured; Project files stay one switch away.
+              return upsertSurface(
+                {
+                  ...current,
+                  surfaces: current.surfaces.map((surface) => {
+                    if (surface.kind !== "docs" || surface.source === undefined) return surface;
+                    const { source: _source, ...rest } = surface;
+                    return rest;
+                  }),
+                },
+                singletonSurface(kind),
+              );
             }
             return upsertSurface(current, singletonSurface(kind));
           }),

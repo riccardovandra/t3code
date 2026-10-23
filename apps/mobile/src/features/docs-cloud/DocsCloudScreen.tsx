@@ -34,7 +34,7 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
   const startUrl = baseUrl === null ? null : docsCloudUrl(baseUrl, route.params.path ?? "/");
   const [page, setPage] = useState<{ readonly url: string; readonly title: string } | null>(null);
   const currentUrl = page?.url ?? startUrl;
-  const title = page?.title || route.params.title || "Docs Cloud";
+  const title = page?.title || route.params.title || "Docs";
   const webView = useRef<WebView<object>>(null);
   // Docs Cloud reads `window.t3DocsTheme` on load and takes later changes as a
   // `t3-docs:theme` message posted from the page itself.
