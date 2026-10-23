@@ -1,15 +1,17 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as WebBrowser from "expo-web-browser";
-import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { mobileWebViewThemeColors } from "../../lib/htmlRenderTheme";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { docsCloudNavigation, docsCloudUrl } from "./docsCloudNavigation";
 import { useDocsCloudBaseUrl } from "./useDocsCloudBaseUrl";
 
@@ -33,6 +35,30 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
   const [page, setPage] = useState<{ readonly url: string; readonly title: string } | null>(null);
   const currentUrl = page?.url ?? startUrl;
   const title = page?.title || route.params.title || "Docs Cloud";
+  const webView = useRef<WebView<object>>(null);
+  // Docs Cloud reads `window.t3DocsTheme` on load and takes later changes as a
+  // `t3-docs:theme` message posted from the page itself.
+  const { themeId, themeAppearance, themeVariables, systemColorsActive } =
+    useAppearancePreferences();
+  const themeScript = useMemo(() => {
+    const theme = {
+      type: "t3-docs:theme",
+      appearance: themeAppearance,
+      colors: mobileWebViewThemeColors({
+        themeId,
+        appearance: themeAppearance,
+        variables: themeVariables,
+        systemColors: systemColorsActive,
+        platform: Platform.OS,
+      }),
+    };
+    return `window.t3DocsTheme=${JSON.stringify(theme)};`;
+  }, [themeId, themeAppearance, themeVariables, systemColorsActive]);
+  useEffect(() => {
+    webView.current?.injectJavaScript(
+      `${themeScript}window.postMessage(window.t3DocsTheme, location.origin);true;`,
+    );
+  }, [themeScript]);
 
   return (
     <View className="flex-1 bg-screen" style={{ paddingTop: insets.top }}>
@@ -67,7 +93,9 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
           </Text>
         ) : (
           <WebView
+            ref={webView}
             source={{ uri: startUrl }}
+            injectedJavaScriptBeforeContentLoaded={`${themeScript}true;`}
             originWhitelist={["http://*", "https://*", "about:*"]}
             allowsBackForwardNavigationGestures
             setSupportMultipleWindows={false}

@@ -1,4 +1,5 @@
 import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@t3tools/shared/htmlRender";
+import type { ThemeColors } from "@t3tools/shared/themePalettes";
 
 import {
   DEFAULT_MOBILE_THEME_ID,
@@ -9,16 +10,16 @@ import {
   type MobileThemeVariables,
 } from "./mobileTheme";
 
-/**
- * WebViews cannot load the app's bundled fonts, so renders use system stacks.
- */
-export function mobileHtmlRenderTheme(input: {
+interface MobileWebViewThemeInput {
   readonly themeId: MobileThemeId;
   readonly appearance: MobileThemeAppearance;
   readonly variables: MobileThemeVariables;
   readonly systemColors: boolean;
   readonly platform: string;
-}) {
+}
+
+/** The palette on screen, in web colours, for pages shown in a WebView. */
+export function mobileWebViewThemeColors(input: MobileWebViewThemeInput): ThemeColors {
   const { variables: v } = input;
   const palette = getMobileThemeColors(
     input.themeId === "material-you" ? DEFAULT_MOBILE_THEME_ID : input.themeId,
@@ -54,5 +55,16 @@ export function mobileHtmlRenderTheme(input: {
       : palette,
   );
   const canvas = v[input.platform === "android" ? "--color-thread-canvas" : "--color-screen"];
-  return htmlRenderTheme({ ...colors, canvas }, input.appearance, HTML_RENDER_DEFAULT_FONTS);
+  return { ...colors, canvas };
+}
+
+/**
+ * WebViews cannot load the app's bundled fonts, so renders use system stacks.
+ */
+export function mobileHtmlRenderTheme(input: MobileWebViewThemeInput) {
+  return htmlRenderTheme(
+    mobileWebViewThemeColors(input),
+    input.appearance,
+    HTML_RENDER_DEFAULT_FONTS,
+  );
 }

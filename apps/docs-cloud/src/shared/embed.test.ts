@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseParentMessage, projectNameKey } from "./embed.ts";
+import { parseParentMessage, parseThemeMessage, projectNameKey } from "./embed.ts";
 
 describe("parseParentMessage", () => {
   it("keeps only the features this app knows from hello", () => {
@@ -68,5 +68,39 @@ describe("parseParentMessage", () => {
     expect(parseParentMessage({ type: "t3-docs:comment-sent", requestId: "r-1" })).toBeNull();
     expect(parseParentMessage({ type: "t3-docs:other" })).toBeNull();
     expect(parseParentMessage("t3-docs:hello")).toBeNull();
+  });
+
+  it("takes the theme appearance and only literal colours for known roles", () => {
+    expect(parseParentMessage({ type: "t3-docs:theme", appearance: "dark" })).toEqual({
+      type: "t3-docs:theme",
+      appearance: "dark",
+      colors: null,
+    });
+    expect(
+      parseParentMessage({
+        type: "t3-docs:theme",
+        appearance: "light",
+        colors: {
+          canvas: " #fcfcfc ",
+          text: "oklch(0.325698 0.116116 325.037 / 50%)",
+          surface: "rgba(255, 255, 255, 0.9)",
+          border: "url(https://evil.test/x.png)",
+          accent: "red;}body{display:none",
+          focus: "var(--x)",
+          sidebar: 3,
+          notARole: "#000000",
+        },
+      }),
+    ).toEqual({
+      type: "t3-docs:theme",
+      appearance: "light",
+      colors: {
+        canvas: "#fcfcfc",
+        text: "oklch(0.325698 0.116116 325.037 / 50%)",
+        surface: "rgba(255, 255, 255, 0.9)",
+      },
+    });
+    expect(parseParentMessage({ type: "t3-docs:theme", appearance: "sepia" })).toBeNull();
+    expect(parseThemeMessage({ type: "t3-docs:context", appearance: "dark" })).toBeNull();
   });
 });
