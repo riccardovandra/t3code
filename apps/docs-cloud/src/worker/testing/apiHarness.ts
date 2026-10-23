@@ -4,6 +4,7 @@ import { parseOwnerEmails } from "../auth.ts";
 import * as Comments from "../comments.ts";
 import * as DocThreads from "../docThreads.ts";
 import * as Docs from "../docs.ts";
+import type { DocInvite } from "../email.ts";
 import { makeTestD1 } from "./sqliteD1.ts";
 
 export const ORIGIN = "https://docs.test";
@@ -15,6 +16,8 @@ export function makeApiHarness() {
   const clock = { now: 1_000_000 };
   const sentCodes: Array<{ email: string; code: string }> = [];
   const broadcasts: Array<RoomMessage> = [];
+  const invites: Array<DocInvite> = [];
+  const sockets: Array<{ docId: string; userId: string; open: boolean }> = [];
   const deps: ApiDeps = {
     db,
     publicOrigin: ORIGIN,
@@ -55,12 +58,24 @@ export function makeApiHarness() {
         broadcasts.push({ type: "doc.threads", threads, origin });
         return threads;
       },
-      openSocket: async () => new Response(null, { status: 204 }),
+      openSocket: async (docId, _request, userId) => {
+        sockets.push({ docId, userId, open: true });
+        return new Response(null, { status: 204 });
+      },
+      closeSockets: async (docId, userId) => {
+        for (const socket of sockets) {
+          if (socket.docId === docId && socket.userId === userId) socket.open = false;
+        }
+      },
     },
     sendLoginCode: async (email, code) => {
       sentCodes.push({ email, code });
     },
-    waitUntil: () => undefined,
+    sendDocInvite: async (invite) => {
+      invites.push(invite);
+    },
+    // Run inline so tests see the invite once the request returns.
+    waitUntil: (promise) => void promise,
     now: () => clock.now,
   };
 
@@ -92,5 +107,5 @@ export function makeApiHarness() {
     return cookie.split(";")[0]!;
   };
 
-  return { db, clock, deps, sentCodes, broadcasts, call, signIn };
+  return { db, clock, deps, sentCodes, broadcasts, invites, sockets, call, signIn };
 }

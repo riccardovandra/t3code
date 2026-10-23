@@ -1,4 +1,5 @@
 import type { ApiTokenSummary } from "../shared/protocol.ts";
+import { canSignIn, claimInvites, userIdForEmail } from "./access.ts";
 import { randomId, randomSixDigitCode, randomToken, sha256Hex, timingSafeEqual } from "./crypto.ts";
 
 export const LOGIN_CODE_TTL_MS = 10 * 60 * 1000;
@@ -9,9 +10,15 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_COOKIE = "docs_session";
 const API_TOKEN_PREFIX = "dct_";
 
+/** Who is calling. A token acts as the user who minted it. */
 export type Principal =
-  | { readonly kind: "session"; readonly email: string }
-  | { readonly kind: "token"; readonly tokenId: string; readonly tokenName: string };
+  | { readonly kind: "session"; readonly userId: string; readonly email: string }
+  | {
+      readonly kind: "token";
+      readonly userId: string;
+      readonly tokenId: string;
+      readonly tokenName: string;
+    };
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -24,16 +31,16 @@ export function parseOwnerEmails(value: string): ReadonlySet<string> {
 const codeHash = (email: string, code: string) => sha256Hex(`${email}:${code}`);
 
 /**
- * Issues a code for an allowlisted email. Returns the code to deliver, or null
- * when nothing should be sent; callers must answer identically either way so
- * the response never reveals which emails are owners.
+ * Issues a code for an email that may sign in (see `canSignIn`). Returns the
+ * code to deliver, or null when nothing should be sent; callers must answer
+ * identically either way so the response never reveals who has access.
  */
 export async function issueLoginCode(
   db: D1Database,
   input: { readonly email: string; readonly owners: ReadonlySet<string>; readonly now: number },
 ): Promise<string | null> {
   const email = normalizeEmail(input.email);
-  if (!input.owners.has(email)) return null;
+  if (!(await canSignIn(db, email, input.owners))) return null;
   const existing = await db
     .prepare("SELECT created_at FROM login_codes WHERE email = ?")
     .bind(email)
@@ -63,7 +70,7 @@ export async function verifyLoginCode(
   },
 ): Promise<string | null> {
   const email = normalizeEmail(input.email);
-  if (!input.owners.has(email)) return null;
+  if (!(await canSignIn(db, email, input.owners))) return null;
   // Spend an attempt before comparing, so parallel guesses cannot all read the
   // same attempt count and slip past the limit.
   const row = await db
@@ -83,6 +90,7 @@ export async function verifyLoginCode(
     .bind(email, row.code_hash)
     .run();
   if (consumed.meta.changes !== 1) return null;
+  await claimInvites(db, email, input.owners, input.now);
   return createSession(db, email, input.now);
 }
 
@@ -116,24 +124,29 @@ export async function sessionEmail(
 
 export async function createApiToken(
   db: D1Database,
-  name: string,
-  now: number,
+  input: { readonly name: string; readonly userId: string; readonly now: number },
 ): Promise<{ readonly id: string; readonly token: string }> {
   const id = randomId();
   const token = API_TOKEN_PREFIX + randomToken();
   await db
-    .prepare("INSERT INTO api_tokens (id, name, token_hash, created_at) VALUES (?, ?, ?, ?)")
-    .bind(id, name, await sha256Hex(token), now)
+    .prepare(
+      "INSERT INTO api_tokens (id, name, token_hash, created_at, user_id) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(id, input.name, await sha256Hex(token), input.now, input.userId)
     .run();
   return { id, token };
 }
 
-export async function listApiTokens(db: D1Database): Promise<ReadonlyArray<ApiTokenSummary>> {
+export async function listApiTokens(
+  db: D1Database,
+  userId: string,
+): Promise<ReadonlyArray<ApiTokenSummary>> {
   const { results } = await db
     .prepare(
       `SELECT id, name, created_at, last_used_at FROM api_tokens
-       WHERE revoked_at IS NULL ORDER BY created_at DESC`,
+       WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC`,
     )
+    .bind(userId)
     .all<{ id: string; name: string; created_at: number; last_used_at: number | null }>();
   return results.map((row) => ({
     id: row.id,
@@ -143,10 +156,15 @@ export async function listApiTokens(db: D1Database): Promise<ReadonlyArray<ApiTo
   }));
 }
 
-export async function revokeApiToken(db: D1Database, id: string, now: number): Promise<boolean> {
+export async function revokeApiToken(
+  db: D1Database,
+  input: { readonly id: string; readonly userId: string; readonly now: number },
+): Promise<boolean> {
   const result = await db
-    .prepare("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-    .bind(now, id)
+    .prepare(
+      "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(input.now, input.id, input.userId)
     .run();
   return result.meta.changes === 1;
 }
@@ -155,16 +173,16 @@ export async function apiTokenId(
   db: D1Database,
   token: string,
   now: number,
-): Promise<{ readonly id: string; readonly name: string } | null> {
+): Promise<{ readonly id: string; readonly name: string; readonly userId: string } | null> {
   if (!token.startsWith(API_TOKEN_PREFIX)) return null;
   const row = await db
     .prepare(
       `UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ? AND revoked_at IS NULL
-       RETURNING id, name`,
+       RETURNING id, name, user_id`,
     )
     .bind(now, await sha256Hex(token))
-    .first<{ id: string; name: string }>();
-  return row ?? null;
+    .first<{ id: string; name: string; user_id: string | null }>();
+  return row?.user_id ? { id: row.id, name: row.name, userId: row.user_id } : null;
 }
 
 export function readCookie(request: Request, name: string): string | null {
@@ -183,15 +201,19 @@ export function sessionCookie(token: string, maxAgeMs: number): string {
 export async function authenticate(
   db: D1Database,
   request: Request,
-  now: number,
+  input: { readonly owners: ReadonlySet<string>; readonly now: number },
 ): Promise<Principal | null> {
   const authorization = request.headers.get("Authorization");
   if (authorization?.startsWith("Bearer ")) {
-    const token = await apiTokenId(db, authorization.slice("Bearer ".length).trim(), now);
-    return token ? { kind: "token", tokenId: token.id, tokenName: token.name } : null;
+    const token = await apiTokenId(db, authorization.slice("Bearer ".length).trim(), input.now);
+    return token
+      ? { kind: "token", userId: token.userId, tokenId: token.id, tokenName: token.name }
+      : null;
   }
   const cookie = readCookie(request, SESSION_COOKIE);
   if (!cookie) return null;
-  const email = await sessionEmail(db, cookie, now);
-  return email ? { kind: "session", email } : null;
+  const email = await sessionEmail(db, cookie, input.now);
+  if (!email) return null;
+  const userId = await userIdForEmail(db, email, input.owners);
+  return userId ? { kind: "session", userId, email } : null;
 }

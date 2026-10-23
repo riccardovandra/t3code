@@ -4,7 +4,7 @@ Private hosted doc editor at `docs.upliftedconsulting.com`. One Cloudflare Worke
 
 T3 Code embeds the app in its Docs panel. `FRAME_ANCESTORS` in `wrangler.jsonc` lists the origins allowed to frame it (CSP `frame-ancestors`); every other origin gets a non-frameable page. `src/client/embedBridge.ts` and `src/shared/embed.ts` hold the postMessage protocol T3 Code uses to navigate the app and follow its location.
 
-Only the owner signs in: any address in `OWNER_EMAILS` gets a 6-digit code by email (Resend). Agents and T3 Code use bearer tokens created under Settings.
+Sign-in is a 6-digit code by email (Resend). Every address in `OWNER_EMAILS` signs in as the one admin user, who owns everything created before sharing existed and is the only one who creates projects. Anyone else can sign in once a doc has been shared with their address. Docs are private to their members, each an owner, editor, commenter or viewer (`src/shared/access.ts`); the checks live in `src/worker/access.ts`. Agents and T3 Code use bearer tokens created under Settings, and act as the person who created the token.
 
 ## Local development
 

@@ -1,13 +1,24 @@
 import * as NodeFS from "node:fs";
 import * as NodeSqlite from "node:sqlite";
 
-/** The subset of D1 the services use, backed by an in-memory node:sqlite database with the real migrations. */
-export function makeTestD1(): D1Database {
+const MIGRATIONS = new URL("../../../migrations/", import.meta.url);
+
+const migrationFiles = () =>
+  NodeFS.readdirSync(MIGRATIONS)
+    .filter((file) => file.endsWith(".sql"))
+    .toSorted();
+
+/**
+ * The subset of D1 the services use, backed by an in-memory node:sqlite
+ * database with the real migrations. `before` stops at that migration file
+ * prefix; `applyMigrationsFrom` runs the rest later, to test a backfill.
+ */
+export function makeTestD1(options: { readonly before?: string } = {}): D1Database {
   const sqlite = new NodeSqlite.DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
-  const migrations = new URL("../../../migrations/", import.meta.url);
-  for (const file of NodeFS.readdirSync(migrations).toSorted()) {
-    if (file.endsWith(".sql")) sqlite.exec(NodeFS.readFileSync(new URL(file, migrations), "utf8"));
+  for (const file of migrationFiles()) {
+    if (options.before !== undefined && file >= options.before) break;
+    sqlite.exec(NodeFS.readFileSync(new URL(file, MIGRATIONS), "utf8"));
   }
 
   const statement = (sql: string, params: Array<NodeSqlite.SQLInputValue> = []) => ({
@@ -28,6 +39,10 @@ export function makeTestD1(): D1Database {
 
   const db = {
     prepare: (sql: string) => statement(sql),
+    exec: async (sql: string) => {
+      sqlite.exec(sql);
+      return { count: 0, duration: 0 };
+    },
     batch: async (statements: Array<ReturnType<typeof statement>>) => {
       sqlite.exec("BEGIN");
       try {
@@ -42,4 +57,10 @@ export function makeTestD1(): D1Database {
     },
   };
   return db as unknown as D1Database;
+}
+
+export async function applyMigrationsFrom(db: D1Database, from: string): Promise<void> {
+  for (const file of migrationFiles()) {
+    if (file >= from) await db.exec(NodeFS.readFileSync(new URL(file, MIGRATIONS), "utf8"));
+  }
 }

@@ -13,6 +13,9 @@ import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { Env } from "./env.ts";
 
+/** Set by the Worker, never by the client: the stub is only reachable through it. */
+export const SOCKET_USER_HEADER = "X-Docs-User";
+
 /**
  * One instance per doc, addressed by doc id. Every write to the doc runs here,
  * one at a time, then is pushed to the doc's open editors over hibernating
@@ -156,13 +159,28 @@ export class DocRoom extends DurableObject<Env> {
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected WebSocket", { status: 426 });
     }
+    const userId = request.headers.get(SOCKET_USER_HEADER);
+    if (!userId) return new Response("Missing user", { status: 400 });
     const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server);
+    // Tagged by user so losing access to the doc can close their sockets.
+    this.ctx.acceptWebSocket(server, [userId]);
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /** Closes the sockets of someone removed from the doc, so they stop receiving its edits. */
+  async closeSockets(userId: string): Promise<void> {
+    for (const socket of this.ctx.getWebSockets(userId)) {
+      try {
+        socket.close(4403, "access_removed");
+      } catch {
+        // Already closing.
+      }
+    }
+  }
+
   override async webSocketMessage(): Promise<void> {
-    // Clients only listen; writes arrive through the REST API.
+    // Sockets are receive-only for every role: writes arrive through the REST
+    // API, where the sender's role is checked, so anything sent here is dropped.
   }
 
   override async webSocketClose(socket: WebSocket, code: number): Promise<void> {

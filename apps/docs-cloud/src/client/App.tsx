@@ -1,39 +1,32 @@
 import { useEffect, useState } from "react";
 
 import { api } from "./api.ts";
+import { setMe, useMe } from "./me.ts";
 import { DocPage } from "./pages/DocPage.tsx";
 import { LibraryPage } from "./pages/LibraryPage.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { navigate, parseRoute, usePathname } from "./router.ts";
-
-type Session =
-  | { readonly state: "loading" }
-  | { readonly state: "signedOut" }
-  | {
-      readonly state: "signedIn";
-      readonly email: string;
-    };
+import { displayName } from "../shared/access.ts";
 
 export function App() {
-  const [session, setSession] = useState<Session>({ state: "loading" });
+  const [loaded, setLoaded] = useState(false);
+  const me = useMe();
   const route = parseRoute(usePathname());
 
   useEffect(() => {
-    api.me().then(
-      (me) => setSession({ state: "signedIn", email: me.email }),
-      () => setSession({ state: "signedOut" }),
-    );
+    api
+      .me()
+      .then(setMe, () => setMe(null))
+      .finally(() => setLoaded(true));
   }, []);
 
-  if (session.state === "loading") return null;
-  if (session.state === "signedOut") {
-    return <LoginPage onSignedIn={(email) => setSession({ state: "signedIn", email })} />;
-  }
+  if (!loaded) return null;
+  if (!me) return <LoginPage onSignedIn={setMe} />;
 
   const signOut = async () => {
     await api.logout();
-    setSession({ state: "signedOut" });
+    setMe(null);
     navigate("/", { replace: true });
   };
 
@@ -60,7 +53,7 @@ export function App() {
           >
             Settings
           </a>
-          <span className="muted">{session.email}</span>
+          <span className="muted">{displayName(me.user)}</span>
           <button type="button" className="link-button" onClick={signOut}>
             Sign out
           </button>
