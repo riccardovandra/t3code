@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProject, useThreadShell } from "~/state/entities";
 import { serverEnvironment } from "~/state/server";
@@ -65,6 +66,14 @@ export function DocsCloudPanel(props: {
   useEffect(() => {
     frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin);
   }, [origin, projectName]);
+  // Docs Cloud follows T3 Code's appearance and palette, custom themes included.
+  const { appearance, colors } = useActiveThemeColors();
+  useEffect(() => {
+    frame.current?.contentWindow?.postMessage(
+      { type: "t3-docs:theme", appearance, colors },
+      origin,
+    );
+  }, [origin, appearance, colors]);
   // True once the loaded frame has answered hello, so it can take requests.
   const [frameReady, setFrameReady] = useState(false);
   const navigate = useNavigate();
@@ -203,6 +212,7 @@ export function DocsCloudPanel(props: {
             origin,
           );
           postToFrame({ type: "t3-docs:context", projectName });
+          postToFrame({ type: "t3-docs:theme", appearance, colors });
         }}
       />
       {copyRequest ? (
