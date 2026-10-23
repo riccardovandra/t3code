@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type { DocAnchor } from "../../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
 import {
   DOC_STATUS_LABEL,
   DOC_STATUSES,
@@ -213,7 +213,11 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   };
 
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ tabId: string; anchor: DocAnchor } | null>(null);
+  const [draft, setDraft] = useState<{
+    tabId: string;
+    anchor: DocAnchor;
+    structured: StructuredAnchor | null;
+  } | null>(null);
   const [docBody, setDocBody] = useState<HTMLDivElement | null>(null);
   const narrow = useMediaQuery("(max-width: 1279px)");
   const canSendToAgent = useSyncExternalStore(subscribeSendToAgent, hasSendToAgentHandler);
@@ -229,7 +233,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const resolvedThreads = threads.filter(
     (thread) => thread.root.resolvedAt !== null && tabs.has(thread.root.tabId),
   );
-  const draftAnchor = draft && draft.tabId === activeTabId ? draft.anchor : null;
+  const draftAnchor = draft && draft.tabId === activeTabId ? draft : null;
   const anchors = useMemo(
     () => [
       ...openThreads.map(({ root }) => ({
@@ -237,8 +241,11 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
         quote: root.quote,
         prefix: root.prefix,
         suffix: root.suffix,
+        structured: root.anchor,
       })),
-      ...(draftAnchor ? [{ id: DRAFT_COMMENT_ID, ...draftAnchor }] : []),
+      ...(draftAnchor
+        ? [{ id: DRAFT_COMMENT_ID, ...draftAnchor.anchor, structured: draftAnchor.structured }]
+        : []),
     ],
     [openThreads, draftAnchor],
   );
@@ -246,7 +253,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const startComment = () => {
     const anchor = editor ? selectionAnchor(editor) : null;
     if (!anchor || !activeTabId) return;
-    setDraft({ tabId: activeTabId, anchor });
+    setDraft({ tabId: activeTabId, anchor, structured: null });
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
+  const startCellComment = (structured: StructuredAnchor, text: string) => {
+    if (!activeTabId) return;
+    setDraft({ tabId: activeTabId, anchor: { quote: text, prefix: "", suffix: "" }, structured });
     setActiveCommentId(DRAFT_COMMENT_ID);
   };
 
@@ -256,6 +269,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     container: docBody,
     onClick: setActiveCommentId,
     onShortcut: startComment,
+    onCellComment: startCellComment,
   });
 
   const commentFailed = (cause: unknown) => {
@@ -442,7 +456,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
               onSubmitDraft={async (body) => {
                 if (!draft) return;
                 const comment = await comments.actions
-                  .create(draft.tabId, draft.anchor, body)
+                  .create(draft.tabId, draft.anchor, body, draft.structured)
                   .catch(commentFailed);
                 setDraft(null);
                 setActiveCommentId(comment.id);

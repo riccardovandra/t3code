@@ -2,6 +2,7 @@ import { flattenExtensions } from "@tiptap/core";
 import { MarkdownManager } from "@tiptap/markdown";
 import { describe, expect, it } from "vite-plus/test";
 
+import { formatTable } from "../../shared/table.ts";
 import { codeFence } from "./codeBlock.ts";
 import { createEditorExtensions } from "./extensions.ts";
 
@@ -18,6 +19,18 @@ describe("code block markdown", () => {
     ["a tilde fence", "~~~mermaid\nflowchart LR\n  A --> B\n~~~"],
     ["a longer fence around backticks", "````mermaid\nflowchart LR\n  A[```] --> B\n````"],
     ["a plain code block", "```ts\nconst a = 1;\n```"],
+    [
+      "a rich table as an agent wrote it",
+      '# Requests\n\n```t3-table\n{"id":"t1","columns":[{"id":"a","name":"A","type":"text"}],"rows":[{"id":"r1","cells":{"a":"x | y"}}]}\n```\n\nAfter.',
+    ],
+    [
+      "a rich table as the editor writes it",
+      `\`\`\`t3-table\n${formatTable({
+        id: "t1",
+        columns: [{ id: "a", name: "A", type: "link" }],
+        rows: [{ id: "r1", cells: { a: { text: "PENG-1", url: "https://x.test" } } }],
+      })}\n\`\`\``,
+    ],
   ])("keeps %s byte-stable", (_, source) => {
     expect(roundTrip(source)).toBe(source);
   });

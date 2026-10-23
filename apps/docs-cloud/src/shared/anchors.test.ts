@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findQuote, locateAnchor, markdownToText } from "./anchors.ts";
+import {
+  findQuote,
+  locateAnchor,
+  markdownToText,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+} from "./anchors.ts";
 
 const located = (text: string, anchor: Parameters<typeof locateAnchor>[1]) => {
   const range = locateAnchor(text, anchor);
@@ -105,5 +111,57 @@ describe("findQuote", () => {
 
   it("reports an ambiguous quote", () => {
     expect(findQuote(text, "Ship")).toEqual({ kind: "ambiguous", count: 2 });
+  });
+});
+
+describe("structured anchors", () => {
+  const table = (rows: Array<{ id: string; cells: Record<string, string> }>) =>
+    `Intro\n\n\`\`\`t3-table\n${JSON.stringify({
+      id: "t1",
+      columns: [
+        { id: "a", name: "A", type: "text" },
+        { id: "b", name: "B", type: "text" },
+      ],
+      rows,
+    })}\n\`\`\``;
+  const cell = { kind: "cell", blockId: "t1", rowId: "r2", colId: "b" } as const;
+
+  it("parses only well-formed anchors", () => {
+    expect(parseStructuredAnchor(cell)).toEqual(cell);
+    expect(parseStructuredAnchor({ kind: "label", blockId: "d1", textId: "t" })).toEqual({
+      kind: "label",
+      blockId: "d1",
+      textId: "t",
+    });
+    expect(parseStructuredAnchor({ ...cell, rowId: "" })).toBeNull();
+    expect(parseStructuredAnchor({ kind: "range" })).toBeNull();
+  });
+
+  it("finds a cell by ids through reorders and edits elsewhere, and loses it with its row or column", () => {
+    const rows = [
+      { id: "r1", cells: { a: "one" } },
+      { id: "r2", cells: { b: "two" } },
+    ];
+    expect(resolveStructuredAnchor(table(rows), cell)).toEqual({ kind: "cell", text: "two" });
+    const reordered = [{ id: "r2", cells: { a: "edited", b: "two" } }, rows[0]!];
+    expect(resolveStructuredAnchor(table(reordered), cell)).toEqual({ kind: "cell", text: "two" });
+    expect(resolveStructuredAnchor(table([rows[0]!]), cell)).toBeNull();
+    expect(resolveStructuredAnchor(table(rows), { ...cell, colId: "c" })).toBeNull();
+    expect(resolveStructuredAnchor(table(rows), { ...cell, blockId: "t2" })).toBeNull();
+  });
+
+  it("finds a diagram label by the block id in the fence info and the literal text id", () => {
+    const markdown =
+      '```t3-widget id=d1\nexport default () => <svg><text data-claude-text-id="title">Hi</text></svg>\n```';
+    const label = { kind: "label", blockId: "d1", textId: "title" } as const;
+    expect(resolveStructuredAnchor(markdown, label)).toEqual({ kind: "label" });
+    expect(resolveStructuredAnchor(markdown, { ...label, textId: "tit" })).toBeNull();
+    expect(resolveStructuredAnchor(markdown, { ...label, blockId: "d2" })).toBeNull();
+  });
+
+  it("leaves table JSON out of the visible text", () => {
+    expect(markdownToText(`${table([{ id: "r1", cells: { a: "one" } }])}\n\nAfter`)).toBe(
+      "Intro\nAfter",
+    );
   });
 });

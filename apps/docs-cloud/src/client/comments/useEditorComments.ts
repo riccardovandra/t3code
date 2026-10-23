@@ -4,11 +4,19 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { DocAnchor } from "../../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
+import {
+  isTableNode,
+  TABLE_COMMENTS_SPEC,
+  type CellAnchor,
+  type TableCommentSpec,
+} from "../editor/table/TableView.ts";
 import { buildDocTextIndex, captureDocAnchor, resolveDocAnchor } from "./editorAnchors.ts";
 
 export interface EditorCommentAnchor extends DocAnchor {
   readonly id: string;
+  /** A cell or label anchor; the quote fields are then only a label. */
+  readonly structured?: StructuredAnchor | null;
 }
 
 interface CommentRange {
@@ -21,8 +29,11 @@ interface PluginState {
   readonly anchors: ReadonlyArray<EditorCommentAnchor>;
   readonly activeId: string | null;
   readonly ranges: ReadonlyArray<CommentRange>;
+  readonly cells: ReadonlyArray<CellAnchor & { readonly id: string }>;
   readonly decorations: DecorationSet;
 }
+
+type TableHandlers = Pick<TableCommentSpec, "onActivate" | "onComment">;
 
 const commentsKey = new PluginKey<PluginState>("docsCloudComments");
 
@@ -30,40 +41,59 @@ function computeState(
   doc: ProseMirrorNode,
   anchors: ReadonlyArray<EditorCommentAnchor>,
   activeId: string | null,
+  tables: TableHandlers,
 ): PluginState {
   const index = buildDocTextIndex(doc);
   const ranges = anchors.flatMap((anchor) => {
+    if (anchor.structured) return [];
     const range = resolveDocAnchor(index, anchor);
     return range ? [{ id: anchor.id, ...range }] : [];
   });
-  const decorations = DecorationSet.create(
-    doc,
-    ranges.map((range) =>
-      Decoration.inline(range.from, range.to, {
-        class: range.id === activeId ? "comment-mark comment-mark-active" : "comment-mark",
-      }),
-    ),
+  const cells = anchors.flatMap((anchor) =>
+    anchor.structured?.kind === "cell" ? [{ ...anchor.structured, id: anchor.id }] : [],
   );
-  return { anchors, activeId, ranges, decorations };
+  const decorations: Array<Decoration> = ranges.map((range) =>
+    Decoration.inline(range.from, range.to, {
+      class: range.id === activeId ? "comment-mark comment-mark-active" : "comment-mark",
+    }),
+  );
+  // Each table view reads its cell threads from a node decoration, so it
+  // repaints highlights without the plugin knowing its DOM.
+  const spec: TableCommentSpec = { cells, activeId, ...tables };
+  doc.descendants((node, pos) => {
+    if (isTableNode(node)) {
+      decorations.push(
+        Decoration.node(pos, pos + node.nodeSize, {}, { [TABLE_COMMENTS_SPEC]: spec }),
+      );
+    }
+    return !node.isTextblock;
+  });
+  return { anchors, activeId, ranges, cells, decorations: DecorationSet.create(doc, decorations) };
 }
 
 interface Callbacks {
   readonly onClick: (id: string | null) => void;
   readonly onShortcut: () => void;
+  /** Starts a comment on a table cell, with the cell's text as its label. */
+  readonly onCellComment: (anchor: CellAnchor, text: string) => void;
 }
 
 /** Highlights anchored comments, reports clicks on them, and owns Cmd/Ctrl+Option+M. */
 function createCommentsPlugin(callbacks: () => Callbacks, onUpdate: () => void) {
+  const tables: TableHandlers = {
+    onActivate: (id) => callbacks().onClick(id),
+    onComment: (anchor, text) => callbacks().onCellComment(anchor, text),
+  };
   return new Plugin<PluginState>({
     key: commentsKey,
     state: {
-      init: (_, state) => computeState(state.doc, [], null),
+      init: (_, state) => computeState(state.doc, [], null, tables),
       apply: (tr, value, _, next) => {
         const meta = tr.getMeta(commentsKey) as
           | Pick<PluginState, "anchors" | "activeId">
           | undefined;
-        if (meta) return computeState(next.doc, meta.anchors, meta.activeId);
-        if (tr.docChanged) return computeState(next.doc, value.anchors, value.activeId);
+        if (meta) return computeState(next.doc, meta.anchors, meta.activeId, tables);
+        if (tr.docChanged) return computeState(next.doc, value.anchors, value.activeId, tables);
         return value;
       },
     },
@@ -136,8 +166,16 @@ export function useEditorComments(
       if (editor.isDestroyed) return;
       const origin = container.getBoundingClientRect().top;
       const next = new Map<string, number>();
-      for (const range of commentsKey.getState(editor.state)?.ranges ?? []) {
+      const state = commentsKey.getState(editor.state);
+      for (const range of state?.ranges ?? []) {
         next.set(range.id, Math.round(editor.view.coordsAtPos(range.from).top - origin));
+      }
+      // A cell missing from the DOM has had its row or column deleted.
+      for (const cell of state?.cells ?? []) {
+        const element = editor.view.dom.querySelector(
+          `table[data-table-id="${CSS.escape(cell.blockId)}"] td[data-row-id="${CSS.escape(cell.rowId)}"][data-col-id="${CSS.escape(cell.colId)}"]`,
+        );
+        if (element) next.set(cell.id, Math.round(element.getBoundingClientRect().top - origin));
       }
       setTops((current) => (sameTops(current, next) ? current : next));
       const { from, empty } = editor.state.selection;

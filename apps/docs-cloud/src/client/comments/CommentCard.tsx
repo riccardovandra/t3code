@@ -129,7 +129,12 @@ export function CommentCard(
     >
       {props.anchored ? null : (
         <p className="comment-detached">
-          Text removed: <q>{root.quote}</q>
+          {root.anchor ? "Removed from the table" : "Text removed"}
+          {root.quote ? (
+            <>
+              : <q>{root.quote}</q>
+            </>
+          ) : null}
         </p>
       )}
       <CommentEntry comment={root} />

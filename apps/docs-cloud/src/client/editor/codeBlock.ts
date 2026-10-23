@@ -6,6 +6,8 @@ import type { NodeView } from "@tiptap/pm/view";
 
 import type { DiagramCache, DiagramRender } from "./diagramCache.ts";
 import "./diagrams.css";
+import { tableSelectionPlugin } from "./table/tableBlock.ts";
+import { isTableNode, TableView } from "./table/TableView.ts";
 
 let loadedCache: DiagramCache | null = null;
 // Imported on demand so the renderer loads with a tab's first diagram. Once it
@@ -88,8 +90,16 @@ export const DocsCodeBlock = CodeBlock.extend({
     };
   },
 
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), tableSelectionPlugin];
+  },
+
   addNodeView() {
-    return (props) => (isMermaid(props.node) ? new DiagramView(props) : new PlainCodeView(props));
+    return (props) => {
+      // ```t3-table: a rich table whose JSON is the block's text.
+      if (isTableNode(props.node)) return new TableView(props);
+      return isMermaid(props.node) ? new DiagramView(props) : new PlainCodeView(props);
+    };
   },
 });
 
@@ -111,7 +121,7 @@ class PlainCodeView implements NodeView {
   }
 
   update(node: ProseMirrorNode) {
-    if (node.type.name !== "codeBlock" || isMermaid(node)) return false;
+    if (node.type.name !== "codeBlock" || isMermaid(node) || isTableNode(node)) return false;
     this.setLanguage(node);
     return true;
   }

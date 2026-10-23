@@ -173,4 +173,39 @@ describe("comment routes", () => {
     const { comments } = (await listed.json()) as { comments: Array<Comment> };
     expect(comments.map((entry) => entry.body)).toEqual(["Why Friday?"]);
   });
+
+  it("anchor a thread to a table cell and refuse a malformed or missing one", async () => {
+    const { api, owner, doc, tab } = await setup();
+    const table = {
+      id: "t1",
+      columns: [{ id: "a", name: "A", type: "text" }],
+      rows: [{ id: "r1", cells: { a: "Fix Bing" } }],
+    };
+    await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: {
+        baseVersion: tab.version,
+        markdown: `\`\`\`t3-table\n${JSON.stringify(table)}\n\`\`\``,
+      },
+      headers: owner,
+    });
+    const post = (anchor: unknown) =>
+      api.call("POST", `/api/tabs/${tab.id}/comments`, {
+        body: { anchor, body: "Check the tickets" },
+        headers: owner,
+      });
+    const cell = { kind: "cell", blockId: "t1", rowId: "r1", colId: "a" };
+    const created = await post(cell);
+    expect(created.status).toBe(201);
+    expect(((await created.json()) as { comment: Comment }).comment).toMatchObject({
+      anchor: cell,
+      quote: "Fix Bing",
+      prefix: "",
+    });
+    expect((await post({ kind: "cell", blockId: "t1" })).status).toBe(400);
+    expect((await post({ ...cell, rowId: "r2" })).status).toBe(409);
+
+    const listed = await api.call("GET", `/api/docs/${doc.doc.id}/comments`, { headers: owner });
+    const { comments } = (await listed.json()) as { comments: Array<Comment> };
+    expect(comments.map((comment) => comment.anchor)).toEqual([cell]);
+  });
 });
