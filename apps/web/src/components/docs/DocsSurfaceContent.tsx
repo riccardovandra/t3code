@@ -34,6 +34,7 @@ export function DocsSurfaceContent(props: {
           key={baseUrl}
           baseUrl={baseUrl}
           threadRef={threadRef}
+          projectId={props.projectId}
           path={surface.cloudPath}
           onShowFiles={hasFiles ? () => panels().selectDoc(threadRef, surface.docPath) : null}
         />

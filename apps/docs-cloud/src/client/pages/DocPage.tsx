@@ -291,6 +291,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           />
           <ExportMenu
             docId={props.docId}
+            docTitle={doc.title}
             tabId={activeTabId}
             flush={async () => saver.current?.flush()}
           />
