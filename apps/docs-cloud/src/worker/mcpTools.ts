@@ -10,10 +10,15 @@ import {
   type Tab,
 } from "../shared/protocol.ts";
 import { groupThreads } from "../shared/threads.ts";
+import { describeWidgetProblems } from "../shared/widget/check.ts";
+import { findWidgetFences, spliceFenceSource } from "../shared/widget/fence.ts";
+import { MAX_LABEL_LENGTH, rewriteLabel } from "../shared/widget/rewrite.ts";
+import { analyzeWidget, formatDiagnostic } from "../shared/widget/validate.ts";
 import type { ApiDeps } from "./api.ts";
 import * as Comments from "./comments.ts";
 import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
+import { widgetProblems } from "./widgets.ts";
 
 const MAX_MARKDOWN_LENGTH = 1_000_000;
 /** edit_tab re-applies against the latest version this many times before giving up. */
@@ -72,6 +77,17 @@ function requireVersion(args: Args, key: string): number {
     return fail("invalid_argument", `"${key}" must be an integer tab version.`);
   }
   return value;
+}
+
+/** Refuses markdown that adds or changes an invalid diagram; nothing is written. */
+function assertWidgets(markdown: string, previous?: string): void {
+  const problems = widgetProblems(markdown, previous);
+  if (!problems) return;
+  fail(
+    "widget_invalid",
+    `Nothing was written: a diagram breaks the t3-widget format.\n${describeWidgetProblems(problems)}`,
+    { problems },
+  );
 }
 
 async function load<A>(promise: Promise<A>, what: string): Promise<A> {
@@ -172,6 +188,21 @@ async function renameTab(ctx: ToolContext, tabId: string, title: string): Promis
     tab = result.conflict;
   }
   return fail("busy", "The tab kept changing while renaming. Try again.");
+}
+
+function findDiagram(ctx: ToolContext, tab: Tab, diagramId: string) {
+  const fences = findWidgetFences(tab.markdown);
+  const matches = fences.filter((fence) => fence.id === diagramId);
+  if (matches.length === 0) {
+    fail("not_found", "No diagram with that id in this tab.", {
+      diagramIds: fences.map((fence) => fence.id),
+      url: tabUrl(ctx, tab),
+    });
+  }
+  if (matches.length > 1) {
+    fail("ambiguous_diagram", "Two diagrams in this tab share that id; rename one with edit_tab.");
+  }
+  return matches[0]!;
 }
 
 export const TOOLS = [
@@ -350,6 +381,31 @@ export const TOOLS = [
       required: ["commentId"],
     },
   },
+  {
+    name: "read_diagram",
+    description:
+      "Read one ```t3-widget diagram in a tab: its module code, title, every label's text id and words (with the anchor it sits in), its anchors, and any validation diagnostics.",
+    inputSchema: {
+      type: "object",
+      properties: { tabId: { type: "string" }, diagramId: { type: "string" } },
+      required: ["tabId", "diagramId"],
+    },
+  },
+  {
+    name: "edit_diagram_label",
+    description:
+      "Change the words of one diagram label, found by its data-claude-text-id. Only those words change; the rest of the module stays byte-identical. The smallest way to change a diagram.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        diagramId: { type: "string" },
+        textId: { type: "string" },
+        value: { type: "string", description: "The label's new words, one line." },
+      },
+      required: ["tabId", "diagramId", "textId", "value"],
+    },
+  },
 ] as const;
 
 type ToolName = (typeof TOOLS)[number]["name"];
@@ -390,6 +446,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const projectId = requireString(args, "projectId");
     const title = requireString(args, "title");
     const markdown = markdownArg(args, "markdown", false);
+    if (markdown) assertWidgets(markdown);
     const created = await load(
       Docs.createDoc(ctx.deps.db, { projectId, title, now: ctx.deps.now() }),
       "project",
@@ -442,6 +499,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const title = requireString(args, "title");
     const parentTabId = optionalString(args, "parentTabId") ?? null;
     const markdown = markdownArg(args, "markdown", false) ?? "";
+    assertWidgets(markdown);
     await load(Docs.getDoc(ctx.deps.db, docId), "doc");
     if (parentTabId !== null) {
       const parent = await load(Docs.getTab(ctx.deps.db, parentTabId), "parent tab");
@@ -480,6 +538,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       const at = tab.markdown.indexOf(find);
       const markdown = tab.markdown.slice(0, at) + replace + tab.markdown.slice(at + find.length);
       if (markdown.length > MAX_MARKDOWN_LENGTH) fail("too_large", "The tab would be too large.");
+      assertWidgets(markdown, tab.markdown);
       const result = await ctx.deps.rooms.writeTab(tab.docId, {
         tabId,
         baseVersion: tab.version,
@@ -500,6 +559,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const markdown = markdownArg(args, "markdown", true)!;
     const baseVersion = requireVersion(args, "baseVersion");
     const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    assertWidgets(markdown, current.markdown);
     const result = await ctx.deps.rooms.writeTab(current.docId, {
       tabId,
       baseVersion,
@@ -643,6 +703,75 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       resolved: true,
     });
     return { threadId: root.id, resolved: true };
+  },
+
+  read_diagram: async (args, ctx) => {
+    const tab = await load(Docs.getTab(ctx.deps.db, requireString(args, "tabId")), "tab");
+    const fence = findDiagram(ctx, tab, requireString(args, "diagramId"));
+    const analysis = analyzeWidget(fence.source);
+    return {
+      diagramId: fence.id,
+      tabId: tab.id,
+      version: tab.version,
+      url: tabUrl(ctx, tab),
+      title: analysis.title,
+      viewBox: analysis.viewBox,
+      code: fence.source,
+      texts: analysis.labels.map((label) => ({
+        textId: label.id,
+        text: label.text,
+        anchor: label.anchor,
+      })),
+      anchors: analysis.anchors,
+      diagnostics: analysis.diagnostics.map(formatDiagnostic),
+    };
+  },
+
+  edit_diagram_label: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const diagramId = requireString(args, "diagramId");
+    const textId = requireString(args, "textId", 64);
+    const value = requireString(args, "value", MAX_LABEL_LENGTH);
+    let tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt += 1) {
+      const fence = findDiagram(ctx, tab, diagramId);
+      const rewrite = rewriteLabel(fence.source, textId, value);
+      if (!rewrite.ok) {
+        fail(rewrite.error, rewrite.message, {
+          textIds: analyzeWidget(fence.source).labels.map((label) => label.id),
+        });
+      }
+      if (rewrite.replacement === null) {
+        return {
+          tab: tabSummary(ctx, tab),
+          diagramId,
+          textId,
+          previous: rewrite.previous,
+          changed: false,
+        };
+      }
+      const { start, end, text } = rewrite.replacement;
+      const markdown = spliceFenceSource(tab.markdown, fence, start, end, text);
+      const result = await ctx.deps.rooms.writeTab(tab.docId, {
+        tabId,
+        baseVersion: tab.version,
+        markdown,
+        origin: null,
+      });
+      if (result.ok) {
+        return {
+          tab: tabSummary(ctx, result.tab),
+          diagramId,
+          textId,
+          previous: rewrite.previous,
+          changed: true,
+        };
+      }
+      tab = result.conflict;
+    }
+    return fail("busy", "The tab kept changing while editing. Re-read it and try again.", {
+      version: tab.version,
+    });
   },
 };
 
