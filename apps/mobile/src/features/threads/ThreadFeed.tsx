@@ -225,6 +225,7 @@ import { resolveThreadFeedFixedItemSize } from "./thread-feed-item-size";
 import { htmlRenderFrameHeight } from "@t3tools/shared/htmlRender";
 import { htmlRenderRowHeight, ThreadHtmlRender } from "./HtmlRenderWebView";
 import { ThreadMcpApp } from "./McpAppWebView";
+import { DocsCloudCard } from "../docs-cloud/DocsCloudCard";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import {
   assetEnvironment,
@@ -1275,6 +1276,10 @@ function renderFeedEntry(
         width={props.contentWidth}
       />
     );
+  }
+
+  if (entry.type === "docs-cloud") {
+    return <DocsCloudCard environmentId={props.environmentId} doc={entry.doc} />;
   }
 
   if (entry.type === "work-toggle") {

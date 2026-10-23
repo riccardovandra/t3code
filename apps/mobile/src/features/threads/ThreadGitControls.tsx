@@ -75,6 +75,7 @@ type ThreadGitHeaderActionItems = {
   readonly terminal: HeaderItem;
   readonly files: HeaderItem;
   readonly git: HeaderItem;
+  readonly docsCloud: HeaderItem | null;
 };
 type QuickActionIcon =
   | "arrow.down.circle"
@@ -111,6 +112,8 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
   readonly onOpenTerminal: (terminalId?: string | null) => void;
   readonly onOpenNewTerminal: () => void;
   readonly onRunProjectScript: (script: ProjectScript) => Promise<void>;
+  /** Present when the environment has Docs Cloud set up. */
+  readonly onOpenDocsCloud?: () => void;
 };
 
 function useThreadGitControlModel(props: ThreadGitMenuProps) {
@@ -341,6 +344,18 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
       type: "button",
       variant: "plain",
     },
+    docsCloud: props.onOpenDocsCloud
+      ? {
+          accessibilityLabel: "Open Docs Cloud",
+          icon: { name: "cloud", type: "sfSymbol" },
+          identifier: "thread-right-docs-cloud",
+          label: "Docs Cloud",
+          onPress: props.onOpenDocsCloud,
+          sharesBackground: true,
+          type: "button",
+          variant: "plain",
+        }
+      : null,
     git: {
       accessibilityLabel: "Git actions",
       icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
@@ -412,12 +427,16 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
 
 export function useThreadGitRightHeaderItems(props: ThreadGitControlsProps): HeaderItems {
   const actionItems = useThreadGitHeaderActionItems(props);
-  return [actionItems.git, actionItems.files, actionItems.terminal] as HeaderItems;
+  return [actionItems.git, actionItems.files, actionItems.terminal, actionItems.docsCloud].filter(
+    (item) => item !== null,
+  ) as HeaderItems;
 }
 
 export function useThreadGitCenterHeaderItems(props: ThreadGitControlsProps): HeaderItems {
   const actionItems = useThreadGitHeaderActionItems(props);
-  return [actionItems.files, actionItems.git, actionItems.terminal] as HeaderItems;
+  return [actionItems.files, actionItems.git, actionItems.terminal, actionItems.docsCloud].filter(
+    (item) => item !== null,
+  ) as HeaderItems;
 }
 
 export function ThreadGitControls(props: ThreadGitControlsProps) {
@@ -501,6 +520,14 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           disabled={!props.canOpenFiles}
           icon="folder"
           onPress={model.openFiles}
+          separateBackground
+        />
+      ) : null}
+      {showActionControls && props.onOpenDocsCloud ? (
+        <Toolbar.Button
+          accessibilityLabel="Open Docs Cloud"
+          icon="cloud"
+          onPress={props.onOpenDocsCloud}
           separateBackground
         />
       ) : null}

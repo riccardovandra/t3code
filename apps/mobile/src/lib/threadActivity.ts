@@ -68,9 +68,11 @@ import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import {
   compactDynamicToolOutput,
+  type DocsCloudReference,
   htmlRenderFromToolItem,
   mcpAppFromToolItem,
 } from "@t3tools/shared/toolOutput";
+import { docsCloudToolResult } from "@t3tools/client-runtime/docs-cloud";
 import * as DateTime from "effect/DateTime";
 
 export type PendingApproval = ThreadPendingApproval;
@@ -191,6 +193,13 @@ type RawThreadFeedEntry =
       readonly itemId: TurnItemId;
       readonly revision: string;
       readonly app: McpAppReference;
+    }
+  | {
+      readonly type: "docs-cloud";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly runId: RunId | null;
+      readonly doc: DocsCloudReference;
     };
 
 export type ThreadFeedEntry = ThreadFeedEntryContent & {
@@ -199,7 +208,7 @@ export type ThreadFeedEntry = ThreadFeedEntryContent & {
 };
 
 type ThreadFeedEntryContent =
-  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
+  | Extract<RawThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" | "docs-cloud" }>
   | {
       readonly type: "activity-group";
       readonly id: string;
@@ -1105,7 +1114,8 @@ function deriveThreadFeedRunFolds(
         ? (entry.message.runId ?? runlessKey)
         : entry.type === "activity-group" ||
             entry.type === "html-render" ||
-            entry.type === "mcp-app"
+            entry.type === "mcp-app" ||
+            entry.type === "docs-cloud"
           ? (entry.runId ?? runlessKey)
           : null;
     if (!ownRunId) continue;
@@ -1161,6 +1171,7 @@ function deriveThreadFeedRunFolds(
             entry.id !== terminalAssistantId &&
             entry.type !== "html-render" &&
             entry.type !== "mcp-app" &&
+            entry.type !== "docs-cloud" &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
@@ -2128,6 +2139,23 @@ export function buildThreadFeed(
         itemId: row.sourceItemId,
         revision: turnItemDetailRevision(item),
         app,
+      };
+      projectedEntriesCache.set(row, { attemptId, entry });
+      entries.push(entry);
+      entryRows.push(index);
+      continue;
+    }
+    const cloudDoc =
+      item.type === "dynamic_tool" && item.status === "completed"
+        ? docsCloudToolResult(item)
+        : null;
+    if (cloudDoc?.kind === "doc-created") {
+      const entry: RawThreadFeedEntry = {
+        type: "docs-cloud",
+        id: `docs-cloud:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
+        createdAt,
+        runId: item.runId,
+        doc: cloudDoc.ref,
       };
       projectedEntriesCache.set(row, { attemptId, entry });
       entries.push(entry);
