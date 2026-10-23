@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * A trigger button with a panel below it. Closes on Escape, on a press
@@ -17,7 +17,7 @@ export function Popover(props: {
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const close = useRef(() => setOpen(false)).current;
+  const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
@@ -41,7 +41,6 @@ export function Popover(props: {
         type="button"
         className={props.triggerClassName ?? "toolbar-button"}
         aria-label={props.label}
-        title={props.label}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={props.disabled}

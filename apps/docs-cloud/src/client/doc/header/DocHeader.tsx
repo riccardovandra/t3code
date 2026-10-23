@@ -137,7 +137,6 @@ export const DocHeader = memo(function DocHeader(props: {
           aria-label={
             props.openCommentCount > 0 ? `Comments, ${props.openCommentCount} open` : "Comments"
           }
-          title={props.commentsOpen ? "Hide comments" : "Show comments"}
           onClick={props.onToggleComments}
         >
           <CommentIcon />

@@ -25,9 +25,7 @@ export const DocHead = memo(function DocHead(props: {
             <span className="byline-dot" aria-hidden="true">
               ·
             </span>
-            <span className="byline-chip" title={props.owner.email}>
-              @{displayName(props.owner)}
-            </span>
+            <span className="byline-chip">@{displayName(props.owner)}</span>
           </>
         ) : null}
       </p>

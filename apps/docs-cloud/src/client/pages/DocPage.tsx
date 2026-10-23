@@ -522,7 +522,6 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const tabShape = tabList
     .map((tab) => `${tab.id}:${tab.parentTabId}:${tab.position}:${tab.title}`)
     .join("\n");
-  // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by tabShape on purpose
   const toolbarTabs = useMemo(() => tabList, [tabShape]);
 
   const docTitle = doc?.title ?? "";

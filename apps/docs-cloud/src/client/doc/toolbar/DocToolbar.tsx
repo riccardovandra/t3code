@@ -57,7 +57,6 @@ export const DocToolbar = memo(function DocToolbar(
       type="button"
       className="toolbar-button"
       aria-label={label}
-      title={label}
       disabled={!editor}
       // Keep the editor's selection, so the insert lands at the caret.
       onMouseDown={(event) => event.preventDefault()}
@@ -86,7 +85,6 @@ export const DocToolbar = memo(function DocToolbar(
             type="button"
             className="toolbar-button"
             aria-label={props.width === "wide" ? "Narrow column" : "Wide column"}
-            title={props.width === "wide" ? "Narrow column" : "Wide column"}
             aria-pressed={props.width === "wide"}
             onClick={props.onToggleWidth}
           >
@@ -118,7 +116,6 @@ export const DocToolbar = memo(function DocToolbar(
           type="button"
           className="toolbar-button"
           aria-label={props.width === "wide" ? "Narrow column" : "Wide column"}
-          title={props.width === "wide" ? "Narrow column" : "Wide column"}
           aria-pressed={props.width === "wide"}
           onClick={props.onToggleWidth}
         >
