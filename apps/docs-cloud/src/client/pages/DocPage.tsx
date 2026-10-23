@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import type { DocSummary, RoomMessage, Tab } from "../../shared/protocol.ts";
 import { api, ApiError, clientId } from "../api.ts";
+import { ExportMenu } from "../doc/ExportMenu.tsx";
 import { OutlineRail } from "../doc/OutlineRail.tsx";
 import { TabRail } from "../doc/TabRail.tsx";
 import { TabSaver } from "../doc/tabSaver.ts";
@@ -173,7 +174,14 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
         />
       </aside>
       <main className="doc-main">
-        <p className="doc-title">{doc.title}</p>
+        <div className="doc-header">
+          <p className="doc-title">{doc.title}</p>
+          <ExportMenu
+            docId={props.docId}
+            tabId={activeTabId}
+            flush={async () => saver.current?.flush()}
+          />
+        </div>
         {notice ? (
           <div className="notice" role="status">
             {notice}
