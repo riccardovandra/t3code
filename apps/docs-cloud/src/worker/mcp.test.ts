@@ -197,4 +197,23 @@ describe("MCP tools", () => {
     const everything = await mcp.tool("list_docs", {});
     expect(everything.body.docs[0]).toMatchObject({ docId: doc.docId, status: "plan" });
   });
+
+  it("moves and deletes tabs through the room, with clear errors", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc("root");
+    const second = await mcp.tool("create_tab", { docId: doc.docId, title: "Second" });
+    const secondId = second.body.tab.tabId;
+
+    const moved = await mcp.tool("move_tab", { tabId: secondId, parentTabId: tab.tabId });
+    expect(moved.body.tab).toMatchObject({ parentTabId: tab.tabId, position: 0 });
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({ type: "tab.moved" });
+    const cycle = await mcp.tool("move_tab", { tabId: tab.tabId, parentTabId: secondId });
+    expect(cycle).toMatchObject({ isError: true, body: { error: "invalid_move" } });
+
+    const last = await mcp.tool("delete_tab", { tabId: tab.tabId });
+    expect(last).toMatchObject({ isError: true, body: { error: "last_tab" } });
+    const deleted = await mcp.tool("delete_tab", { tabId: secondId });
+    expect(deleted.body.deletedTabIds).toEqual([secondId]);
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({ type: "tab.deleted" });
+  });
 });

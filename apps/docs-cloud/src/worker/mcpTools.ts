@@ -68,6 +68,12 @@ async function load<A>(promise: Promise<A>, what: string): Promise<A> {
     return await promise;
   } catch (cause) {
     if (cause instanceof Docs.NotFoundError) return fail("not_found", `No ${what} with that id.`);
+    if (cause instanceof Docs.InvalidMoveError) {
+      return fail("invalid_move", "A tab cannot move under itself or one of its own children.");
+    }
+    if (cause instanceof Docs.LastTabError) {
+      return fail("last_tab", "A doc must keep at least one top-level tab.");
+    }
     throw cause;
   }
 }
@@ -79,6 +85,7 @@ const tabSummary = (ctx: ToolContext, tab: Tab) => ({
   tabId: tab.id,
   title: tab.title,
   parentTabId: tab.parentTabId,
+  position: tab.position,
   version: tab.version,
   url: tabUrl(ctx, tab),
 });
@@ -232,6 +239,29 @@ export const TOOLS = [
       type: "object",
       properties: { tabId: { type: "string" }, title: { type: "string" } },
       required: ["tabId", "title"],
+    },
+  },
+  {
+    name: "move_tab",
+    description:
+      "Move a tab under parentTabId (null for top level) at a 0-based position among its new siblings; omit position to put it last.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        parentTabId: { type: ["string", "null"] },
+        position: { type: "integer", minimum: 0 },
+      },
+      required: ["tabId", "parentTabId"],
+    },
+  },
+  {
+    name: "delete_tab",
+    description: "Delete a tab and all of its child tabs. A doc keeps at least one top-level tab.",
+    inputSchema: {
+      type: "object",
+      properties: { tabId: { type: "string" } },
+      required: ["tabId"],
     },
   },
   {
@@ -403,6 +433,31 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
   rename_tab: async (args, ctx) => {
     const tab = await renameTab(ctx, requireString(args, "tabId"), requireString(args, "title"));
     return { tab: tabSummary(ctx, tab) };
+  },
+
+  move_tab: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const parentTabId = optionalString(args, "parentTabId") ?? null;
+    const position = args.position ?? Number.MAX_SAFE_INTEGER;
+    if (typeof position !== "number" || !Number.isInteger(position) || position < 0) {
+      fail("invalid_argument", '"position" must be a non-negative integer.');
+    }
+    const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    await load(
+      ctx.deps.rooms.moveTab(current.docId, { tabId, parentTabId, position, origin: null }),
+      "parent tab in this doc",
+    );
+    return { tab: tabSummary(ctx, await Docs.getTab(ctx.deps.db, tabId)) };
+  },
+
+  delete_tab: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const deletedTabIds = await load(
+      ctx.deps.rooms.deleteTab(current.docId, { tabId, origin: null }),
+      "tab",
+    );
+    return { deletedTabIds, docUrl: `${ctx.origin}/d/${current.docId}` };
   },
 
   set_doc_status: async (args, ctx) => {
