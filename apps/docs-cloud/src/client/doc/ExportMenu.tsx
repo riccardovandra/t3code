@@ -1,4 +1,7 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
+
+import { hasEmbedParent, postToEmbedParent, subscribeEmbedParent } from "../embedBridge.ts";
+import { docPath } from "../router.ts";
 
 const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
 
@@ -17,12 +20,14 @@ async function fetchMarkdown(path: string): Promise<string> {
 
 export function ExportMenu(props: {
   readonly docId: string;
+  readonly docTitle: string;
   readonly tabId: string | null;
   /** Saves the open tab's pending edit, so exports include it. */
   readonly flush: () => Promise<void>;
 }) {
   const { docId, tabId, flush } = props;
   const menu = useRef<HTMLDetailsElement>(null);
+  const inT3Code = useSyncExternalStore(subscribeEmbedParent, hasEmbedParent);
   const [status, setStatus] = useState<string | null>(null);
 
   const run = async (action: () => Promise<void>) => {
@@ -101,6 +106,26 @@ export function ExportMenu(props: {
           >
             Print / Save as PDF
           </button>
+          {inT3Code ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() =>
+                void run(async () => {
+                  // The agent reads the doc from the server, so pending edits go first.
+                  await flush();
+                  postToEmbedParent({
+                    type: "t3-docs:copy-to-claude-doc",
+                    docId,
+                    title: props.docTitle,
+                    url: `${window.location.origin}${docPath(docId)}`,
+                  });
+                })
+              }
+            >
+              Copy to Claude Doc…
+            </button>
+          ) : null}
         </div>
       </details>
     </div>

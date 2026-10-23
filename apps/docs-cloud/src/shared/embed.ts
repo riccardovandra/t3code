@@ -4,7 +4,9 @@
  * Parent -> frame: `hello` (sent on every iframe load; the frame answers with
  * `location`), `navigate` (an app path such as `/d/:docId/:tabId`) and
  * `context` (the T3 Code project the panel belongs to, after hello and on change).
- * Frame -> parent: `location` after hello and on every route change.
+ * Frame -> parent: `location` after hello and on every route change, and
+ * `copy-to-claude-doc` when the user asks T3 Code to recreate a doc in Claude
+ * Docs (only offered once a parent has said hello).
  */
 export type EmbedParentMessage =
   | { readonly type: "t3-docs:hello" }
@@ -24,6 +26,16 @@ export interface EmbedLocationMessage {
   readonly docId: string | null;
   readonly tabId: string | null;
 }
+
+export interface EmbedCopyToClaudeDocMessage {
+  readonly type: "t3-docs:copy-to-claude-doc";
+  readonly docId: string;
+  readonly title: string;
+  /** The doc's permanent URL. */
+  readonly url: string;
+}
+
+export type EmbedFrameMessage = EmbedLocationMessage | EmbedCopyToClaudeDocMessage;
 
 export const EMBED_ORIGINS_META = "t3-embed-origins";
 
