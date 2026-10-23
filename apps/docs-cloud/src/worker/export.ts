@@ -17,11 +17,11 @@ function startsWithTitle(body: string, title: string): boolean {
   return match !== null && normalizeTitle(match[1] ?? "") === normalizeTitle(title);
 }
 
-function section(tab: Tab, depth: number): string {
+function section(tab: Tab, depth: number, keepRichTables = false): string {
   const level = Math.min(depth + 1, MAX_HEADING_LEVEL);
   const heading = `${"#".repeat(level)} ${tab.title}`;
   // Downloads are for reading, so rich tables become GFM tables.
-  const body = richTablesToGfm(tab.markdown).trim();
+  const body = (keepRichTables ? tab.markdown : richTablesToGfm(tab.markdown)).trim();
   if (body && startsWithTitle(body, tab.title)) return `${body}\n`;
   return body ? `${heading}\n\n${body}\n` : `${heading}\n`;
 }
@@ -32,6 +32,17 @@ export const tabMarkdown = (tab: Tab): string => section(tab, 0);
 export const docMarkdown = (doc: DocWithTabs): string =>
   orderTabs(doc.tabs)
     .map(({ tab, depth }) => section(tab, depth))
+    .join("\n");
+
+/**
+ * The same sections as `tabMarkdown` and `docMarkdown`, with rich tables left
+ * as t3-table fences for writers that render them natively, such as Word.
+ */
+export const tabSourceMarkdown = (tab: Tab): string => section(tab, 0, true);
+
+export const docSourceMarkdown = (doc: DocWithTabs): string =>
+  orderTabs(doc.tabs)
+    .map(({ tab, depth }) => section(tab, depth, true))
     .join("\n");
 
 /** An ASCII file stem, so it is safe in a quoted Content-Disposition filename. */

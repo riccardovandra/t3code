@@ -81,6 +81,9 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.docsCloudImport)).toBe(
       AuthOrchestrationOperateScope,
     );
+    expect(requiredScopeForRpcMethod(WS_METHODS.docsCloudSendTo)).toBe(
+      AuthOrchestrationOperateScope,
+    );
   });
 
   it("lets file readers see the skill trash but requires provider management to change it", () => {

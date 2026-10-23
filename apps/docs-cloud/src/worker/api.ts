@@ -23,6 +23,7 @@ import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
+import { docxResponse } from "./export/docx.ts";
 import * as Home from "./home.ts";
 import * as Images from "./images.ts";
 import { IMAGE_TYPES, isImageDocId } from "../shared/images.ts";
@@ -390,6 +391,16 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       return Export.markdownResponse(Export.docMarkdown(doc), doc.doc.title);
     }
 
+    if (resource === "docs" && id && sub === "export.docx" && method === "GET") {
+      await need(id, "viewer");
+      const doc = await Docs.getDoc(deps.db, id);
+      return docxResponse({
+        title: doc.doc.title,
+        markdown: Export.docSourceMarkdown(doc),
+        docUrl: `${deps.publicOrigin}/d/${id}`,
+      });
+    }
+
     if (resource === "docs" && id && sub === "tabs" && method === "POST") {
       const body = await readJson(request);
       const title = str(body.title) ?? "Untitled";
@@ -423,6 +434,16 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       const tab = await Docs.getTab(deps.db, id);
       await need(tab.docId, "viewer");
       return Export.markdownResponse(Export.tabMarkdown(tab), tab.title);
+    }
+
+    if (resource === "tabs" && id && sub === "export.docx" && method === "GET") {
+      const tab = await Docs.getTab(deps.db, id);
+      await need(tab.docId, "viewer");
+      return docxResponse({
+        title: tab.title,
+        markdown: Export.tabSourceMarkdown(tab),
+        docUrl: `${deps.publicOrigin}/d/${tab.docId}/${tab.id}`,
+      });
     }
 
     if (resource === "tabs" && id && !sub && method === "PATCH") {

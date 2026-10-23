@@ -21,6 +21,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "dompurify": "^3.4.16",
+    "marked": "17.0.6",
     "pele": "^1.8.0",
     "react": "catalog:",
     "react-dom": "catalog:"
