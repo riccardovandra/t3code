@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  normalizeProjectKey,
-  parseParentMessage,
-  parseThemeMessage,
-  projectNameFromKey,
-  projectNameKey,
-} from "./embed.ts";
+import { parseParentMessage, parseThemeMessage, projectNameKey } from "./embed.ts";
 
 describe("parseParentMessage", () => {
   it("keeps only the features this app knows from hello", () => {
@@ -53,16 +47,6 @@ describe("parseParentMessage", () => {
     });
     expect(parseParentMessage({ type: "t3-docs:context", projectName: 3 })).toBeNull();
     expect(projectNameKey("  Uplifted   SITE ")).toBe(projectNameKey("uplifted site"));
-  });
-
-  it("normalises title keys and refuses empty ones", () => {
-    expect(normalizeProjectKey("Title:  Herbox   Netherlands ")).toBe("title:herbox netherlands");
-    expect(normalizeProjectKey("github.com/Owner/Repo")).toBe("github.com/Owner/Repo");
-    expect(normalizeProjectKey("title:  ")).toBeNull();
-    expect(normalizeProjectKey(" ")).toBeNull();
-    expect(normalizeProjectKey("x".repeat(301))).toBeNull();
-    expect(projectNameFromKey("github.com/riccardovandra/t3code")).toBe("t3code");
-    expect(projectNameFromKey("title:upwork-digest")).toBe("upwork-digest");
   });
 
   it("validates thread links and drops malformed thread entries", () => {

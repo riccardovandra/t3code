@@ -16,6 +16,7 @@
  * stored) and `send-comment`. Frame actions are only offered once a parent has
  * said hello. Every message is additive: an older peer ignores unknown types.
  */
+import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
 export type EmbedFeature = "start-work" | "send-to-agent";
@@ -65,40 +66,13 @@ export type EmbedParentMessage =
     }
   | EmbedThemeMessage;
 
-/** Titles compare ignoring case and spacing. */
-export const projectNameKey = (name: string): string =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
-
-const TITLE_KEY_PREFIX = "title:";
-export const MAX_PROJECT_KEY_LENGTH = 300;
-
-/**
- * Docs Cloud projects are T3 Code projects, identified by a key the T3 server
- * derives (DocsCloudImport's `docsCloudProjectKey` mirrors this): the git
- * remote's canonical key such as `github.com/owner/repo`, so every checkout of
- * a repository on every machine shares one project, else `title:` and the
- * normalised title.
- */
-export const titleProjectKey = (name: string): string => TITLE_KEY_PREFIX + projectNameKey(name);
-
-/** A key in its stored form (title keys normalised), or null when it is not a usable key. */
-export function normalizeProjectKey(key: string): string | null {
-  const trimmed = key.trim();
-  const normalized = trimmed.toLowerCase().startsWith(TITLE_KEY_PREFIX)
-    ? titleProjectKey(trimmed.slice(TITLE_KEY_PREFIX.length))
-    : trimmed;
-  return normalized.length > 0 &&
-    normalized !== TITLE_KEY_PREFIX &&
-    normalized.length <= MAX_PROJECT_KEY_LENGTH
-    ? normalized
-    : null;
-}
-
-/** A display name for a key nobody named: the repository or the title. */
-export const projectNameFromKey = (key: string): string =>
-  key.startsWith(TITLE_KEY_PREFIX)
-    ? key.slice(TITLE_KEY_PREFIX.length)
-    : (key.split("/").findLast((part) => part.length > 0) ?? key);
+export {
+  MAX_PROJECT_KEY_LENGTH,
+  normalizeProjectKey,
+  projectNameFromKey,
+  projectNameKey,
+  titleProjectKey,
+} from "@t3tools/shared/docsCloudProjects";
 
 export interface EmbedLocationMessage {
   readonly type: "t3-docs:location";

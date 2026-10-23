@@ -69,6 +69,8 @@ import * as McpServerOAuth from "./mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as McpUpstreamClients from "./mcpHub/McpUpstreamClients.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
+import * as DocsCloudImport from "./docs/DocsCloudImport.ts";
+import * as WorkspaceDocs from "./workspace/WorkspaceDocs.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
@@ -719,6 +721,11 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
+  ),
+  DocsCloudImport.layerProjectSync.pipe(
+    Layer.provide(DocsCloudImport.layer),
+    Layer.provide(WorkspaceDocs.layer),
+    Layer.provide(DocCommentsService.layer),
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(DocCommentsService.layer),
