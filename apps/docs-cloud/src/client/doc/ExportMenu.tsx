@@ -2,6 +2,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 
 import { hasEmbedParent, postToEmbedParent, subscribeEmbedParent } from "../embedBridge.ts";
 import { docPath } from "../router.ts";
+import { readyWidgetsForPrint } from "../editor/widget/WidgetView.ts";
 
 const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
 
@@ -100,6 +101,7 @@ export function ExportMenu(props: {
             role="menuitem"
             onClick={() =>
               void run(async () => {
+                await readyWidgetsForPrint();
                 window.print();
               })
             }
