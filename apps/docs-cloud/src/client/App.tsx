@@ -6,8 +6,7 @@ import { DocPage } from "./pages/DocPage.tsx";
 import { LibraryPage } from "./pages/LibraryPage.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
-import { navigate, parseRoute, usePathname } from "./router.ts";
-import { displayName } from "../shared/access.ts";
+import { parseRoute, usePathname } from "./router.ts";
 
 export function App() {
   const [loaded, setLoaded] = useState(false);
@@ -24,41 +23,9 @@ export function App() {
   if (!loaded) return null;
   if (!me) return <LoginPage onSignedIn={setMe} />;
 
-  const signOut = async () => {
-    await api.logout();
-    setMe(null);
-    navigate("/", { replace: true });
-  };
-
+  // No app bar: home carries the account menu, and the doc header links back to home.
   return (
     <div className="app">
-      <header className="app-header">
-        <a
-          href="/"
-          className="app-brand"
-          onClick={(event) => {
-            event.preventDefault();
-            navigate("/");
-          }}
-        >
-          Docs
-        </a>
-        <nav className="app-nav">
-          <a
-            href="/settings"
-            onClick={(event) => {
-              event.preventDefault();
-              navigate("/settings");
-            }}
-          >
-            Settings
-          </a>
-          <span className="muted">{displayName(me.user)}</span>
-          <button type="button" className="link-button" onClick={signOut}>
-            Sign out
-          </button>
-        </nav>
-      </header>
       {route.name === "library" ? <LibraryPage /> : null}
       {route.name === "settings" ? <SettingsPage /> : null}
       {route.name === "doc" ? (

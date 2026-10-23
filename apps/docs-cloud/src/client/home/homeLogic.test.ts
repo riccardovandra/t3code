@@ -1,0 +1,205 @@
+import { describe, expect, it } from "vite-plus/test";
+
+import type { HomeDoc, HomeLibrary } from "../../shared/home.ts";
+import {
+  activityLabel,
+  ALL_PROJECTS,
+  filterEntries,
+  homeEntries,
+  NO_PROJECT,
+  parseStoredScope,
+  previewBlocks,
+  projectMonogram,
+  restoreScope,
+  searchEntries,
+  sortEntries,
+  type HomeEntry,
+} from "./homeLogic.ts";
+
+const project = { id: "p1", key: "github.com/acme/app", name: "Acme App", createdAt: 0 };
+
+function doc(id: string, fields: Partial<HomeDoc> = {}): HomeDoc {
+  return {
+    id,
+    projectId: null,
+    title: id,
+    status: "thinking",
+    createdAt: 0,
+    updatedAt: 0,
+    role: "owner",
+    owner: { id: "me", name: "Me", email: "me@x.test" },
+    preview: "",
+    memberCount: 1,
+    openedAt: null,
+    ...fields,
+  };
+}
+
+const library: HomeLibrary = {
+  projects: [
+    {
+      ...project,
+      docs: [
+        doc("mine", { projectId: "p1", status: "plan" }),
+        doc("theirs", {
+          projectId: "p1",
+          role: "editor",
+          owner: { id: "them", name: "", email: "them@x.test" },
+          status: "done",
+        }),
+      ],
+    },
+  ],
+  noProjectDocs: [doc("loose", { owner: null, role: "viewer" })],
+};
+const entries = homeEntries(library);
+const ids = (list: ReadonlyArray<{ id: string }>) => list.map((entry) => entry.id);
+const none = new Set<never>();
+
+describe("filterEntries", () => {
+  it("splits Yours (you own it) from Shared with you (everything else)", () => {
+    const base = { userId: "me", scope: ALL_PROJECTS, statuses: none };
+    expect(ids(filterEntries(entries, { ...base, tab: "all" }))).toEqual([
+      "mine",
+      "theirs",
+      "loose",
+    ]);
+    expect(ids(filterEntries(entries, { ...base, tab: "yours" }))).toEqual(["mine"]);
+    // A doc whose owner left still counts as shared, not yours.
+    expect(ids(filterEntries(entries, { ...base, tab: "shared" }))).toEqual(["theirs", "loose"]);
+  });
+
+  it("filters by project key, no project, and any of the chosen statuses", () => {
+    const base = { userId: "me", tab: "all" as const, statuses: none };
+    const scope = { kind: "project" as const, key: project.key };
+    expect(ids(filterEntries(entries, { ...base, scope }))).toEqual(["mine", "theirs"]);
+    expect(ids(filterEntries(entries, { ...base, scope: NO_PROJECT }))).toEqual(["loose"]);
+    expect(
+      ids(
+        filterEntries(entries, {
+          ...base,
+          scope: ALL_PROJECTS,
+          statuses: new Set(["plan", "done"] as const),
+        }),
+      ),
+    ).toEqual(["mine", "theirs"]);
+  });
+});
+
+describe("sortEntries", () => {
+  const list: ReadonlyArray<HomeEntry> = [
+    { ...doc("b", { title: "beta", createdAt: 3, updatedAt: 5, openedAt: null }), project: null },
+    { ...doc("a", { title: "Alpha 10", createdAt: 1, updatedAt: 2, openedAt: 9 }), project: null },
+    { ...doc("c", { title: "alpha 9", createdAt: 2, updatedAt: 8, openedAt: 4 }), project: null },
+  ];
+
+  it("orders Last opened by your open, falling back to the last edit", () => {
+    expect(ids(sortEntries(list, "opened"))).toEqual(["a", "b", "c"]);
+  });
+
+  it("orders by edit, creation and title", () => {
+    expect(ids(sortEntries(list, "edited"))).toEqual(["c", "b", "a"]);
+    expect(ids(sortEntries(list, "created"))).toEqual(["b", "c", "a"]);
+    // Case-insensitive and numeric-aware.
+    expect(ids(sortEntries(list, "title"))).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("searchEntries", () => {
+  it("matches titles at once and adds server hits with their snippet", () => {
+    const hits = [
+      { docId: "loose", tabId: "t", tabTitle: "Tab", snippet: "first" },
+      { docId: "loose", tabId: "u", tabTitle: "Other", snippet: "second" },
+      { docId: "hidden", tabId: "v", tabTitle: "Tab", snippet: "not listed" },
+    ];
+    expect(searchEntries(entries, "MIN", []).map((result) => result.entry.id)).toEqual(["mine"]);
+    expect(
+      searchEntries(entries, "min", hits).map(({ entry, snippet }) => [entry.id, snippet]),
+    ).toEqual([
+      ["mine", null],
+      ["loose", "first"],
+    ]);
+    expect(searchEntries(entries, "  ", hits)).toHaveLength(3);
+  });
+});
+
+describe("activityLabel", () => {
+  it("says Opened when you opened it, else Edited", () => {
+    const now = new Date(2026, 9, 24);
+    expect(activityLabel(doc("x", { openedAt: new Date(2026, 9, 21).getTime() }), now)).toMatch(
+      /^Opened /,
+    );
+    expect(activityLabel(doc("x", { updatedAt: new Date(2025, 0, 3).getTime() }), now)).toMatch(
+      /^Edited .*2025/,
+    );
+  });
+});
+
+describe("restoreScope", () => {
+  const keys = new Set([project.key]);
+  const embedScope = { kind: "project" as const, key: project.key };
+
+  it("opens inside T3 Code on the panel's project unless a pick was made there", () => {
+    expect(restoreScope({ stored: null, embedKey: project.key, projectKeys: keys })).toEqual(
+      embedScope,
+    );
+    expect(
+      restoreScope({
+        stored: { embedKey: project.key, scope: NO_PROJECT },
+        embedKey: project.key,
+        projectKeys: keys,
+      }),
+    ).toEqual(NO_PROJECT);
+    // A pick made in another T3 Code project does not carry over.
+    expect(
+      restoreScope({
+        stored: { embedKey: "github.com/acme/other", scope: NO_PROJECT },
+        embedKey: project.key,
+        projectKeys: keys,
+      }),
+    ).toEqual(embedScope);
+  });
+
+  it("falls back to All projects for a project the person cannot see", () => {
+    expect(restoreScope({ stored: null, embedKey: "title:secret", projectKeys: keys })).toEqual(
+      ALL_PROJECTS,
+    );
+    expect(
+      restoreScope({
+        stored: { embedKey: null, scope: { kind: "project", key: "gone" } },
+        embedKey: null,
+        projectKeys: keys,
+      }),
+    ).toEqual(ALL_PROJECTS);
+  });
+
+  it("parses only well-formed stored picks", () => {
+    expect(parseStoredScope('{"embedKey":null,"scope":{"kind":"none"}}')).toEqual({
+      embedKey: null,
+      scope: NO_PROJECT,
+    });
+    expect(parseStoredScope('{"scope":{"kind":"project"}}')).toBeNull();
+    expect(parseStoredScope("not json")).toBeNull();
+    expect(parseStoredScope(null)).toBeNull();
+  });
+});
+
+describe("projectMonogram", () => {
+  it("derives T3 Code's initials", () => {
+    expect(projectMonogram("Herbox Netherlands").text).toBe("HN");
+    expect(projectMonogram("upwork-digest").text).toBe("UD");
+    expect(projectMonogram("Bark").text).toBe("BK");
+    expect(projectMonogram("T3 Code + AI PM").text).toBe("T3");
+    expect(projectMonogram("Tracker").text).toBe("TR");
+  });
+});
+
+describe("previewBlocks", () => {
+  it("reads headings from the preview's line prefix", () => {
+    expect(previewBlocks("Intro\n# Risks\nLate")).toEqual([
+      { heading: false, text: "Intro" },
+      { heading: true, text: "Risks" },
+      { heading: false, text: "Late" },
+    ]);
+  });
+});

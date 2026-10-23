@@ -56,3 +56,35 @@ describe("0005_project_keys", () => {
     expect(["tabs", "comments", "doc_threads", "doc_members"].map(count)).toEqual([0, 0, 0, 0]);
   });
 });
+
+describe("0007_doc_opens", () => {
+  it("applies on top of seeded 0001-0006 data and cascades with docs and users", () => {
+    const sqlite = new NodeSqlite.DatabaseSync(":memory:");
+    sqlite.exec("PRAGMA foreign_keys = ON");
+    const index = files.indexOf("0007_doc_opens.sql");
+    expect(index).toBeGreaterThan(0);
+    for (const file of files.slice(0, index)) apply(sqlite, file);
+    sqlite.exec(`
+      INSERT INTO projects (id, key, name, created_at) VALUES ('p1', 'title:work', 'Work', 1);
+      INSERT INTO docs VALUES ('d1', 'p1', 'Plan', 'plan', 1, 1);
+      INSERT INTO docs VALUES ('d2', NULL, 'Loose', 'thinking', 1, 1);
+      INSERT INTO users (id, email, name, created_at) VALUES ('u1', 'guest@x.test', '', 1);
+    `);
+    for (const file of files.slice(index)) apply(sqlite, file);
+
+    sqlite.exec(`
+      INSERT INTO doc_opens VALUES ('d1', 'owner', 5), ('d1', 'u1', 6), ('d2', 'u1', 7);
+      INSERT INTO doc_opens VALUES ('d1', 'u1', 9)
+        ON CONFLICT (doc_id, user_id) DO UPDATE SET opened_at = excluded.opened_at;
+    `);
+    expect(sqlite.prepare("SELECT * FROM doc_opens ORDER BY doc_id, user_id").all()).toEqual([
+      { doc_id: "d1", user_id: "owner", opened_at: 5 },
+      { doc_id: "d1", user_id: "u1", opened_at: 9 },
+      { doc_id: "d2", user_id: "u1", opened_at: 7 },
+    ]);
+    expect(() => sqlite.exec("INSERT INTO doc_opens VALUES ('missing', 'u1', 1)")).toThrow();
+    sqlite.exec("DELETE FROM docs WHERE id = 'd1'");
+    sqlite.exec("DELETE FROM users WHERE id = 'u1'");
+    expect(sqlite.prepare("SELECT count(*) AS n FROM doc_opens").get()).toEqual({ n: 0 });
+  });
+});

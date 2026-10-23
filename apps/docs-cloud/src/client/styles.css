@@ -158,38 +158,6 @@ input:focus {
   margin: 0;
 }
 
-/* App shell */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.app-brand {
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.app-nav {
-  display: flex;
-  gap: 1.25rem;
-  align-items: center;
-}
-
-.app-nav a {
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.app-nav a:hover {
-  color: var(--text);
-}
-
 .page {
   max-width: 46rem;
   margin: 0 auto;
@@ -201,13 +169,6 @@ input:focus {
   margin: 0 0 1rem;
 }
 
-.page-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .login {
   max-width: 22rem;
   margin: 18vh auto 0;
@@ -216,49 +177,6 @@ input:focus {
 
 .login h1 {
   font-size: 2rem;
-}
-
-/* Library */
-
-.project {
-  margin-top: 2.5rem;
-}
-
-.project h2 {
-  font-size: 1.4rem;
-  margin: 0 0 0.5rem;
-}
-
-.doc-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  border-top: 1px solid var(--border);
-}
-
-.doc-list li a {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 0.25rem;
-  border-bottom: 1px solid var(--border);
-  text-decoration: none;
-}
-
-.doc-list li a:hover .doc-list-title {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.doc-list-title {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-}
-
-.doc-list-meta {
-  color: var(--muted);
-  font-size: 0.85rem;
-  white-space: nowrap;
 }
 
 /* Settings */
@@ -320,7 +238,42 @@ input:focus {
 }
 
 .doc-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
   min-width: 0;
+}
+
+.doc-header-title > .home-link {
+  flex: none;
+  padding: 0.3rem 0.4rem;
+}
+
+.doc-header-crumb {
+  flex: none;
+  color: var(--text-subtle);
+}
+
+.doc-header-title > .popover {
+  min-width: 0;
+}
+
+/* Back to the home page, from the doc header and Settings. */
+.home-link {
+  color: var(--muted);
+  text-decoration: none;
+  border-radius: 8px;
+}
+
+.home-link:hover {
+  color: var(--text);
+}
+
+.settings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
 }
 
 .doc-title-button {
@@ -1194,7 +1147,6 @@ span.tab-row-toggle {
     --code-bg: #f3f3f3;
   }
 
-  .app-header,
   .doc-rail,
   .doc-chrome,
   .export-menu-wrap,
@@ -1286,27 +1238,4 @@ span.tab-row-toggle {
   width: auto;
   color: var(--muted);
   font-size: 0.8rem;
-}
-
-.status-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 1.5rem;
-}
-
-.status-filter button {
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-  cursor: pointer;
-}
-
-.status-filter button[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
 }
