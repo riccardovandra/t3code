@@ -13,6 +13,8 @@ async function makeMcpHarness() {
   });
   const { token } = (await created.json()) as { token: string };
   let nextId = 1;
+  // Echoed like a real client, once initialize hands one out.
+  let sessionId: string | null = null;
 
   const post = (body: unknown, headers: Record<string, string> = {}) =>
     handleMcp(
@@ -27,8 +29,9 @@ async function makeMcpHarness() {
   const rpc = async (method: string, params: Record<string, unknown> = {}) => {
     const response = await post(
       { jsonrpc: "2.0", id: nextId++, method, params },
-      { Authorization: `Bearer ${token}` },
+      { Authorization: `Bearer ${token}`, ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}) },
     );
+    sessionId = response.headers.get("Mcp-Session-Id") ?? sessionId;
     return (await response.json()) as {
       result?: Record<string, unknown> & {
         content?: Array<{ text: string }>;
@@ -188,6 +191,10 @@ describe("MCP tools", () => {
     expect(renamed.body.tab.title).toBe("Overview");
     const status = await mcp.tool("set_doc_status", { docId: doc.docId, status: "plan" });
     expect(status.body.doc.status).toBe("plan");
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({
+      type: "doc.updated",
+      doc: { id: doc.docId, status: "plan" },
+    });
     const invalid = await mcp.tool("set_doc_status", { docId: doc.docId, status: "shipped" });
     expect(invalid.isError).toBe(true);
 
@@ -215,5 +222,82 @@ describe("MCP tools", () => {
     const deleted = await mcp.tool("delete_tab", { tabId: secondId });
     expect(deleted.body.deletedTabIds).toEqual([secondId]);
     expect(mcp.api.broadcasts.at(-1)).toMatchObject({ type: "tab.deleted" });
+  });
+
+  it("comments on a quote, replies and resolves, authored by the MCP client", async () => {
+    const mcp = await makeMcpHarness();
+    await mcp.rpc("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "claude-code", version: "1" },
+    });
+    const { doc, tab } = await mcp.seedDoc(
+      "# Plan\n\nShip **v1** by Friday.\n\n## Risks\n\nNone yet.\n",
+    );
+
+    const created = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      quote: "**v1** by Friday",
+      body: "Is Friday realistic?",
+    });
+    expect(created.body.comment).toMatchObject({
+      author: "agent:claude-code",
+      quote: "v1 by Friday",
+    });
+    expect(mcp.api.broadcasts.at(-1)).toMatchObject({ type: "comment.created" });
+    const threadId = created.body.comment.commentId;
+
+    const reply = await mcp.tool("reply_comment", {
+      commentId: threadId,
+      body: "Moved to Monday.",
+    });
+    expect(reply.body.reply).toMatchObject({ threadId, author: "agent:claude-code" });
+
+    // The quoted words are rewritten; the thread follows the passage.
+    await mcp.tool("edit_tab", { tabId: tab.tabId, find: "by Friday", replace: "by Monday" });
+    const open = await mcp.tool("list_comments", { docId: doc.docId });
+    expect(open.body.threads).toEqual([
+      expect.objectContaining({
+        commentId: threadId,
+        anchor: "anchored",
+        resolved: false,
+        replies: [expect.objectContaining({ body: "Moved to Monday." })],
+      }),
+    ]);
+
+    const resolved = await mcp.tool("resolve_comment", { commentId: threadId });
+    expect(resolved.body).toEqual({ threadId, resolved: true });
+    expect((await mcp.tool("list_comments", { docId: doc.docId })).body.threads).toEqual([]);
+
+    await mcp.tool("write_tab", { tabId: tab.tabId, markdown: "Rewritten.", baseVersion: 3 });
+    const all = await mcp.tool("list_comments", { docId: doc.docId, includeResolved: true });
+    expect(all.body.threads[0]).toMatchObject({ resolved: true, anchor: "text_removed" });
+  });
+
+  it("names the token as author without clientInfo, and refuses a missing or ambiguous quote", async () => {
+    const mcp = await makeMcpHarness();
+    const { tab } = await mcp.seedDoc("TBD here.\n\nTBD there.\n");
+    const missing = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      quote: "Done",
+      body: "?",
+    });
+    expect(missing).toMatchObject({ isError: true, body: { error: "quote_not_found" } });
+    const ambiguous = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      quote: "TBD",
+      body: "?",
+    });
+    expect(ambiguous).toMatchObject({ isError: true, body: { error: "ambiguous_quote" } });
+    expect(ambiguous.body.message).toContain("2 times");
+
+    const created = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      quote: "TBD there",
+      body: "Fill this in.",
+    });
+    expect(created.body.comment.author).toBe("agent:agent");
+    const unknown = await mcp.tool("reply_comment", { commentId: "nope", body: "x" });
+    expect(unknown).toMatchObject({ isError: true, body: { error: "not_found" } });
   });
 });

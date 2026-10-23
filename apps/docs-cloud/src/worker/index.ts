@@ -1,5 +1,6 @@
 import { handleApi, type ApiDeps } from "./api.ts";
 import { parseOwnerEmails } from "./auth.ts";
+import type { CommentOpResult } from "./comments.ts";
 import { docRoom } from "./docRoom.ts";
 import { reviveError, type TabWriteResult } from "./docs.ts";
 import type { Env } from "./env.ts";
@@ -25,6 +26,8 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
       writeTab: (docId, input) => revive<TabWriteResult>(docRoom(env, docId).writeTab(input)),
       moveTab: (docId, input) => revive(docRoom(env, docId).moveTab(input)),
       deleteTab: (docId, input) => revive(docRoom(env, docId).deleteTab(input)),
+      setDocStatus: (docId, input) => revive(docRoom(env, docId).setDocStatus({ docId, ...input })),
+      commentOp: (docId, input) => revive<CommentOpResult>(docRoom(env, docId).commentOp(input)),
       openSocket: (docId, request) => docRoom(env, docId).fetch(request),
     },
     sendLoginCode: (email, code) => sendLoginCode(env, email, code),

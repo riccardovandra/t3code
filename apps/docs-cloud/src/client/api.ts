@@ -1,5 +1,7 @@
+import type { DocAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
+  Comment,
   DocWithTabs,
   LibraryProject,
   Project,
@@ -59,6 +61,26 @@ export const api = {
     request<{ tabIds: Array<string> }>(
       "DELETE",
       `/api/tabs/${tabId}?clientId=${encodeURIComponent(clientId)}`,
+    ),
+  comments: (docId: string) =>
+    request<{ comments: Array<Comment> }>("GET", `/api/docs/${docId}/comments`),
+  createComment: (tabId: string, input: DocAnchor & { body: string }) =>
+    request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
+  replyComment: (commentId: string, body: string) =>
+    request<{ comment: Comment }>("POST", `/api/comments/${commentId}/replies`, {
+      body,
+      clientId,
+    }),
+  setCommentResolved: (commentId: string, resolved: boolean) =>
+    request<{ comment: Comment }>(
+      "POST",
+      `/api/comments/${commentId}/${resolved ? "resolve" : "reopen"}`,
+      { clientId },
+    ),
+  deleteComment: (commentId: string) =>
+    request<{ commentIds: Array<string> }>(
+      "DELETE",
+      `/api/comments/${commentId}?clientId=${encodeURIComponent(clientId)}`,
     ),
   tokens: () => request<{ tokens: Array<ApiTokenSummary> }>("GET", "/api/tokens"),
   createToken: (name: string) =>

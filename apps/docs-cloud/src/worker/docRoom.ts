@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
-import type { RoomMessage, Tab, TabPlacement } from "../shared/protocol.ts";
+import type { DocStatus, DocSummary, RoomMessage, Tab, TabPlacement } from "../shared/protocol.ts";
+import * as Comments from "./comments.ts";
 import * as Docs from "./docs.ts";
 import type { Env } from "./env.ts";
 
@@ -96,6 +97,33 @@ export class DocRoom extends DurableObject<Env> {
         origin: input.origin,
       });
       return deletedTabIds;
+    });
+  }
+
+  async setDocStatus(input: {
+    readonly docId: string;
+    readonly status: DocStatus;
+    readonly origin: string | null;
+  }): Promise<DocSummary> {
+    return this.serialize(async () => {
+      const doc = await Docs.setDocStatus(this.env.DB, {
+        docId: input.docId,
+        status: input.status,
+        now: Date.now(),
+      });
+      this.broadcast({ type: "doc.updated", doc, origin: input.origin });
+      return doc;
+    });
+  }
+
+  async commentOp(input: {
+    readonly op: Comments.CommentOp;
+    readonly origin: string | null;
+  }): Promise<Comments.CommentOpResult> {
+    return this.serialize(async () => {
+      const result = await Comments.applyCommentOp(this.env.DB, input.op, Date.now());
+      this.broadcast(Comments.commentMessage(result, input.origin));
+      return result;
     });
   }
 
