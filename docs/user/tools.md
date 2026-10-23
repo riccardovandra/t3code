@@ -33,6 +33,10 @@ With a project selected, skills go into the project's `.agents/skills` folder an
 `skills-lock.json`, which you can commit for your team. Otherwise they go into `~/.agents/skills`
 for every project. Agents that only read their own folder, such as Claude, get a link to the skill.
 
+Skills installed for every project also reach Claude provider instances that use their own Claude
+folder (a custom home path or `CLAUDE_CONFIG_DIR`, such as `~/.claude-bark`): T3 Code links them
+into that folder's `skills`, and lists the skills there with your personal ones.
+
 With **All environments** selected, the list shows the skills on every connected environment. Each
 row shows the machines that have the skill, or one mark when they all do, and a skill's page can
 **Copy to** the environments missing it. A copy reinstalls from the skill's source when it has one
@@ -45,6 +49,25 @@ from the same source, and **Remove**. Other skills in your own skill folders, su
 from plugins and the ones agents ship with can only be switched off. Installing runs the open-source
 [`skills`](https://github.com/vercel-labs/skills) installer built into T3 Code, with its telemetry
 off. Installing, updating and removing skills needs permission to manage providers.
+
+### Library
+
+The **Library** section below the skill list shows the skills in your saved sources, which ones are
+already installed on the environment and where, and an **Install** menu for the environment or any
+of its projects. **Sources** adds, edits or removes saved sources; each is a name and anything Add
+skills accepts, including a GitHub tree URL for one folder of a repository (for example
+`https://github.com/owner/repo/tree/main/skills`). Saved sources also appear as quick picks in Add
+skills. A source is read when you open it and kept for a few minutes; the refresh button fetches it
+again. Private repositories work when the environment's git can already reach them.
+
+### Trash
+
+**Remove** moves a skill to its environment's trash instead of deleting it: its folder, every
+agent's link to it, and the installer's record of where it came from. Right after removing, use
+**Restore** beside the message, or find the skill later under **Trash** at the bottom of the Skills
+tab. Restore puts everything back where it was; if something else now sits in one of those places,
+move it away first, since T3 Code never overwrites it. **Delete permanently** removes a skill from
+the trash for good.
 
 ## MCP servers
 

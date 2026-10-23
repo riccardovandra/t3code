@@ -54,10 +54,49 @@ export const importTitle = (docPath: string, markdown: string): string => {
   return heading ? heading.slice(0, 200) : docTitleFromPath(docPath);
 };
 
-interface Connection {
+/** Where Docs Cloud is and the token the hub entry holds for it. */
+export interface Connection {
   readonly origin: string;
   readonly authorization: string;
 }
+
+const docsCloudEntry = (registry: McpServerRegistry.McpServerRegistry["Service"]) =>
+  registry.list.pipe(
+    Effect.map(({ servers }) =>
+      servers.find(
+        (server): server is McpServerEntry & { transport: { type: "http"; url: string } } =>
+          server.name === DOCS_CLOUD_SERVER_NAME && server.transport.type === "http",
+      ),
+    ),
+    Effect.mapError((cause) => new DocsCloudError({ reason: "failed", detail: cause.message })),
+  );
+
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+};
+
+/** The `docs-cloud` hub entry's origin and token; the token never leaves the server. */
+export const docsCloudConnection = Effect.fn("DocsCloudImport.connection")(function* (
+  registry: McpServerRegistry.McpServerRegistry["Service"],
+) {
+  const server = yield* docsCloudEntry(registry);
+  const origin = server ? originOf(server.transport.url) : null;
+  if (!server || origin === null) {
+    return yield* new DocsCloudError({ reason: "not_configured" });
+  }
+  const { headers } = yield* registry
+    .credentials(server)
+    .pipe(Effect.mapError(() => new DocsCloudError({ reason: "not_configured" })));
+  const authorization = Object.entries(headers).find(
+    ([name]) => name.toLowerCase() === "authorization",
+  )?.[1];
+  if (!authorization) return yield* new DocsCloudError({ reason: "not_configured" });
+  return { origin, authorization } satisfies Connection;
+});
 
 const SyncedProjects = Schema.Struct({
   projects: Schema.Array(
@@ -126,39 +165,8 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new DocsCloudError({ reason: "persistence" })),
     );
 
-  const entry = registry.list.pipe(
-    Effect.map(({ servers }) =>
-      servers.find(
-        (server): server is McpServerEntry & { transport: { type: "http"; url: string } } =>
-          server.name === DOCS_CLOUD_SERVER_NAME && server.transport.type === "http",
-      ),
-    ),
-    Effect.mapError((cause) => new DocsCloudError({ reason: "failed", detail: cause.message })),
-  );
-
-  const originOf = (url: string) => {
-    try {
-      return new URL(url).origin;
-    } catch {
-      return null;
-    }
-  };
-
-  const connection = Effect.gen(function* () {
-    const server = yield* entry;
-    const origin = server ? originOf(server.transport.url) : null;
-    if (!server || origin === null) {
-      return yield* new DocsCloudError({ reason: "not_configured" });
-    }
-    const { headers } = yield* registry
-      .credentials(server)
-      .pipe(Effect.mapError(() => new DocsCloudError({ reason: "not_configured" })));
-    const authorization = Object.entries(headers).find(
-      ([name]) => name.toLowerCase() === "authorization",
-    )?.[1];
-    if (!authorization) return yield* new DocsCloudError({ reason: "not_configured" });
-    return { origin, authorization } satisfies Connection;
-  });
+  const entry = docsCloudEntry(registry);
+  const connection = docsCloudConnection(registry);
 
   const call = Effect.fn("DocsCloudImport.call")(function* <S extends Schema.Top>(
     conn: Connection,

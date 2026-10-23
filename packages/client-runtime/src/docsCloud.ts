@@ -165,6 +165,15 @@ export interface DocsCloudCommentSend {
   readonly entries: ReadonlyArray<DocsCloudCommentEntry>;
 }
 
+/** Copy the doc into another app; T3 Code answers with `sent-to` and the same requestId. */
+export interface DocsCloudSendToRequest {
+  readonly requestId: string;
+  readonly target: "notion";
+  readonly docId: string;
+  readonly title: string;
+  readonly url: string;
+}
+
 /** The Docs Cloud frame's requests that T3 Code acts on beyond `location`. */
 export type DocsCloudFrameRequest =
   | ({ readonly type: "t3-docs:start-work" } & DocsCloudStartWork)
@@ -174,7 +183,8 @@ export type DocsCloudFrameRequest =
     }
   | ({ readonly type: "t3-docs:open-thread" } & DocsCloudThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & DocsCloudThreadRef)
-  | ({ readonly type: "t3-docs:send-comment" } & DocsCloudCommentSend);
+  | ({ readonly type: "t3-docs:send-comment" } & DocsCloudCommentSend)
+  | ({ readonly type: "t3-docs:send-to" } & DocsCloudSendToRequest);
 
 const DOCS_CLOUD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const isId = (value: unknown): value is string =>
@@ -273,6 +283,21 @@ export function parseDocsCloudFrameRequest(
         commentId,
         quote,
         entries: parsed,
+      };
+    }
+    case "t3-docs:send-to": {
+      const { requestId, target, docId, title, url } = message;
+      if (!isId(requestId) || target !== "notion" || !isId(docId) || !isText(title, 500)) {
+        return null;
+      }
+      if (!isDocUrl(url, origin, docId, null)) return null;
+      return {
+        type: message.type,
+        requestId,
+        target,
+        docId,
+        title: title.trim() || "Untitled",
+        url,
       };
     }
     default:

@@ -127,6 +127,18 @@ export class DocRoom extends DurableObject<Env> {
     });
   }
 
+  async renameDoc(input: {
+    readonly docId: string;
+    readonly title: string;
+    readonly origin: string | null;
+  }): Promise<DocSummary> {
+    return this.serialize(async () => {
+      const doc = await Docs.renameDoc(this.env.DB, { ...input, now: Date.now() });
+      this.broadcast({ type: "doc.updated", doc, origin: input.origin });
+      return doc;
+    });
+  }
+
   async setDocProject(input: {
     readonly docId: string;
     readonly projectId: string | null;
@@ -136,6 +148,24 @@ export class DocRoom extends DurableObject<Env> {
       const doc = await Docs.setDocProject(this.env.DB, input);
       this.broadcast({ type: "doc.updated", doc, origin: input.origin });
       return doc;
+    });
+  }
+
+  /** Deletes the doc, tells its open pages, then closes every socket. */
+  async deleteDoc(input: {
+    readonly docId: string;
+    readonly origin: string | null;
+  }): Promise<void> {
+    return this.serialize(async () => {
+      await Docs.deleteDoc(this.env.DB, input.docId);
+      this.broadcast({ type: "doc.deleted", docId: input.docId, origin: input.origin });
+      for (const socket of this.ctx.getWebSockets()) {
+        try {
+          socket.close(4404, "doc_deleted");
+        } catch {
+          // Already closing.
+        }
+      }
     });
   }
 

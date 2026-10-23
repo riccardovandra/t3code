@@ -158,38 +158,6 @@ input:focus {
   margin: 0;
 }
 
-/* App shell */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.app-brand {
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.app-nav {
-  display: flex;
-  gap: 1.25rem;
-  align-items: center;
-}
-
-.app-nav a {
-  color: var(--muted);
-  text-decoration: none;
-}
-
-.app-nav a:hover {
-  color: var(--text);
-}
-
 .page {
   max-width: 46rem;
   margin: 0 auto;
@@ -201,13 +169,6 @@ input:focus {
   margin: 0 0 1rem;
 }
 
-.page-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .login {
   max-width: 22rem;
   margin: 18vh auto 0;
@@ -216,49 +177,6 @@ input:focus {
 
 .login h1 {
   font-size: 2rem;
-}
-
-/* Library */
-
-.project {
-  margin-top: 2.5rem;
-}
-
-.project h2 {
-  font-size: 1.4rem;
-  margin: 0 0 0.5rem;
-}
-
-.doc-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  border-top: 1px solid var(--border);
-}
-
-.doc-list li a {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 0.25rem;
-  border-bottom: 1px solid var(--border);
-  text-decoration: none;
-}
-
-.doc-list li a:hover .doc-list-title {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.doc-list-title {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-}
-
-.doc-list-meta {
-  color: var(--muted);
-  font-size: 0.85rem;
-  white-space: nowrap;
 }
 
 /* Settings */
@@ -290,57 +208,339 @@ input:focus {
   font-size: 0.85rem;
 }
 
-/* Doc page: left rail (tabs), editor, right rail (outline). */
+/* Doc page, after Claude Docs: a header bar and toolbar row on top, then the
+   doc column (with the comment margin beside it) and the outline rail. */
 
-.doc-layout {
-  display: grid;
-  grid-template-columns: 15rem minmax(0, 1fr) 15rem;
-  min-height: calc(100vh - 3.5rem);
+.doc-page {
+  --doc-column: 44rem;
+  --font-doc-serif: ui-serif, "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
 }
 
-.doc-rail {
-  padding: 2.5rem 1rem;
+.doc-page.column-wide {
+  --doc-column: 64rem;
 }
 
-.doc-rail-left {
-  border-right: 1px solid var(--border);
+.doc-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background: var(--bg);
 }
 
-.doc-main {
-  width: 100%;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: 3rem 2rem 8rem;
+.doc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 3.5rem;
+  padding: 0 1rem 0 1.25rem;
+  border-bottom: 1px solid var(--border);
 }
 
-@media (max-width: 960px) {
-  .doc-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .doc-rail-left {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 1rem 1.5rem;
-  }
-  .doc-rail-right {
-    display: none;
-  }
+.doc-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
-.doc-title {
+.doc-header-title > .home-link {
+  flex: none;
+  padding: 0.3rem 0.4rem;
+}
+
+.doc-header-crumb {
+  flex: none;
+  color: var(--text-subtle);
+}
+
+.doc-header-title > .popover {
+  min-width: 0;
+}
+
+/* Back to the home page, from the doc header and Settings. */
+.home-link {
   color: var(--muted);
-  font-size: 0.85rem;
-  margin: 0 0 1.5rem;
+  text-decoration: none;
+  border-radius: 8px;
 }
 
-.tab-rail ul {
+.home-link:hover {
+  color: var(--text);
+}
+
+.settings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.doc-title-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  font: inherit;
+  font-size: 1.05rem;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+
+.doc-title-button:hover,
+.doc-title-button[aria-expanded="true"] {
+  background: var(--hover);
+}
+
+.doc-title-button svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.doc-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-title-rename {
+  font-size: 1.05rem;
+  width: min(32rem, 60vw);
+  padding: 0.25rem 0.5rem;
+}
+
+.doc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.start-chat-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--hover);
+  border: none;
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.start-chat-button:hover {
+  background: color-mix(in srgb, var(--text) 12%, var(--hover));
+}
+
+.spark-icon {
+  color: #d97757;
+}
+
+.doc-header-actions .share-button {
+  border-color: transparent;
+  font-size: 0.95rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.comments-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.comments-toggle:hover,
+.comments-toggle[aria-pressed="true"] {
+  background: var(--hover);
+}
+
+.comments-dot {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.doc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 3rem;
+  padding: 0 1rem 0 1.25rem;
+}
+
+.doc-toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.doc-toolbar-aside {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 2rem;
+  min-width: 2rem;
+  justify-content: center;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0 0.4rem;
+  cursor: pointer;
+}
+
+.toolbar-button:hover:not(:disabled),
+.toolbar-button[aria-expanded="true"],
+.toolbar-button[aria-pressed="true"] {
+  background: var(--hover);
+}
+
+.toolbar-button:disabled {
+  color: var(--text-subtle);
+  cursor: default;
+}
+
+.toolbar-button svg {
+  flex: none;
+}
+
+.tab-switcher-trigger {
+  gap: 0.3rem;
+  max-width: 16rem;
+  margin-right: 0.35rem;
+}
+
+.tab-switcher-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 0.4rem;
+  background: var(--border);
+}
+
+/* Menus */
+
+.popover {
+  position: relative;
+}
+
+.popover-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0.3rem;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
+  font-size: 0.9rem;
+}
+
+.popover-panel.align-end {
+  left: auto;
+  right: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem 0.35rem 0.25rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.menu-item:disabled {
+  color: var(--text-subtle);
+  cursor: default;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-item-check {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 0.3rem 0.25rem;
+  background: var(--border);
+}
+
+.menu-label {
+  padding: 0.3rem 0.5rem 0.15rem 1.6rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Tab tree, inside the tab switcher */
+
+.tab-tree {
+  min-width: 18rem;
+}
+
+.tab-tree ul {
   list-style: none;
   padding: 0;
-  margin: 0 0 0.75rem;
+  margin: 0;
 }
 
 .tab-row {
-  position: relative;
   display: flex;
   align-items: center;
   border-radius: 6px;
@@ -348,14 +548,14 @@ input:focus {
 
 .tab-row:hover,
 .tab-row.active {
-  background: var(--code-bg);
+  background: var(--hover);
 }
 
 .tab-row-toggle,
 .tab-row-menu-button {
   flex: none;
   width: 1.4rem;
-  height: 1.6rem;
+  height: 1.8rem;
   padding: 0;
   font: inherit;
   font-size: 0.75rem;
@@ -387,94 +587,118 @@ span.tab-row-toggle {
   color: var(--text);
 }
 
-.tab-rail-item,
-.tab-rail-new {
-  display: block;
-  width: 100%;
+.tab-tree-item {
+  flex: 1;
   min-width: 0;
   text-align: left;
   font: inherit;
-  font-size: 0.9rem;
+  color: var(--text);
   background: none;
   border: none;
-  border-radius: 6px;
-  padding: 0.35rem 0.4rem;
-  color: var(--muted);
+  padding: 0.35rem 0.3rem;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tab-rail-new {
-  padding-left: 1.8rem;
-}
-
-.tab-rail-item:hover,
-.tab-rail-new:hover,
-.tab-row.active .tab-rail-item {
-  color: var(--text);
-}
-
-.tab-row.active .tab-rail-item {
+.tab-row.active .tab-tree-item {
   font-weight: 500;
 }
 
 .tab-rename {
   flex: 1;
   min-width: 0;
-  font: inherit;
   font-size: 0.9rem;
-  padding: 0.25rem 0.4rem;
+  padding: 0.2rem 0.4rem;
 }
 
-.tab-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 10;
+.tab-row-actions {
+  margin: 0.15rem 0 0.3rem 1.4rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--border);
+}
+
+/* Layout below the chrome: the doc column, then the outline rail. */
+
+.doc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+}
+
+.doc-main {
+  min-width: 0;
+  padding: 3rem 2rem 8rem;
+}
+
+.doc-main > .notice {
+  max-width: var(--doc-column);
+  margin: 0 auto 1.5rem;
+}
+
+.doc-rail {
+  padding: 3rem 1rem;
+}
+
+@media (max-width: 960px) {
+  .doc-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .doc-rail-right {
+    display: none;
+  }
+  .doc-main {
+    padding: 2rem 1.25rem 6rem;
+  }
+  .doc-toolbar-aside {
+    display: none;
+  }
+}
+
+/* Doc head: serif title and byline. */
+
+.doc-head {
+  margin-bottom: 2.25rem;
+}
+
+.doc-head-title {
+  font-family: var(--font-doc-serif);
+  font-size: 2.6rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.9rem;
+}
+
+.doc-byline {
   display: flex;
-  flex-direction: column;
-  min-width: 10rem;
-  padding: 0.25rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.9rem;
 }
 
-.tab-menu-item {
-  text-align: left;
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.35rem 0.6rem;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  color: var(--text);
-  cursor: pointer;
+.byline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+  background: var(--chip-bg);
+  color: var(--chip-text);
 }
 
-.tab-menu-item:hover:not(:disabled) {
-  background: var(--code-bg);
-}
-
-.tab-menu-item:disabled {
+.byline-dot {
   color: var(--muted);
-  opacity: 0.5;
-  cursor: default;
 }
 
-.tab-menu-item.danger {
-  color: var(--danger);
-}
-
-/* Editor */
+/* Editor typography: sans body, light serif headings. */
 
 .tab-editor .ProseMirror {
-  min-height: 60vh;
-  font-size: 16px;
-  line-height: 1.75;
+  min-height: 50vh;
+  font-size: 17px;
+  line-height: 1.65;
 }
 
 .tab-editor .ProseMirror:focus {
@@ -482,34 +706,66 @@ span.tab-row-toggle {
 }
 
 .tab-editor .ProseMirror > * + * {
-  margin-top: 0.85em;
+  margin-top: 0.7em;
+}
+
+.tab-editor .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.tab-editor .ProseMirror p {
+  margin-bottom: 0;
+}
+
+.tab-editor .ProseMirror :is(h1, h2, h3) {
+  font-family: var(--font-doc-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin-bottom: 0;
 }
 
 .tab-editor .ProseMirror h1 {
-  font-size: 2.25rem;
+  font-size: 2.1rem;
   line-height: 1.2;
-  margin: 0 0 0.5em;
+  margin-top: 1.6em;
 }
 
 .tab-editor .ProseMirror h2 {
-  font-size: 1.55rem;
-  line-height: 1.3;
-  margin-top: 1.8em;
+  font-size: 1.75rem;
+  line-height: 1.25;
+  margin-top: 1.6em;
 }
 
 .tab-editor .ProseMirror h3 {
-  font-size: 1.2rem;
-  margin-top: 1.5em;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  margin-top: 1.4em;
+}
+
+.tab-editor .ProseMirror :is(h4, h5, h6) {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.4em;
+}
+
+.tab-editor .ProseMirror :is(ul, ol) {
+  padding-left: 1.6rem;
 }
 
 .tab-editor .ProseMirror ul:not([data-type="taskList"]) {
   list-style: disc;
-  padding-left: 1.5rem;
 }
 
 .tab-editor .ProseMirror ol {
   list-style: decimal;
-  padding-left: 1.5rem;
+}
+
+.tab-editor .ProseMirror li + li {
+  margin-top: 0.3em;
+}
+
+.tab-editor .ProseMirror li > p {
+  margin: 0;
 }
 
 .tab-editor .ProseMirror blockquote {
@@ -583,19 +839,29 @@ span.tab-row-toggle {
   font-weight: 600;
 }
 
+.tab-editor .ProseMirror img.doc-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: 8px;
+}
+
+.tab-editor .ProseMirror img.doc-image.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tab-editor .ProseMirror .doc-image-blocked {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.tab-editor .ProseMirror[contenteditable="false"] {
+  cursor: text;
+}
+
 /* Export menu and print. */
-
-.doc-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.doc-header .doc-title {
-  margin: 0;
-}
 
 .export-menu-wrap {
   display: flex;
@@ -655,15 +921,16 @@ span.tab-row-toggle {
 
 /* Comments: a margin column beside the editor, cards placed at their passages. */
 
-.doc-main:has(.doc-body) {
-  max-width: 66rem;
-}
-
 .doc-body {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 17rem;
-  gap: 2rem;
+  grid-template-columns: minmax(0, var(--doc-column)) 17rem;
+  justify-content: center;
+  gap: 2.5rem;
+}
+
+.doc-body.comments-hidden {
+  grid-template-columns: minmax(0, var(--doc-column));
 }
 
 .comment-margin {
@@ -851,12 +1118,8 @@ span.tab-row-toggle {
 
 /* Narrow: the margin shrinks to markers; the open card overlays the editor. */
 @media (max-width: 1279px) {
-  .doc-main:has(.doc-body) {
-    max-width: 50rem;
-  }
-
   .doc-body {
-    grid-template-columns: minmax(0, 1fr) 1.5rem;
+    grid-template-columns: minmax(0, var(--doc-column)) 1.5rem;
     gap: 0.75rem;
   }
 
@@ -884,10 +1147,9 @@ span.tab-row-toggle {
     --code-bg: #f3f3f3;
   }
 
-  .app-header,
   .doc-rail,
+  .doc-chrome,
   .export-menu-wrap,
-  .doc-header-actions,
   .comment-margin,
   .resolved-comments,
   .notice {
@@ -899,8 +1161,7 @@ span.tab-row-toggle {
     min-height: 0;
   }
 
-  .doc-main,
-  .doc-main:has(.doc-body) {
+  .doc-main {
     max-width: none;
     padding: 0;
   }
@@ -917,6 +1178,10 @@ span.tab-row-toggle {
   .tab-editor .ProseMirror {
     min-height: 0;
     font-size: 12pt;
+  }
+
+  .doc-head-title {
+    font-size: 24pt;
   }
 
   .tab-editor .ProseMirror pre {
@@ -943,23 +1208,6 @@ span.tab-row-toggle {
 }
 
 /* Doc status and the threads started from a doc. */
-
-.status-select {
-  font: inherit;
-  font-size: 0.85rem;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.15rem 0.6rem;
-}
-
-.doc-header-actions {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-}
 
 .doc-thread-list {
   min-width: 16rem;
@@ -990,27 +1238,4 @@ span.tab-row-toggle {
   width: auto;
   color: var(--muted);
   font-size: 0.8rem;
-}
-
-.status-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 1.5rem;
-}
-
-.status-filter button {
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-  cursor: pointer;
-}
-
-.status-filter button[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
 }

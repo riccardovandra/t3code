@@ -84,6 +84,20 @@ describe("parseParentMessage", () => {
     expect(parseParentMessage("t3-docs:hello")).toBeNull();
   });
 
+  it("validates send-to results, allowing only https page links", () => {
+    const sent = { type: "t3-docs:sent-to", requestId: "r-1", url: null, error: null };
+    expect(parseParentMessage(sent)).toEqual(sent);
+    const page = { ...sent, url: "https://www.notion.so/Plan-1" };
+    expect(parseParentMessage(page)).toEqual(page);
+    expect(parseParentMessage({ ...sent, url: "javascript:alert(1)" })).toBeNull();
+    expect(parseParentMessage({ ...sent, url: undefined })).toBeNull();
+    const failed = { ...sent, error: "Connect Notion in Settings → MCP Servers." };
+    expect(parseParentMessage(failed)).toEqual(failed);
+    expect(
+      parseParentMessage({ type: "t3-docs:hello", features: ["send-to", "send-to-agent"] }),
+    ).toEqual({ type: "t3-docs:hello", features: ["send-to-agent", "send-to"] });
+  });
+
   it("takes the theme appearance and only literal colours for known roles", () => {
     expect(parseParentMessage({ type: "t3-docs:theme", appearance: "dark" })).toEqual({
       type: "t3-docs:theme",

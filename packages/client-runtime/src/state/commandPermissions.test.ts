@@ -10,6 +10,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
+  AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
@@ -115,27 +116,56 @@ describe("command permissions", () => {
     ),
   );
 
-  it.effect("requires the operate grant to write AI PM ideas and import into Docs Cloud", () =>
+  it.effect("requires the providers grant to save or remove skill sources", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        for (const tag of [
-          WS_METHODS.aiPmSaveIdea,
-          WS_METHODS.aiPmSetIdeaStatus,
-          WS_METHODS.docsCloudImport,
-        ]) {
+        for (const tag of [WS_METHODS.skillSourcesUpsert, WS_METHODS.skillSourcesRemove]) {
           const write = createCommandPermissions(runtime, tag);
-          registry.set(sessions(env), AsyncResult.success(grant(false)));
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
           expect(registry.get(write.permissionAtom(env))).toBe(false);
           expect((yield* write.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
             "EnvironmentAuthorizationError",
           );
-          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          registry.set(
+            sessions(env),
+            AsyncResult.success({
+              ...grant(true),
+              scopes: [AuthProvidersManageScope],
+              permissions: [AuthProvidersManageScope],
+            }),
+          );
           expect(registry.get(write.permissionAtom(env))).toBe(true);
           yield* write.authorize(registry, env);
         }
       }),
     ),
+  );
+
+  it.effect(
+    "requires the operate grant to write AI PM ideas and import or send Docs Cloud docs",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* setup;
+          for (const tag of [
+            WS_METHODS.aiPmSaveIdea,
+            WS_METHODS.aiPmSetIdeaStatus,
+            WS_METHODS.docsCloudImport,
+            WS_METHODS.docsCloudSendTo,
+          ]) {
+            const write = createCommandPermissions(runtime, tag);
+            registry.set(sessions(env), AsyncResult.success(grant(false)));
+            expect(registry.get(write.permissionAtom(env))).toBe(false);
+            expect((yield* write.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+              "EnvironmentAuthorizationError",
+            );
+            registry.set(sessions(env), AsyncResult.success(grant(true)));
+            expect(registry.get(write.permissionAtom(env))).toBe(true);
+            yield* write.authorize(registry, env);
+          }
+        }),
+      ),
   );
 
   it.effect("uses the target grant for both availability and execution", () =>

@@ -295,26 +295,149 @@
   font-size: 0.8rem;
 }
 
-.share-export-actions {
+.share-export {
+  padding-bottom: 1rem;
+}
+
+.share-export-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.share-export-card-icon {
+  flex: none;
+  color: var(--muted);
+  padding-top: 0.1rem;
+}
+
+.share-export-card-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.share-export-card-text {
+  margin: 0.3rem 0 0.7rem;
+  font-size: 0.8rem;
+}
+
+.share-export-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.share-export-card-foot {
+  margin: 0.7rem 0 0;
+  font-size: 0.75rem;
+}
+
+.share-export-scope {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.8rem;
+}
+
+.share-export-scope button {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.share-export-scope button[aria-checked="true"] {
+  background: var(--selected);
+  color: var(--text);
+}
+
+.share-export-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0 -0.25rem;
+  margin: 0.6rem -0.4rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-export-row {
+  position: relative;
 }
 
 .share-export-action {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
   font: inherit;
-  padding: 0.45rem 0.55rem;
+  padding: 0.45rem 0.5rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
-.share-export-action:hover {
+.share-export-action:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.share-export-action:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.share-export-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  font-size: 0.78rem;
+}
+
+.share-export-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.share-export-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+/* Leaves room for the row's own download icon. */
+.share-export-copy {
+  position: absolute;
+  top: 50%;
+  right: 2.1rem;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+
+.share-export-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .share-foot {

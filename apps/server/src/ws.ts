@@ -4,6 +4,8 @@ import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
 import * as DocsCloudImport from "./docs/DocsCloudImport.ts";
+import * as DocsCloudSendTo from "./docs/DocsCloudSendTo.ts";
+import * as McpUpstreamClients from "./mcpHub/McpUpstreamClients.ts";
 import * as WorkspaceDocs from "./workspace/WorkspaceDocs.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
@@ -206,6 +208,7 @@ import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as McpServerTools from "./mcpServers/McpServerTools.ts";
 import * as SkillLibrary from "./skills/SkillLibrary.ts";
+import * as SkillSources from "./skills/SkillSources.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -584,6 +587,14 @@ const FORK_RPC_METHODS = [
   WS_METHODS.docsDeleteComment,
   WS_METHODS.docsCloudListImports,
   WS_METHODS.docsCloudImport,
+  WS_METHODS.docsCloudSendTo,
+  WS_METHODS.skillsTrashList,
+  WS_METHODS.skillsTrashRestore,
+  WS_METHODS.skillsTrashDelete,
+  WS_METHODS.skillSourcesList,
+  WS_METHODS.skillSourcesUpsert,
+  WS_METHODS.skillSourcesRemove,
+  WS_METHODS.skillLibraryList,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1289,12 +1300,46 @@ const layerMcpServersRpc = (
     ),
   );
 
+const layerSkillTrashRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const skillLibrary = yield* SkillLibrary.SkillLibrary;
+    return Layer.mergeAll(
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashList, () => skillLibrary.listTrash),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashRestore, (input) =>
+        skillLibrary.restoreFromTrash(input).pipe(Effect.as({})),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashDelete, (input) =>
+        skillLibrary.deleteFromTrash(input).pipe(Effect.as({})),
+      ),
+    );
+  }),
+);
+
+const layerSkillSourcesRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const skillSources = yield* SkillSources.SkillSources;
+    return Layer.mergeAll(
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesList, () => skillSources.list),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesUpsert, (input) =>
+        skillSources.upsert(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesRemove, (input) =>
+        skillSources.remove(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillLibraryList, (input) =>
+        skillSources.library(input),
+      ),
+    );
+  }),
+);
+
 const layerAiPmDocsRpc = Layer.unwrap(
   Effect.gen(function* () {
     const aiPm = yield* AiPmService.AiPmService;
     const docComments = yield* DocCommentsService.DocCommentsService;
     const docCommentDelivery = yield* DocCommentDelivery.DocCommentDelivery;
     const docsCloudImport = yield* DocsCloudImport.DocsCloudImport;
+    const docsCloudSendTo = yield* DocsCloudSendTo.DocsCloudSendTo;
     return Layer.mergeAll(
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmList, () => aiPm.list()),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmBrief, (input) => aiPm.brief(input)),
@@ -1328,6 +1373,9 @@ const layerAiPmDocsRpc = Layer.unwrap(
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudImport, (input) =>
         docsCloudImport.importDocs(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudSendTo, (input) =>
+        docsCloudSendTo.sendTo(input),
       ),
     );
   }),
@@ -3326,6 +3374,7 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
+    const upstreamClients = yield* McpUpstreamClients.McpUpstreamClients;
     const mcpServers = yield* McpServerRegistry.McpServerRegistry;
     const mcpServerOAuth = yield* McpServerOAuth.McpServerOAuth;
     const secretRequests = yield* SecretRequests.SecretRequests;
@@ -3416,10 +3465,19 @@ export const layer = Layer.unwrap(
                 ),
               ),
               Layer.merge(layerAiPmDocsRpc),
+              Layer.merge(layerSkillTrashRpc),
+              Layer.merge(layerSkillSourcesRpc),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
               Layer.provide(DefectReporter.layer),
+              Layer.provide(
+                DocsCloudSendTo.layer.pipe(
+                  Layer.provide(
+                    Layer.succeed(McpUpstreamClients.McpUpstreamClients, upstreamClients),
+                  ),
+                ),
+              ),
               Layer.provide(
                 DocsCloudImport.layer.pipe(
                   Layer.provideMerge(

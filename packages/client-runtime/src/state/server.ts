@@ -1256,6 +1256,23 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsRemove,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Fork: Remove moves skills into the environment's trash.
+    listSkillTrash: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:trash",
+      tag: WS_METHODS.skillsTrashList,
+      staleTimeMs: 30_000,
+      idleTtlMs: 5 * 60_000,
+    }),
+    restoreSkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:restore",
+      tag: WS_METHODS.skillsTrashRestore,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    deleteSkillFromTrash: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:delete-from-trash",
+      tag: WS_METHODS.skillsTrashDelete,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     exportSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:export",
       tag: WS_METHODS.skillsExport,
@@ -1264,6 +1281,35 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:skills:import",
       tag: WS_METHODS.skillsImport,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    // Fork: saved skill sources and the library previewed from them.
+    listSkillSources: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skill-sources:list",
+      tag: WS_METHODS.skillSourcesList,
+      staleTimeMs: 60_000,
+      idleTtlMs: 5 * 60_000,
+    }),
+    upsertSkillSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-sources:upsert",
+      tag: WS_METHODS.skillSourcesUpsert,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    removeSkillSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-sources:remove",
+      tag: WS_METHODS.skillSourcesRemove,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    // A preview fetches the source, so the server caches it too; a refresh
+    // runs as a command with `refresh`, then the query reads the new cache.
+    listSkillLibrary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skill-library:list",
+      tag: WS_METHODS.skillLibraryList,
+      staleTimeMs: 10 * 60_000,
+      idleTtlMs: 30 * 60_000,
+    }),
+    refreshSkillLibrary: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-library:refresh",
+      tag: WS_METHODS.skillLibraryList,
     }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
@@ -1408,6 +1454,10 @@ export function createServerEnvironmentAtoms<R, E>(
     importDocsToCloud: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:docs-cloud:import",
       tag: WS_METHODS.docsCloudImport,
+    }),
+    sendDocsCloudTo: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs-cloud:send-to",
+      tag: WS_METHODS.docsCloudSendTo,
     }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",

@@ -12,7 +12,7 @@ export class TabSaver {
   private draft: string | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight = false;
-  /** Markdown the server refused for an invalid diagram; not resent until it changes. */
+  /** Markdown the server refused for an invalid diagram or table; not resent until it changes. */
   private refused: string | null = null;
   private baseVersion: number;
   private readonly tabId: string;
@@ -20,7 +20,7 @@ export class TabSaver {
     readonly onSaved: (tab: Tab) => void;
     readonly onConflict: (tab: Tab) => void;
     /** The server refused a diagram; the edit is kept and sent with the next change. */
-    readonly onInvalidWidget?: () => void;
+    readonly onInvalidBlock?: (kind: "diagram" | "table") => void;
   };
 
   constructor(tabId: string, baseVersion: number, callbacks: TabSaver["callbacks"]) {
@@ -60,10 +60,13 @@ export class TabSaver {
         this.draft = null;
         this.baseVersion = cause.body.tab.version;
         this.callbacks.onConflict(cause.body.tab);
-      } else if (cause instanceof ApiError && cause.body.error === "widget_invalid") {
+      } else if (
+        cause instanceof ApiError &&
+        (cause.body.error === "widget_invalid" || cause.body.error === "table_invalid")
+      ) {
         this.draft ??= markdown;
         this.refused = markdown;
-        this.callbacks.onInvalidWidget?.();
+        this.callbacks.onInvalidBlock?.(cause.body.error === "table_invalid" ? "table" : "diagram");
       } else if (cause instanceof ApiError && cause.status === 404) {
         // The tab was deleted; there is nowhere left to save to.
         this.draft = null;
