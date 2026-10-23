@@ -2,6 +2,15 @@
 
 export type DocStatus = "thinking" | "plan" | "in_progress" | "done";
 
+export const DOC_STATUSES: ReadonlyArray<DocStatus> = ["thinking", "plan", "in_progress", "done"];
+
+export const DOC_STATUS_LABEL: Readonly<Record<DocStatus, string>> = {
+  thinking: "Thinking",
+  plan: "Plan",
+  in_progress: "In progress",
+  done: "Done",
+};
+
 export interface Project {
   readonly id: string;
   readonly name: string;
@@ -72,6 +81,20 @@ export interface Comment {
 }
 
 /**
+ * A T3 Code thread started from a doc. The ids belong to the T3 Code
+ * environment that created the thread; `title` is the label shown when the
+ * embedding T3 Code cannot open it.
+ */
+export interface DocThreadLink {
+  readonly id: string;
+  readonly docId: string;
+  readonly environmentId: string;
+  readonly threadId: string;
+  readonly title: string;
+  readonly createdAt: number;
+}
+
+/**
  * DocRoom -> editor messages over `GET /api/docs/:docId/ws`. Clients never send
  * writes over the socket; they go through the REST API so agents and editors
  * share one path. `origin` is the `clientId` the writer passed, so an editor can
@@ -92,6 +115,11 @@ export type RoomMessage =
       readonly origin: string | null;
     }
   | { readonly type: "doc.updated"; readonly doc: DocSummary; readonly origin: string | null }
+  | {
+      readonly type: "doc.threads";
+      readonly threads: ReadonlyArray<DocThreadLink>;
+      readonly origin: string | null;
+    }
   | { readonly type: "comment.created"; readonly comment: Comment; readonly origin: string | null }
   | { readonly type: "comment.updated"; readonly comment: Comment; readonly origin: string | null }
   | {

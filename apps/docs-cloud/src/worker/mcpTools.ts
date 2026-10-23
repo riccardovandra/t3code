@@ -2,16 +2,22 @@
 // existing doc goes through `deps.rooms` so open editors receive it live.
 
 import { findQuote, markdownToText } from "../shared/anchors.ts";
-import type { Comment, DocStatus, DocSummary, Tab } from "../shared/protocol.ts";
+import {
+  DOC_STATUSES,
+  type Comment,
+  type DocStatus,
+  type DocSummary,
+  type Tab,
+} from "../shared/protocol.ts";
 import { groupThreads } from "../shared/threads.ts";
 import type { ApiDeps } from "./api.ts";
 import * as Comments from "./comments.ts";
+import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 
 const MAX_MARKDOWN_LENGTH = 1_000_000;
 /** edit_tab re-applies against the latest version this many times before giving up. */
 const EDIT_ATTEMPTS = 5;
-const DOC_STATUSES: ReadonlyArray<DocStatus> = ["thinking", "plan", "in_progress", "done"];
 
 export class McpToolError extends Error {
   readonly detail: Record<string, unknown>;
@@ -414,8 +420,15 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
         tab: { ...tabSummary(ctx, tab), markdown: tab.markdown },
       };
     }
+    const threads = await DocThreads.listDocThreads(ctx.deps.db, docId);
     return {
       doc: docSummary(ctx, doc, ordered[0]?.tab.id),
+      // T3 Code threads started from this doc ("Start work").
+      startedThreads: threads.map(({ environmentId, threadId, title }) => ({
+        environmentId,
+        threadId,
+        title,
+      })),
       tabs: ordered.map(({ tab, depth }) => ({
         ...tabSummary(ctx, tab),
         depth,

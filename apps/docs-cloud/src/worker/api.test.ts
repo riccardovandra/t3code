@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { DocWithTabs, Tab } from "../shared/protocol.ts";
+import type {
+  DocSummary,
+  DocThreadLink,
+  DocWithTabs,
+  LibraryProject,
+  Tab,
+} from "../shared/protocol.ts";
 import * as Docs from "./docs.ts";
 import { makeApiHarness } from "./testing/apiHarness.ts";
 
@@ -271,6 +277,155 @@ describe("tab tree", () => {
     expect((await api.call("DELETE", `/api/tabs/${child.id}`, { headers: crossSite })).status).toBe(
       403,
     );
+  });
+});
+
+describe("doc status", () => {
+  it("moves through the statuses, pushes doc.updated, and shows in the library", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    expect(doc.status).toBe("thinking");
+
+    for (const status of ["plan", "in_progress", "done", "thinking"] as const) {
+      api.clock.now += 1;
+      const response = await api.call("PATCH", `/api/docs/${doc.id}`, {
+        body: { status, clientId: "editor-a" },
+        headers: { Cookie: cookie },
+      });
+      expect(response.status).toBe(200);
+      const { doc: updated } = (await response.json()) as { doc: DocSummary };
+      expect(updated).toMatchObject({ status, updatedAt: api.clock.now });
+      expect(api.broadcasts.at(-1)).toEqual({
+        type: "doc.updated",
+        doc: updated,
+        origin: "editor-a",
+      });
+    }
+
+    await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: { status: "plan" },
+      headers: { Cookie: cookie },
+    });
+    const library = await api.call("GET", "/api/library", { headers: { Cookie: cookie } });
+    const { projects } = (await library.json()) as { projects: Array<LibraryProject> };
+    expect(projects[0]!.docs[0]!.status).toBe("plan");
+  });
+
+  it("rejects unknown statuses and missing docs", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    const invalid = await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: { status: "shipped" },
+      headers: { Cookie: cookie },
+    });
+    expect(invalid.status).toBe(400);
+    const missing = await api.call("PATCH", "/api/docs/missing", {
+      body: { status: "plan" },
+      headers: { Cookie: cookie },
+    });
+    expect(missing.status).toBe(404);
+    const crossSite = await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: { status: "plan" },
+      headers: { Cookie: cookie, Origin: "https://evil.test" },
+    });
+    expect(crossSite.status).toBe(403);
+  });
+});
+
+describe("doc threads", () => {
+  const link = { environmentId: "env-1", threadId: "thread-1", title: "Build the importer" };
+
+  it("links a thread once, relabels on repeat, unlinks, and pushes the list each time", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    const headers = { Cookie: cookie };
+
+    const created = await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: { ...link, clientId: "editor-a" },
+      headers,
+    });
+    expect(created.status).toBe(201);
+    const { threads } = (await created.json()) as { threads: Array<DocThreadLink> };
+    expect(threads).toMatchObject([{ ...link, docId: doc.id }]);
+    expect(api.broadcasts.at(-1)).toEqual({ type: "doc.threads", threads, origin: "editor-a" });
+
+    // A retried report links the same thread, so it only refreshes the label.
+    await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: { ...link, title: "Renamed" },
+      headers,
+    });
+    const listed = await api.call("GET", `/api/docs/${doc.id}/threads`, { headers });
+    const after = ((await listed.json()) as { threads: Array<DocThreadLink> }).threads;
+    expect(after).toMatchObject([{ id: threads[0]!.id, title: "Renamed" }]);
+
+    const removed = await api.call(
+      "DELETE",
+      `/api/docs/${doc.id}/threads/${threads[0]!.id}?clientId=editor-a`,
+      { headers },
+    );
+    expect(await removed.json()).toEqual({ threads: [] });
+    expect(api.broadcasts.at(-1)).toEqual({ type: "doc.threads", threads: [], origin: "editor-a" });
+    const again = await api.call("DELETE", `/api/docs/${doc.id}/threads/${threads[0]!.id}`, {
+      headers,
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("lets agents read links but only the owner's same-origin session write them", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    const created = await api.call("POST", "/api/tokens", {
+      body: { name: "agent" },
+      headers: { Cookie: cookie },
+    });
+    const bearer = {
+      Authorization: `Bearer ${((await created.json()) as { token: string }).token}`,
+    };
+
+    const byToken = await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: link,
+      headers: bearer,
+    });
+    expect(byToken.status).toBe(403);
+    const crossSite = await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: link,
+      headers: { Cookie: cookie, Origin: "https://evil.test" },
+    });
+    expect(crossSite.status).toBe(403);
+    expect((await api.call("GET", `/api/docs/${doc.id}/threads`, { headers: bearer })).status).toBe(
+      200,
+    );
+  });
+
+  it("validates the link and the doc", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    const headers = { Cookie: cookie };
+    const missingThread = await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: { ...link, threadId: "" },
+      headers,
+    });
+    expect(missingThread.status).toBe(400);
+    const missingDoc = await api.call("POST", "/api/docs/missing/threads", { body: link, headers });
+    expect(missingDoc.status).toBe(404);
+  });
+
+  it("go away with their doc", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    await api.call("POST", `/api/docs/${doc.id}/threads`, {
+      body: link,
+      headers: { Cookie: cookie },
+    });
+    await api.db.prepare("DELETE FROM docs WHERE id = ?").bind(doc.id).run();
+    const { results } = await api.db.prepare("SELECT * FROM doc_threads").all();
+    expect(results).toEqual([]);
   });
 });
 

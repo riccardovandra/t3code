@@ -1,6 +1,14 @@
-import type { DocStatus, DocSummary, Tab, TabPlacement } from "../shared/protocol.ts";
+import {
+  DOC_STATUSES,
+  type DocStatus,
+  type DocSummary,
+  type DocThreadLink,
+  type Tab,
+  type TabPlacement,
+} from "../shared/protocol.ts";
 import * as Auth from "./auth.ts";
 import * as Comments from "./comments.ts";
+import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import * as Export from "./export.ts";
 
@@ -47,11 +55,21 @@ export interface DocRooms {
     docId: string,
     input: { readonly op: Comments.CommentOp; readonly origin: string | null },
   ): Promise<Comments.CommentOpResult>;
+  threadOp(
+    docId: string,
+    input: { readonly op: DocThreads.DocThreadOp; readonly origin: string | null },
+  ): Promise<ReadonlyArray<DocThreadLink>>;
   openSocket(docId: string, request: Request): Promise<Response>;
 }
 
 export interface ApiDeps {
   readonly db: D1Database;
+  /**
+   * The app's public origin, for URLs handed out and the same-origin check.
+   * `wrangler dev` rewrites request.url to the custom domain, so the request
+   * cannot tell us where the app is really served from.
+   */
+  readonly publicOrigin: string;
   readonly owners: ReadonlySet<string>;
   readonly rooms: DocRooms;
   readonly sendLoginCode: (email: string, code: string) => Promise<void>;
@@ -85,9 +103,12 @@ const MAX_MARKDOWN_LENGTH = 1_000_000;
  * cross-site form cannot send without a CORS preflight we never grant. Bearer
  * tokens are not ambient credentials and skip the check.
  */
-function isSameOriginWrite(request: Request): boolean {
+const isOwnOrigin = (origin: string, request: Request, deps: ApiDeps) =>
+  origin === deps.publicOrigin || origin === new URL(request.url).origin;
+
+function isSameOriginWrite(request: Request, deps: ApiDeps): boolean {
   const origin = request.headers.get("Origin");
-  if (origin !== null && origin !== new URL(request.url).origin) return false;
+  if (origin !== null && !isOwnOrigin(origin, request, deps)) return false;
   if (request.method !== "POST") return true;
   return (request.headers.get("Content-Type") ?? "").startsWith("application/json");
 }
@@ -106,13 +127,13 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
   if (!principal) return error(401, "unauthorized");
 
   const segments = path.split("/").slice(2); // drop "", "api"
-  const [resource, id, sub] = segments;
+  const [resource, id, sub, subId] = segments;
 
   // Socket handshakes carry the SameSite=None cookie cross-site too, so a
   // cookie-authed socket must come from this origin.
   if (resource === "docs" && id && sub === "ws" && method === "GET") {
     const origin = request.headers.get("Origin");
-    if (principal.kind === "session" && origin !== null && origin !== url.origin) {
+    if (principal.kind === "session" && origin !== null && !isOwnOrigin(origin, request, deps)) {
       return error(403, "forbidden_origin");
     }
     if (request.headers.get("Upgrade") !== "websocket") return error(426, "expected_websocket");
@@ -125,7 +146,11 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     return deps.rooms.openSocket(id, request);
   }
 
-  if (principal.kind === "session" && !SAFE_METHODS.has(method) && !isSameOriginWrite(request)) {
+  if (
+    principal.kind === "session" &&
+    !SAFE_METHODS.has(method) &&
+    !isSameOriginWrite(request, deps)
+  ) {
     return error(403, "forbidden_origin");
   }
 
@@ -171,6 +196,22 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
     if (resource === "docs" && id && !sub && method === "GET") {
       return json(await Docs.getDoc(deps.db, id));
+    }
+
+    if (resource === "docs" && id && !sub && method === "PATCH") {
+      const body = await readJson(request);
+      const status = body.status;
+      if (!DOC_STATUSES.includes(status as DocStatus)) return error(400, "invalid_status");
+      const doc = await deps.rooms.setDocStatus(id, {
+        status: status as DocStatus,
+        origin: str(body.clientId),
+      });
+      return json({ doc });
+    }
+
+    if (resource === "docs" && id && sub === "threads") {
+      const response = await handleDocThreads(request, { id, subId, method, url, principal }, deps);
+      if (response) return response;
     }
 
     if (resource === "docs" && id && sub === "export.md" && method === "GET") {
@@ -275,6 +316,55 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     if (cause instanceof Docs.LastTabError) return error(409, "last_tab");
     throw cause;
   }
+}
+
+/**
+ * Threads started from a doc. Only the owner's session links or unlinks them:
+ * links come from T3 Code's embed of this app, and an agent token has no
+ * T3 Code thread of its own to vouch for.
+ */
+async function handleDocThreads(
+  request: Request,
+  route: {
+    readonly id: string;
+    readonly subId: string | undefined;
+    readonly method: string;
+    readonly url: URL;
+    readonly principal: Auth.Principal;
+  },
+  deps: ApiDeps,
+): Promise<Response | null> {
+  const { id, subId, method } = route;
+  if (!subId && method === "GET") {
+    await Docs.getDoc(deps.db, id);
+    return json({ threads: await DocThreads.listDocThreads(deps.db, id) });
+  }
+  if (method !== "POST" && method !== "DELETE") return null;
+  if (route.principal.kind !== "session") return error(403, "session_required");
+
+  if (!subId && method === "POST") {
+    const body = await readJson(request);
+    const environmentId = str(body.environmentId);
+    const threadId = str(body.threadId);
+    // Thread titles can run long; the label only needs a recognisable start.
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
+    if (!environmentId || !threadId || !title) return error(400, "invalid_thread");
+    await Docs.getDoc(deps.db, id);
+    const threads = await deps.rooms.threadOp(id, {
+      op: { kind: "link", environmentId, threadId, title },
+      origin: str(body.clientId),
+    });
+    return json({ threads }, 201);
+  }
+
+  if (subId && method === "DELETE") {
+    const threads = await deps.rooms.threadOp(id, {
+      op: { kind: "unlink", linkId: subId },
+      origin: route.url.searchParams.get("clientId"),
+    });
+    return json({ threads });
+  }
+  return null;
 }
 
 const commentActor = (principal: Auth.Principal): Comments.CommentActor =>
@@ -382,7 +472,7 @@ async function handleComments(
 
 async function handleAuth(request: Request, path: string, deps: ApiDeps): Promise<Response> {
   if (request.method !== "POST") return error(405, "method_not_allowed");
-  if (!isSameOriginWrite(request)) return error(403, "forbidden_origin");
+  if (!isSameOriginWrite(request, deps)) return error(403, "forbidden_origin");
   const body = await readJson(request);
   const now = deps.now();
 

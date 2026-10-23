@@ -10,7 +10,15 @@ import {
 } from "react";
 
 import type { DocAnchor } from "../../shared/anchors.ts";
-import type { DocSummary, RoomMessage, Tab } from "../../shared/protocol.ts";
+import {
+  DOC_STATUS_LABEL,
+  DOC_STATUSES,
+  type DocStatus,
+  type DocSummary,
+  type DocThreadLink,
+  type RoomMessage,
+  type Tab,
+} from "../../shared/protocol.ts";
 import { groupThreads, type CommentThread } from "../../shared/threads.ts";
 import { api, ApiError, clientId } from "../api.ts";
 import { CommentMargin, DRAFT_COMMENT_ID } from "../comments/CommentMargin.tsx";
@@ -23,6 +31,7 @@ import {
 import { isCommentMessage, useComments } from "../comments/useComments.ts";
 import { selectionAnchor, useEditorComments } from "../comments/useEditorComments.ts";
 import { useMediaQuery } from "../comments/useMediaQuery.ts";
+import { DocThreads, threadKey } from "../doc/DocThreads.tsx";
 import { ExportMenu } from "../doc/ExportMenu.tsx";
 import { OutlineRail } from "../doc/OutlineRail.tsx";
 import { TabRail } from "../doc/TabRail.tsx";
@@ -30,10 +39,12 @@ import { TabSaver } from "../doc/tabSaver.ts";
 import { applyPlacements, orderTabs, removeTabs } from "../doc/tabTree.ts";
 import { useDocRoom } from "../doc/useDocRoom.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
+import { postToParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { docPath, navigate } from "../router.ts";
 
 export function DocPage(props: { readonly docId: string; readonly tabId: string | null }) {
   const [doc, setDoc] = useState<DocSummary | null>(null);
+  const [threadLinks, setThreadLinks] = useState<ReadonlyArray<DocThreadLink>>([]);
   const [tabs, setTabs] = useState<ReadonlyMap<string, Tab>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -52,8 +63,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const comments = useComments(props.docId);
   const loadComments = comments.load;
   const load = useCallback(async () => {
-    const [loaded] = await Promise.all([api.doc(props.docId), loadComments()]);
+    const [loaded, linked] = await Promise.all([
+      api.doc(props.docId),
+      api.docThreads(props.docId),
+      loadComments(),
+    ]);
     setDoc(loaded.doc);
+    setThreadLinks(linked.threads);
     setTabs(new Map(loaded.tabs.map((tab) => [tab.id, tab])));
   }, [props.docId, loadComments]);
 
@@ -113,6 +129,10 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       }
       if (message.type === "doc.updated") {
         setDoc(message.doc);
+        return;
+      }
+      if (message.type === "doc.threads") {
+        setThreadLinks(message.threads);
         return;
       }
       if (message.type === "tab.created") {
@@ -251,6 +271,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           onSendToAgent: () =>
             sendThreadToAgent({
               docId: props.docId,
+              docTitle: doc?.title ?? "",
               tabId: thread.root.tabId,
               thread,
               url: `${window.location.origin}${docPath(props.docId, thread.root.tabId)}`,
@@ -258,6 +279,47 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
         }
       : {}),
   });
+
+  const embedFeatures = useEmbedFeatures();
+  const embedded = embedFeatures !== null;
+  // Which linked threads the embedding T3 Code can open, and their live titles.
+  const [openable, setOpenable] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(
+    () =>
+      subscribeParentMessages((message) => {
+        if (message.type === "t3-docs:threads") {
+          setOpenable(new Map(message.threads.map((thread) => [threadKey(thread), thread.title])));
+        } else if (message.type === "t3-docs:comment-sent") {
+          setNotice(message.error ?? "Sent to the agent. Its reply will appear in the thread.");
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (!embedded || threadLinks.length === 0) return;
+    postToParent({
+      type: "t3-docs:resolve-threads",
+      threads: threadLinks.map(({ environmentId, threadId }) => ({ environmentId, threadId })),
+    });
+  }, [embedded, threadLinks]);
+
+  const setStatus = (status: DocStatus) =>
+    void api.setDocStatus(props.docId, status).then(
+      (result) => setDoc(result.doc),
+      () => setNotice("Could not change the status. Reload and try again."),
+    );
+
+  const startWork = async () => {
+    if (!doc) return;
+    await saver.current?.flush();
+    postToParent({
+      type: "t3-docs:start-work",
+      docId: props.docId,
+      tabId: activeTabId,
+      title: doc.title,
+      url: `${window.location.origin}${docPath(props.docId, activeTabId)}`,
+    });
+  };
 
   if (!doc) return null;
 
@@ -279,21 +341,58 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       <main className="doc-main">
         <div className="doc-header">
           <p className="doc-title">{doc.title}</p>
-          <ResolvedComments
-            threads={resolvedThreads}
-            tabs={tabs}
-            onReopen={(commentId) =>
-              quietly(comments.actions.setResolved(commentId, false).catch(commentFailed))
-            }
-            onDelete={(commentId) =>
-              quietly(comments.actions.delete(commentId).catch(commentFailed))
-            }
-          />
-          <ExportMenu
-            docId={props.docId}
-            tabId={activeTabId}
-            flush={async () => saver.current?.flush()}
-          />
+          <div className="doc-header-actions">
+            <select
+              className="status-select"
+              aria-label="Status"
+              value={doc.status}
+              onChange={(event) => setStatus(event.target.value as DocStatus)}
+            >
+              {DOC_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {DOC_STATUS_LABEL[status]}
+                </option>
+              ))}
+            </select>
+            {embedFeatures?.includes("start-work") ? (
+              <button
+                type="button"
+                className="button small"
+                title="Open a new T3 Code thread with this doc as its plan"
+                onClick={() => void startWork()}
+              >
+                Start work
+              </button>
+            ) : null}
+            <DocThreads
+              threads={threadLinks}
+              openable={openable}
+              onOpen={({ environmentId, threadId }) =>
+                postToParent({ type: "t3-docs:open-thread", environmentId, threadId })
+              }
+              onUnlink={(linkId) =>
+                void api.unlinkThread(props.docId, linkId).then(
+                  (result) => setThreadLinks(result.threads),
+                  () => setNotice("Could not remove the thread. Reload and try again."),
+                )
+              }
+            />
+            <ResolvedComments
+              threads={resolvedThreads}
+              tabs={tabs}
+              onReopen={(commentId) =>
+                quietly(comments.actions.setResolved(commentId, false).catch(commentFailed))
+              }
+              onDelete={(commentId) =>
+                quietly(comments.actions.delete(commentId).catch(commentFailed))
+              }
+            />
+            <ExportMenu
+              docId={props.docId}
+              tabId={activeTabId}
+              flush={async () => saver.current?.flush()}
+            />
+          </div>
         </div>
         {notice ? (
           <div className="notice" role="status">

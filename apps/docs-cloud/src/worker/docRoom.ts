@@ -1,7 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 
-import type { DocStatus, DocSummary, RoomMessage, Tab, TabPlacement } from "../shared/protocol.ts";
+import type {
+  DocStatus,
+  DocSummary,
+  DocThreadLink,
+  RoomMessage,
+  Tab,
+  TabPlacement,
+} from "../shared/protocol.ts";
 import * as Comments from "./comments.ts";
+import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { Env } from "./env.ts";
 
@@ -113,6 +121,23 @@ export class DocRoom extends DurableObject<Env> {
       });
       this.broadcast({ type: "doc.updated", doc, origin: input.origin });
       return doc;
+    });
+  }
+
+  async threadOp(input: {
+    readonly docId: string;
+    readonly op: DocThreads.DocThreadOp;
+    readonly origin: string | null;
+  }): Promise<ReadonlyArray<DocThreadLink>> {
+    return this.serialize(async () => {
+      const threads = await DocThreads.applyDocThreadOp(
+        this.env.DB,
+        input.docId,
+        input.op,
+        Date.now(),
+      );
+      this.broadcast({ type: "doc.threads", threads, origin: input.origin });
+      return threads;
     });
   }
 

@@ -4,7 +4,8 @@ import * as Docs from "./docs.ts";
 import { handleMcp } from "./mcp.ts";
 import { makeApiHarness, ORIGIN } from "./testing/apiHarness.ts";
 
-async function makeMcpHarness() {
+/** `requestOrigin` stands in for what request.url reports, which `wrangler dev` rewrites. */
+async function makeMcpHarness(requestOrigin = ORIGIN) {
   const api = makeApiHarness();
   const cookie = await api.signIn();
   const created = await api.call("POST", "/api/tokens", {
@@ -18,7 +19,7 @@ async function makeMcpHarness() {
 
   const post = (body: unknown, headers: Record<string, string> = {}) =>
     handleMcp(
-      new Request(`${ORIGIN}/mcp`, {
+      new Request(`${requestOrigin}/mcp`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(body),
@@ -203,6 +204,25 @@ describe("MCP tools", () => {
     expect(listed.body.docs).toEqual([]);
     const everything = await mcp.tool("list_docs", {});
     expect(everything.body.docs[0]).toMatchObject({ docId: doc.docId, status: "plan" });
+  });
+
+  it("builds URLs from the public origin, not the request URL", async () => {
+    const mcp = await makeMcpHarness("https://docs.upliftedconsulting.com");
+    const { doc, tab } = await mcp.seedDoc();
+    expect(doc.url).toBe(`${ORIGIN}/d/${doc.docId}/${tab.tabId}`);
+  });
+
+  it("lists the threads started from a doc in read_doc", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc } = await mcp.seedDoc();
+    await mcp.api.call("POST", `/api/docs/${doc.docId}/threads`, {
+      body: { environmentId: "env-1", threadId: "thread-1", title: "Build it" },
+      headers: { Cookie: mcp.cookie },
+    });
+    const read = await mcp.tool("read_doc", { docId: doc.docId });
+    expect(read.body.startedThreads).toEqual([
+      { environmentId: "env-1", threadId: "thread-1", title: "Build it" },
+    ]);
   });
 
   it("moves and deletes tabs through the room, with clear errors", async () => {
