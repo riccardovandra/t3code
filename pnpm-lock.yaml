@@ -486,6 +486,9 @@ importers:
       '@babel/parser':
         specifier: 7.29.8
         version: 7.29.8
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tiptap/core':
         specifier: ^3.31.3
         version: 3.31.3(@tiptap/pm@3.31.3)
