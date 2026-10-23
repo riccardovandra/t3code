@@ -1,11 +1,28 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
+/** The MCP hub entry name that connects an environment to Docs Cloud. */
+export const DOCS_CLOUD_MCP_SERVER_NAME = "docs-cloud";
+
+/** Whether a session's configured MCP servers include Docs Cloud. */
+export const hasDocsCloud = (servers: ReadonlyArray<{ readonly name: string }>): boolean =>
+  servers.some((server) => server.name === DOCS_CLOUD_MCP_SERVER_NAME);
+
+// The environment hides the local `docs_*` tools while Docs Cloud is connected,
+// so each session describes only the docs tools it actually has.
+const FILE_DOCS_SECTION = `### Docs
+
+Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.`;
+
+const CLOUD_DOCS_SECTION = `### Docs
+
+Docs live in Docs Cloud, which the user reads, edits, and comments on in T3 Code's Docs panel. Use the \`docs-cloud\` MCP server's tools (such as \`create_doc\`, \`create_tab\`, \`edit_tab\`, \`write_tab\`, often prefixed \`mcp__docs-cloud__\` or \`docs-cloud.\`). When the user asks for a document, plan, spec, report, or notes to keep, write it there instead of pasting it into chat or writing a markdown file, unless the user asks for a file in the repo. Call \`docs_cloud_project\` (t3-code) for this T3 Code project's Docs Cloud project, which creates it on first use and is keyed by the git repository so every checkout shares it, and pass its \`key\` as \`projectKey\` to \`create_doc\`. \`move_doc\` moves a doc to another project or to none. Create the doc with its skeleton first (headings with one-line placeholders) so it opens beside the chat, then fill in each section with \`edit_tab\` or \`write_tab\`. Add a tab with \`create_tab\` for each large part. Share each doc's returned \`url\` once. When asked to move the project's markdown files under \`docs/\` into Docs Cloud, use \`docs_cloud_import\`; it copies each file with its open comments and skips docs imported before.`;
+
 /**
  * Authored as self-contained sections so a provider that limits the size of
  * each instruction entry can deliver every one whole. Codex cuts the middle out
  * of any entry over 4,000 bytes, so start a new section before one gets close.
  */
-export const T3_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
+export const t3CodeOrchestrationSections = (docsCloud: boolean): ReadonlyArray<string> => [
   `## T3 Code orchestration
 
 The \`t3-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
@@ -37,19 +54,15 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.`,
   `- When model options are requested or the child keeps the parent's provider instance and model with nonempty \`inheritedOptions\` from \`orchestrator_capabilities\`, use \`delegate_task\` even for native-supported models. Native subagents cannot reliably apply T3 model options. Read the selected model's descriptors from \`orchestrator_capabilities\` and put settings in \`target.options\`, not only in the prompt. Claude commonly uses {"effort":"max","fastMode":true}; Codex uses {"reasoningEffort":"max","serviceTier":"priority"}. Do not translate max to high or ignore unsupported settings: report a capability mismatch. Options inherit only for the same provider instance and model; explicit entries override individual values, and [] or {} clears them. Check the returned providerInstanceId, model, and options against the requested selection.`,
-  `### Docs
-
-Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.
-
-When the \`docs-cloud\` MCP server is connected (tools such as \`create_doc\`, \`create_tab\`, \`write_tab\`, often prefixed \`mcp__docs-cloud__\` or \`docs-cloud.\`), Docs Cloud replaces the file docs above: create and edit docs there instead of with \`docs_create\`, unless the user asks for a file in the repo. Each T3 Code project has its own Docs Cloud project with the same name: call \`docs_cloud_project\` (t3-code) for its id, which creates it on first use, and pass that id as \`projectId\` to \`create_doc\`. When asked to move the project's file docs into Docs Cloud, use \`docs_cloud_import\`; it copies each file with its open comments and skips docs imported before. Pass the skeleton (headings with one-line placeholders) to \`create_doc\` so it opens beside the chat, then fill it in. Add a tab with \`create_tab\` for each large part, and edit with \`edit_tab\` or \`write_tab\`. Share each doc's returned \`url\` once.`,
+  docsCloud ? CLOUD_DOCS_SECTION : FILE_DOCS_SECTION,
   `### AI PM ideas
 
 When the user wants to park an idea or concept for later ("park this idea"), save it with \`aipm_idea_save\`: a summary of where the work was left, the next step, and absolute paths of files it produced. It links this thread. Call \`aipm_idea_list\` first and pass an existing idea's id to update it rather than duplicate it.`,
 ];
 
-export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
+export const t3CodeOrchestrationInstructions = (docsCloud: boolean): string => `
 
-${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
+${t3CodeOrchestrationSections(docsCloud).join("\n\n")}
 `;
 
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
@@ -79,6 +92,7 @@ Investigate with read-only actions and do not edit files or otherwise execute th
 export interface T3AcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasT3Mcp: boolean;
+  readonly docsCloud: boolean;
 }
 
 /**
@@ -94,7 +108,8 @@ export function t3AcpPromptWithInstructions(input: {
   if (input.prompt.trimStart().startsWith("/")) return input.prompt;
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
-    input.previousState.hasT3Mcp === input.state.hasT3Mcp
+    input.previousState.hasT3Mcp === input.state.hasT3Mcp &&
+    input.previousState.docsCloud === input.state.docsCloud
   ) {
     return input.prompt;
   }
@@ -103,7 +118,10 @@ export function t3AcpPromptWithInstructions(input: {
       ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
       : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
     ...(input.state.hasT3Mcp
-      ? [T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()]
+      ? [
+          T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
+          t3CodeOrchestrationInstructions(input.state.docsCloud).trim(),
+        ]
       : []),
   ];
   return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
@@ -112,20 +130,24 @@ export function t3AcpPromptWithInstructions(input: {
 /**
  * Keep the wrapper explicit so it cannot be mistaken for text authored by the user.
  */
-function prependT3OrchestrationInstructions(prompt: string): string {
-  return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+function prependT3OrchestrationInstructions(prompt: string, docsCloud: boolean): string {
+  return `<t3_code_orchestration_instructions>${t3CodeOrchestrationInstructions(docsCloud).trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
 export function t3OrchestrationPromptForFirstRun(input: {
   readonly prompt: string;
   readonly runOrdinal: number;
   readonly hasT3Mcp: boolean;
+  readonly docsCloud: boolean;
 }): string {
   return input.runOrdinal === 1 && input.hasT3Mcp
-    ? prependT3OrchestrationInstructions(input.prompt)
+    ? prependT3OrchestrationInstructions(input.prompt, input.docsCloud)
     : input.prompt;
 }
 
-export function t3OrchestrationSystemPrompt(hasT3Mcp: boolean): string | undefined {
-  return hasT3Mcp ? T3_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
+export function t3OrchestrationSystemPrompt(
+  hasT3Mcp: boolean,
+  docsCloud: boolean,
+): string | undefined {
+  return hasT3Mcp ? t3CodeOrchestrationInstructions(docsCloud) : undefined;
 }

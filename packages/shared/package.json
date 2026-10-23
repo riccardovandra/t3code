@@ -131,6 +131,10 @@
       "types": "./src/docPaths.ts",
       "import": "./src/docPaths.ts"
     },
+    "./docsCloudProjects": {
+      "types": "./src/docsCloudProjects.ts",
+      "import": "./src/docsCloudProjects.ts"
+    },
     "./htmlRender": {
       "types": "./src/htmlRender.ts",
       "import": "./src/htmlRender.ts"

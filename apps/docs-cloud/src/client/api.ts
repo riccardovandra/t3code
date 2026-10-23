@@ -1,11 +1,12 @@
 import type {
-  AccessibleLibraryProject,
+  AccessibleLibrary,
   DocMember,
   DocRole,
   DocView,
   Me,
+  UserSummary,
 } from "../shared/access.ts";
-import type { DocAnchor } from "../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
   Comment,
@@ -47,14 +48,19 @@ export const clientId = crypto.randomUUID();
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
   setName: (name: string) => request<Me>("PATCH", "/api/me", { name }),
+  /** People on any doc the caller is on, for the share picker. */
+  people: () =>
+    request<{ people: Array<Pick<UserSummary, "name" | "email">> }>("GET", "/api/people"),
   requestCode: (email: string) =>
     request<{ ok: true }>("POST", "/api/auth/request-code", { email }),
   verifyCode: (email: string, code: string) =>
     request<{ email: string }>("POST", "/api/auth/verify", { email, code }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  library: () => request<{ projects: Array<AccessibleLibraryProject> }>("GET", "/api/library"),
-  createProject: (name: string) => request<{ project: Project }>("POST", "/api/projects", { name }),
-  createDoc: (projectId: string, title: string) =>
+  library: () => request<AccessibleLibrary>("GET", "/api/library"),
+  /** Admin only. Returns the existing project when one already has the key (or, without one, the name). */
+  createProject: (name: string, key?: string) =>
+    request<{ project: Project }>("POST", "/api/projects", key ? { name, key } : { name }),
+  createDoc: (projectId: string | null, title: string) =>
     request<DocWithTabs>("POST", "/api/docs", { projectId, title }),
   doc: (docId: string) => request<DocView>("GET", `/api/docs/${docId}`),
   members: (docId: string) =>
@@ -76,6 +82,25 @@ export const api = {
     request<{ members: Array<DocMember> }>("DELETE", `/api/docs/${docId}/members/${memberId}`),
   setDocStatus: (docId: string, status: DocStatus) =>
     request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { status, clientId }),
+  /** `null` moves the doc out of every project. */
+  moveDoc: (docId: string, projectId: string | null) =>
+    request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { projectId, clientId }),
+  renameDoc: (docId: string, title: string) =>
+    request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { title, clientId }),
+  /** Owner only; removes the doc, its tabs, comments, people and images. */
+  deleteDoc: (docId: string) =>
+    request<{ ok: true }>("DELETE", `/api/docs/${docId}?clientId=${encodeURIComponent(clientId)}`),
+  uploadImage: async (docId: string, file: File): Promise<string> => {
+    const response = await fetch(`/api/docs/${docId}/images`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    const data = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (!response.ok || !data.url) throw new ApiError(response.status, data);
+    return data.url;
+  },
   docThreads: (docId: string) =>
     request<{ threads: Array<DocThreadLink> }>("GET", `/api/docs/${docId}/threads`),
   linkThread: (docId: string, input: { environmentId: string; threadId: string; title: string }) =>
@@ -105,8 +130,10 @@ export const api = {
     ),
   comments: (docId: string) =>
     request<{ comments: Array<Comment> }>("GET", `/api/docs/${docId}/comments`),
-  createComment: (tabId: string, input: DocAnchor & { body: string }) =>
-    request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
+  createComment: (
+    tabId: string,
+    input: DocAnchor & { body: string; anchor?: StructuredAnchor | null },
+  ) => request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
   replyComment: (commentId: string, body: string) =>
     request<{ comment: Comment }>("POST", `/api/comments/${commentId}/replies`, {
       body,

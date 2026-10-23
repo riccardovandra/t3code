@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import type { DocAnchor } from "../../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
 import type { Comment, RoomMessage } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 
@@ -47,8 +47,17 @@ export function useComments(docId: string) {
   );
 
   const actions = {
-    create: async (tabId: string, anchor: DocAnchor, body: string) => {
-      const { comment } = await api.createComment(tabId, { ...anchor, body });
+    create: async (
+      tabId: string,
+      anchor: DocAnchor,
+      body: string,
+      structured: StructuredAnchor | null = null,
+    ) => {
+      const { comment } = await api.createComment(tabId, {
+        ...anchor,
+        body,
+        ...(structured ? { anchor: structured } : {}),
+      });
       upsert(comment);
       return comment;
     },

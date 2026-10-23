@@ -103,10 +103,11 @@ export function CommentComposer(props: {
   );
 }
 
+/** Commenting actions; absent for readers who may only view the thread. */
 export interface ThreadHandlers {
-  readonly onReply: (body: string) => Promise<unknown>;
-  readonly onResolve: () => void;
-  readonly onDelete: (commentId: string) => void;
+  readonly onReply?: (body: string) => Promise<unknown>;
+  readonly onResolve?: () => void;
+  readonly onDelete?: (commentId: string) => void;
   /** Present only when a "Send to agent" handler is installed. */
   readonly onSendToAgent?: () => void;
 }
@@ -129,7 +130,12 @@ export function CommentCard(
     >
       {props.anchored ? null : (
         <p className="comment-detached">
-          Text removed: <q>{root.quote}</q>
+          {root.anchor ? "Removed from the table" : "Text removed"}
+          {root.quote ? (
+            <>
+              : <q>{root.quote}</q>
+            </>
+          ) : null}
         </p>
       )}
       <CommentEntry comment={root} />
@@ -139,26 +145,32 @@ export function CommentCard(
             <CommentEntry
               key={reply.id}
               comment={reply}
-              onDelete={() => props.onDelete(reply.id)}
+              {...(props.onDelete ? { onDelete: () => props.onDelete?.(reply.id) } : {})}
             />
           ))}
-          <CommentComposer placeholder="Reply" submitLabel="Reply" onSubmit={props.onReply} />
+          {props.onReply ? (
+            <CommentComposer placeholder="Reply" submitLabel="Reply" onSubmit={props.onReply} />
+          ) : null}
           <div className="comment-actions">
-            <button type="button" className="link-button" onClick={props.onResolve}>
-              Resolve
-            </button>
+            {props.onResolve ? (
+              <button type="button" className="link-button" onClick={props.onResolve}>
+                Resolve
+              </button>
+            ) : null}
             {props.onSendToAgent ? (
               <button type="button" className="link-button" onClick={props.onSendToAgent}>
                 Send to agent
               </button>
             ) : null}
-            <button
-              type="button"
-              className="link-button danger"
-              onClick={() => props.onDelete(root.id)}
-            >
-              Delete thread
-            </button>
+            {props.onDelete ? (
+              <button
+                type="button"
+                className="link-button danger"
+                onClick={() => props.onDelete?.(root.id)}
+              >
+                Delete thread
+              </button>
+            ) : null}
           </div>
         </>
       ) : replies.length > 0 ? (

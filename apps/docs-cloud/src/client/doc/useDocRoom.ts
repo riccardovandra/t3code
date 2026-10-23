@@ -39,9 +39,10 @@ export function useDocRoom(
         if (event.data === "pong") return;
         latest.current.onMessage(JSON.parse(String(event.data)) as RoomMessage);
       });
-      socket.addEventListener("close", () => {
+      socket.addEventListener("close", (event) => {
         if (ping) clearInterval(ping);
-        if (closed) return;
+        // 4403: access removed; 4404: doc deleted. Reconnecting cannot succeed.
+        if (closed || event.code === 4403 || event.code === 4404) return;
         attempts += 1;
         retry = setTimeout(connect, Math.min(30_000, 1000 * 2 ** attempts));
       });

@@ -12,6 +12,13 @@ const markdown = new MarkdownManager({ extensions });
 const parse = (source: string) => schema.nodeFromJSON(markdown.parse(source));
 
 describe("editor anchors", () => {
+  it("matches the Worker's text around a rich table, leaving its JSON out", () => {
+    const source =
+      'Before.\n\n```t3-table\n{"id":"t","columns":[{"id":"a","name":"A","type":"text"}],"rows":[]}\n```\n\nAfter.\n';
+    expect(buildDocTextIndex(parse(source)).text).toBe(markdownToText(source));
+    expect(markdownToText(source)).toBe("Before.\nAfter.");
+  });
+
   it("round-trips a selection across blocks", () => {
     const index = buildDocTextIndex(parse("Intro line\n\nThe plan ships Friday.\n"));
     expect(index.text).toBe("Intro line\nThe plan ships Friday.");

@@ -196,7 +196,7 @@ const cloudShared = {
 const DocsCloudProjectTool = Tool.make("docs_cloud_project", {
   ...cloudShared,
   description:
-    "The Docs Cloud project for the calling thread's T3 Code project: the one with the same name, created if it does not exist yet. Pass its id as projectId to the docs-cloud create_doc tool so the doc lands in this project's library. Fails when Docs Cloud is not set up.",
+    "The Docs Cloud project for the calling thread's T3 Code project, created if it does not exist yet. Its key is the project's git repository (github.com/owner/repo), or title:<name> without a remote, so every checkout of the repository shares it. Pass the key as projectKey (or the id as projectId) to the docs-cloud create_doc tool so the doc lands in this project's library. Fails when Docs Cloud is not set up.",
   parameters: Tool.EmptyParams,
   success: Schema.Struct({ project: DocsCloudProject }),
 })

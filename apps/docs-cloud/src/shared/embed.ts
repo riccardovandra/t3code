@@ -6,15 +6,17 @@
  * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
  * thread started from a doc), `threads` (which linked threads it can open, with
  * their current titles), `comment-sent` (how a sent comment went), `context`
- * (the T3 Code project the panel belongs to, after hello and on change) and
- * `theme` (T3 Code's appearance and resolved palette, after hello and on change;
- * the mobile app sends the same message to the top-level page).
+ * (the T3 Code project the panel belongs to, by key and name, after hello and
+ * on change) and `theme` (T3 Code's appearance and resolved palette, after
+ * hello and on change; the mobile app sends the same message to the top-level
+ * page).
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
  * stored) and `send-comment`. Frame actions are only offered once a parent has
  * said hello. Every message is additive: an older peer ignores unknown types.
  */
+import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
 export type EmbedFeature = "start-work" | "send-to-agent";
@@ -55,15 +57,22 @@ export type EmbedParentMessage =
       /** Null when it reached the agent, else a message for the user. */
       readonly error: string | null;
     }
-  | { readonly type: "t3-docs:context"; readonly projectName: string | null }
+  | {
+      readonly type: "t3-docs:context";
+      /** The T3 Code project's title, for display and for peers that predate keys. */
+      readonly projectName: string | null;
+      /** Its Docs Cloud project key (see `normalizeProjectKey`); absent from older peers. */
+      readonly projectKey: string | null;
+    }
   | EmbedThemeMessage;
 
-/**
- * A T3 Code project uses the Docs Cloud project with the same name, ignoring
- * case and spacing. The T3 server's DocsCloudImport matches names the same way.
- */
-export const projectNameKey = (name: string): string =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
+export {
+  MAX_PROJECT_KEY_LENGTH,
+  normalizeProjectKey,
+  projectNameFromKey,
+  projectNameKey,
+  titleProjectKey,
+} from "@t3tools/shared/docsCloudProjects";
 
 export interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -195,13 +204,16 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
       return isText(data.requestId) && (data.error === null || isText(data.error, 1_000))
         ? { type: data.type, requestId: data.requestId, error: data.error }
         : null;
-    case "t3-docs:context":
-      return data.projectName === null || isText(data.projectName, 1_000)
-        ? {
-            type: data.type,
-            projectName: data.projectName === null ? null : data.projectName.trim() || null,
-          }
-        : null;
+    case "t3-docs:context": {
+      if (data.projectName !== null && !isText(data.projectName, 1_000)) return null;
+      const projectKey =
+        typeof data.projectKey === "string" ? normalizeProjectKey(data.projectKey) : null;
+      return {
+        type: data.type,
+        projectName: data.projectName === null ? null : data.projectName.trim() || null,
+        projectKey,
+      };
+    }
     case "t3-docs:theme":
       return parseThemeMessage(data);
     default:
@@ -210,6 +222,8 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
 }
 
 export const EMBED_ORIGINS_META = "t3-embed-origins";
+/** The app's canonical origin, for links people share; the page may be served from another. */
+export const PUBLIC_ORIGIN_META = "t3-docs-public-origin";
 
 const SOURCE = /^([a-z][a-z0-9+.-]*):\/\/(\*\.)?([a-z0-9.-]+)(?::(\d+|\*))?$/i;
 const ORIGIN = /^([a-z][a-z0-9+.-]*):\/\/([a-z0-9.-]+)(?::(\d+))?$/i;

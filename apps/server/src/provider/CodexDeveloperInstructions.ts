@@ -4,7 +4,7 @@ import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeI
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
-  T3_CODE_ORCHESTRATION_SECTIONS,
+  t3CodeOrchestrationSections,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 /**
@@ -21,6 +21,7 @@ The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators an
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
+  readonly docsCloud?: boolean;
 }
 
 const normalizeAvailability = (
@@ -213,7 +214,9 @@ export function buildCodexAdditionalContext(
   // entries in key order, so the numbering preserves the authored order.
   return {
     ...Object.fromEntries(
-      T3_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [
+      t3CodeOrchestrationSections(
+        typeof toolsAvailable === "boolean" ? false : (toolsAvailable.docsCloud ?? false),
+      ).map((section, index) => [
         `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
         { kind: "application" as const, value: section },
       ]),

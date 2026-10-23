@@ -2,7 +2,7 @@ import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contrac
 import { CloudIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
 
-import { type RightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
+import { docsSurfaceSource, type RightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
 import { Button } from "../ui/button";
 import { useDocsCloudBaseUrl } from "./docsCloud";
@@ -27,7 +27,9 @@ export function DocsSurfaceContent(props: {
   const hasFiles = props.projectId !== null && props.workspaceRoot !== undefined;
   const panels = useRightPanelStore.getState;
 
-  if (baseUrl !== null && (surface.source !== "files" || !hasFiles)) {
+  const source = docsSurfaceSource(surface, { cloudConfigured: baseUrl !== null, hasFiles });
+
+  if (source === "cloud" && baseUrl !== null) {
     return (
       <Suspense fallback={null}>
         <DocsCloudPanel

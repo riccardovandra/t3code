@@ -3,6 +3,11 @@
 
 import type { DocSummary, DocWithTabs, LibraryProject } from "./protocol.ts";
 
+/** The admin: owns everything that predates sharing, and is the only one who creates projects. */
+export const OWNER_USER_ID = "owner";
+
+export const isAdmin = (userId: string) => userId === OWNER_USER_ID;
+
 export type DocRole = "owner" | "editor" | "commenter" | "viewer";
 
 /** Most to least access; the order role pickers list them in. */
@@ -68,6 +73,12 @@ export interface LibraryDoc extends DocSummary {
 /** `GET /api/library` projects: only docs the caller belongs to. */
 export interface AccessibleLibraryProject extends Omit<LibraryProject, "docs"> {
   readonly docs: ReadonlyArray<LibraryDoc>;
+}
+
+/** `GET /api/library`: visible projects by name, and the caller's docs in no project. */
+export interface AccessibleLibrary {
+  readonly projects: ReadonlyArray<AccessibleLibraryProject>;
+  readonly noProjectDocs: ReadonlyArray<LibraryDoc>;
 }
 
 /** `GET /api/docs/:docId`. */

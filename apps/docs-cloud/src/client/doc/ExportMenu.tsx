@@ -1,12 +1,10 @@
-import { useRef, useState, useSyncExternalStore } from "react";
-
-import { hasEmbedParent, postToEmbedParent, subscribeEmbedParent } from "../embedBridge.ts";
+import { postToEmbedParent } from "../embedBridge.ts";
 import { docPath } from "../router.ts";
 import { readyWidgetsForPrint } from "../editor/widget/WidgetView.ts";
 
-const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
+export const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
 
-function download(path: string) {
+export function download(path: string) {
   const link = document.createElement("a");
   link.href = path;
   link.download = "";
@@ -19,117 +17,98 @@ async function fetchMarkdown(path: string): Promise<string> {
   return response.text();
 }
 
-export function ExportMenu(props: {
+/** Copies an export route's Markdown, after `flush` lands pending edits. Call straight from a click. */
+export async function copyMarkdown(flush: () => Promise<void>, path: string): Promise<void> {
+  const markdown = flush().then(() => fetchMarkdown(path));
+  // Handing the clipboard a promise keeps the click's user activation in
+  // Safari, which rejects a write that starts after an await.
+  if (typeof ClipboardItem !== "undefined") {
+    const blob = markdown.then((text) => new Blob([text], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+  } else {
+    await navigator.clipboard.writeText(await markdown);
+  }
+}
+
+export interface ExportAction {
+  readonly id: string;
+  readonly label: string;
+  /**
+   * Must be called straight from the click: copying starts the clipboard
+   * write before any await. Resolves to a short status, if any.
+   */
+  readonly run: () => Promise<string | null>;
+}
+
+/** The doc's export entries, for the title menu. */
+export function exportActions(props: {
   readonly docId: string;
   readonly docTitle: string;
   readonly tabId: string | null;
   /** Saves the open tab's pending edit, so exports include it. */
   readonly flush: () => Promise<void>;
-}) {
+  /** Inside T3 Code, which can recreate the doc in Claude Docs. */
+  readonly inT3Code: boolean;
+}): ReadonlyArray<ExportAction> {
   const { docId, tabId, flush } = props;
-  const menu = useRef<HTMLDetailsElement>(null);
-  const inT3Code = useSyncExternalStore(subscribeEmbedParent, hasEmbedParent);
-  const [status, setStatus] = useState<string | null>(null);
-
-  const run = async (action: () => Promise<void>) => {
-    if (menu.current) menu.current.open = false;
-    setStatus(null);
-    try {
-      await action();
-    } catch {
-      setStatus("Export failed");
-    }
-  };
-
-  const copyTab = (id: string) =>
-    run(async () => {
-      const markdown = flush().then(() => fetchMarkdown(tabExportPath(id)));
-      // Handing the clipboard a promise keeps the click's user activation in
-      // Safari, which rejects a write that starts after an await.
-      if (typeof ClipboardItem !== "undefined") {
-        const blob = markdown.then((text) => new Blob([text], { type: "text/plain" }));
-        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
-      } else {
-        await navigator.clipboard.writeText(await markdown);
-      }
-      setStatus("Copied");
-    });
-
-  return (
-    <div className="export-menu-wrap">
-      {status ? (
-        <span className="muted" role="status">
-          {status}
-        </span>
-      ) : null}
-      <details className="export-menu" ref={menu}>
-        <summary>Export</summary>
-        <div className="export-menu-items" role="menu">
-          {tabId ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() =>
-                  void run(async () => {
-                    await flush();
-                    download(tabExportPath(tabId));
-                  })
-                }
-              >
-                Download tab as Markdown
-              </button>
-              <button type="button" role="menuitem" onClick={() => void copyTab(tabId)}>
-                Copy tab as Markdown
-              </button>
-            </>
-          ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() =>
-              void run(async () => {
-                await flush();
-                download(`/api/docs/${docId}/export.md`);
-              })
-            }
-          >
-            Download doc as Markdown
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() =>
-              void run(async () => {
-                await readyWidgetsForPrint();
-                window.print();
-              })
-            }
-          >
-            Print / Save as PDF
-          </button>
-          {inT3Code ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() =>
-                void run(async () => {
-                  // The agent reads the doc from the server, so pending edits go first.
-                  await flush();
-                  postToEmbedParent({
-                    type: "t3-docs:copy-to-claude-doc",
-                    docId,
-                    title: props.docTitle,
-                    url: `${window.location.origin}${docPath(docId)}`,
-                  });
-                })
-              }
-            >
-              Copy to Claude Doc…
-            </button>
-          ) : null}
-        </div>
-      </details>
-    </div>
+  const actions: Array<ExportAction> = [];
+  if (tabId) {
+    actions.push(
+      {
+        id: "download-tab",
+        label: "Download tab as Markdown",
+        run: async () => {
+          await flush();
+          download(tabExportPath(tabId));
+          return null;
+        },
+      },
+      {
+        id: "copy-tab",
+        label: "Copy tab as Markdown",
+        run: async () => {
+          await copyMarkdown(flush, tabExportPath(tabId));
+          return "Copied the tab as Markdown.";
+        },
+      },
+    );
+  }
+  actions.push(
+    {
+      id: "download-doc",
+      label: "Download doc as Markdown",
+      run: async () => {
+        await flush();
+        download(`/api/docs/${docId}/export.md`);
+        return null;
+      },
+    },
+    {
+      id: "print",
+      label: "Print / Save as PDF",
+      run: async () => {
+        await readyWidgetsForPrint();
+        window.print();
+        return null;
+      },
+    },
   );
+  if (props.inT3Code) {
+    actions.push({
+      id: "copy-to-claude-doc",
+      label: "Copy to Claude Doc…",
+      run: async () => {
+        // The agent reads the doc from the server, so pending edits go first.
+        await flush();
+        postToEmbedParent({
+          type: "t3-docs:copy-to-claude-doc",
+          docId,
+          title: props.docTitle,
+          url: `${window.location.origin}${docPath(docId)}`,
+        });
+        return null;
+      },
+    });
+  }
+  return actions;
 }
