@@ -1,10 +1,12 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useRightPanelStore } from "~/rightPanelStore";
 
 import { Button } from "../ui/button";
+import { type CopyToClaudeDocRequest, parseCopyToClaudeDocMessage } from "./copyToClaudeDoc";
+import { CopyToClaudeDocDialog } from "./CopyToClaudeDocDialog";
 
 interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -29,6 +31,7 @@ function isLocationMessage(value: unknown): value is EmbedLocationMessage {
 export function DocsCloudPanel(props: {
   readonly baseUrl: string;
   readonly threadRef: ScopedThreadRef;
+  readonly projectId: ProjectId | null;
   readonly path: string | undefined;
   readonly onShowFiles: (() => void) | null;
 }) {
@@ -38,10 +41,16 @@ export function DocsCloudPanel(props: {
   // Only the first path loads through src; later ones navigate inside the app.
   const [src] = useState(() => `${origin}${path ?? "/"}`);
   const reported = useRef<string | null>(null);
+  const [copyRequest, setCopyRequest] = useState<CopyToClaudeDocRequest | null>(null);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== origin || event.source !== frame.current?.contentWindow) return;
+      const copy = parseCopyToClaudeDocMessage(event.data, origin);
+      if (copy) {
+        setCopyRequest(copy);
+        return;
+      }
       if (!isLocationMessage(event.data)) return;
       reported.current = event.data.path;
       useRightPanelStore.getState().selectDocsCloud(threadRef, event.data.path, true);
@@ -91,6 +100,14 @@ export function DocsCloudPanel(props: {
           frame.current?.contentWindow?.postMessage({ type: "t3-docs:hello" }, origin);
         }}
       />
+      {copyRequest ? (
+        <CopyToClaudeDocDialog
+          environmentId={threadRef.environmentId}
+          projectId={props.projectId}
+          request={copyRequest}
+          onClose={() => setCopyRequest(null)}
+        />
+      ) : null}
     </section>
   );
 }

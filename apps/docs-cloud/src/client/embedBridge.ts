@@ -14,24 +14,32 @@ import { setSendToAgentHandler } from "./comments/sendToAgent.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 
 let parentOrigin: string | null = null;
-/** What the embedding T3 Code offers; null outside T3 Code or before its hello. */
-let features: ReadonlyArray<EmbedFeature> | null = null;
-const featureListeners = new Set<() => void>();
+/** What the T3 Code that said hello offers beyond navigation. */
+let features: ReadonlyArray<EmbedFeature> = [];
+const parentListeners = new Set<() => void>();
 const messageListeners = new Set<(message: EmbedParentMessage) => void>();
 let removeSendToAgent: (() => void) | null = null;
 
-/** Sends to T3 Code; a no-op until it has said hello. */
-export function postToParent(message: EmbedFrameMessage): void {
+/** True once T3 Code has said hello, so features that need it can show. */
+export function hasEmbedParent(): boolean {
+  return parentOrigin !== null;
+}
+
+export function subscribeEmbedParent(listener: () => void): () => void {
+  parentListeners.add(listener);
+  return () => parentListeners.delete(listener);
+}
+
+/** Sends to the T3 Code window that said hello; a no-op outside T3 Code. */
+export function postToEmbedParent(message: EmbedFrameMessage): void {
   if (parentOrigin) window.parent.postMessage(message, parentOrigin);
 }
 
-const subscribeFeatures = (listener: () => void) => {
-  featureListeners.add(listener);
-  return () => featureListeners.delete(listener);
-};
+const embedFeatures = () => (parentOrigin === null ? null : features);
 
+/** The embedding T3 Code's features; null outside T3 Code or before its hello. */
 export function useEmbedFeatures(): ReadonlyArray<EmbedFeature> | null {
-  return useSyncExternalStore(subscribeFeatures, () => features);
+  return useSyncExternalStore(subscribeEmbedParent, embedFeatures);
 }
 
 /** Parent messages a page reacts to (`threads`, `comment-sent`). */
@@ -42,12 +50,11 @@ export function subscribeParentMessages(
   return () => messageListeners.delete(listener);
 }
 
-function setFeatures(next: ReadonlyArray<EmbedFeature>): void {
-  features = next;
+function installSendToAgent(enabled: boolean): void {
   removeSendToAgent?.();
-  removeSendToAgent = next.includes("send-to-agent")
+  removeSendToAgent = enabled
     ? setSendToAgentHandler(({ docId, docTitle, tabId, thread, url }) =>
-        postToParent({
+        postToEmbedParent({
           type: "t3-docs:send-comment",
           requestId: crypto.randomUUID(),
           docId,
@@ -64,7 +71,6 @@ function setFeatures(next: ReadonlyArray<EmbedFeature>): void {
         }),
       )
     : null;
-  for (const listener of featureListeners) listener();
 }
 
 /**
@@ -83,7 +89,7 @@ export function startEmbedBridge(): void {
   const postLocation = () => {
     const path = window.location.pathname;
     const route = parseRoute(path);
-    postToParent({
+    postToEmbedParent({
       type: "t3-docs:location",
       path,
       docId: route.name === "doc" ? route.docId : null,
@@ -96,8 +102,12 @@ export function startEmbedBridge(): void {
     const message = parseParentMessage(event.data);
     if (!message) return;
     if (message.type === "t3-docs:hello") {
+      const next = message.features ?? [];
+      const changed = parentOrigin !== event.origin || next.join(" ") !== features.join(" ");
       parentOrigin = event.origin;
-      setFeatures(message.features ?? []);
+      features = next;
+      installSendToAgent(next.includes("send-to-agent"));
+      if (changed) for (const listener of parentListeners) listener();
       postLocation();
       return;
     }
@@ -108,7 +118,7 @@ export function startEmbedBridge(): void {
       const { docId, environmentId, threadId, title } = message;
       // Acknowledged only once stored, so T3 Code retries a link that failed.
       void api.linkThread(docId, { environmentId, threadId, title }).then(
-        () => postToParent({ type: "t3-docs:thread-linked", docId, environmentId, threadId }),
+        () => postToEmbedParent({ type: "t3-docs:thread-linked", docId, environmentId, threadId }),
         () => undefined,
       );
     }

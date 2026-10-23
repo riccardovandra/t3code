@@ -7,9 +7,10 @@
  * thread started from a doc), `threads` (which linked threads it can open, with
  * their current titles) and `comment-sent` (how a sent comment went).
  * Frame -> parent: `location` after hello and on every route change,
- * `start-work`, `resolve-threads`, `open-thread`, `thread-linked` (the
- * link-thread record is stored) and `send-comment`.
- * Every message is additive: an older peer ignores types it does not know.
+ * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
+ * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
+ * stored) and `send-comment`. Frame actions are only offered once a parent has
+ * said hello. Every message is additive: an older peer ignores unknown types.
  */
 export type EmbedFeature = "start-work" | "send-to-agent";
 
@@ -47,6 +48,14 @@ export interface EmbedLocationMessage {
   readonly tabId: string | null;
 }
 
+export interface EmbedCopyToClaudeDocMessage {
+  readonly type: "t3-docs:copy-to-claude-doc";
+  readonly docId: string;
+  readonly title: string;
+  /** The doc's permanent URL. */
+  readonly url: string;
+}
+
 /** One message of a comment thread, oldest first. */
 export interface EmbedCommentEntry {
   readonly id: string;
@@ -56,6 +65,7 @@ export interface EmbedCommentEntry {
 
 export type EmbedFrameMessage =
   | EmbedLocationMessage
+  | EmbedCopyToClaudeDocMessage
   | {
       readonly type: "t3-docs:start-work";
       readonly docId: string;
@@ -109,16 +119,18 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
         !data.path.startsWith("//")
         ? { type: data.type, path: data.path }
         : null;
-    case "t3-docs:link-thread":
-      return isText(data.docId) && isThreadRef(data) && isText(data.title, 1_000)
+    case "t3-docs:link-thread": {
+      const { docId, title } = data;
+      return isText(docId) && isText(title, 1_000) && isThreadRef(data)
         ? {
             type: data.type,
-            docId: data.docId,
+            docId,
             environmentId: data.environmentId,
             threadId: data.threadId,
-            title: data.title,
+            title,
           }
         : null;
+    }
     case "t3-docs:threads":
       return Array.isArray(data.threads)
         ? {
@@ -126,7 +138,7 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
             threads: data.threads
               .filter(
                 (thread): thread is EmbedThreadRef & { title: string } =>
-                  isThreadRef(thread) && isText(thread.title, 1_000),
+                  isObject(thread) && isText(thread.title, 1_000) && isThreadRef(thread),
               )
               .map(({ environmentId, threadId, title }) => ({ environmentId, threadId, title })),
           }

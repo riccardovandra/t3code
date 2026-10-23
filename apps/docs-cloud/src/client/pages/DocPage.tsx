@@ -39,7 +39,7 @@ import { TabSaver } from "../doc/tabSaver.ts";
 import { applyPlacements, orderTabs, removeTabs } from "../doc/tabTree.ts";
 import { useDocRoom } from "../doc/useDocRoom.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
-import { postToParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
+import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { docPath, navigate } from "../router.ts";
 
 export function DocPage(props: { readonly docId: string; readonly tabId: string | null }) {
@@ -297,7 +297,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   );
   useEffect(() => {
     if (!embedded || threadLinks.length === 0) return;
-    postToParent({
+    postToEmbedParent({
       type: "t3-docs:resolve-threads",
       threads: threadLinks.map(({ environmentId, threadId }) => ({ environmentId, threadId })),
     });
@@ -312,7 +312,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const startWork = async () => {
     if (!doc) return;
     await saver.current?.flush();
-    postToParent({
+    postToEmbedParent({
       type: "t3-docs:start-work",
       docId: props.docId,
       tabId: activeTabId,
@@ -368,7 +368,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
               threads={threadLinks}
               openable={openable}
               onOpen={({ environmentId, threadId }) =>
-                postToParent({ type: "t3-docs:open-thread", environmentId, threadId })
+                postToEmbedParent({ type: "t3-docs:open-thread", environmentId, threadId })
               }
               onUnlink={(linkId) =>
                 void api.unlinkThread(props.docId, linkId).then(
@@ -389,6 +389,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
             />
             <ExportMenu
               docId={props.docId}
+              docTitle={doc.title}
               tabId={activeTabId}
               flush={async () => saver.current?.flush()}
             />
