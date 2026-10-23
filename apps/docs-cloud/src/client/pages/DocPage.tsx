@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import type { DocRole } from "../../shared/access.ts";
-import type { DocAnchor } from "../../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
 import {
   DOC_STATUS_LABEL,
   DOC_STATUSES,
@@ -40,6 +40,7 @@ import { TabSaver } from "../doc/tabSaver.ts";
 import { applyPlacements, orderTabs, removeTabs } from "../doc/tabTree.ts";
 import { useDocRoom } from "../doc/useDocRoom.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
+import { WIDGET_PICK_EVENT, type WidgetPickDetail } from "../editor/widget/WidgetView.ts";
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { docPath, navigate } from "../router.ts";
 import { ShareButton } from "../share/ShareButton.tsx";
@@ -219,7 +220,11 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   };
 
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ tabId: string; anchor: DocAnchor } | null>(null);
+  const [draft, setDraft] = useState<{
+    tabId: string;
+    anchor: DocAnchor;
+    structured: StructuredAnchor | null;
+  } | null>(null);
   const [docBody, setDocBody] = useState<HTMLDivElement | null>(null);
   const narrow = useMediaQuery("(max-width: 1279px)");
   const canSendToAgent = useSyncExternalStore(subscribeSendToAgent, hasSendToAgentHandler);
@@ -235,7 +240,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const resolvedThreads = threads.filter(
     (thread) => thread.root.resolvedAt !== null && tabs.has(thread.root.tabId),
   );
-  const draftAnchor = draft && draft.tabId === activeTabId ? draft.anchor : null;
+  const draftAnchor = draft && draft.tabId === activeTabId ? draft : null;
   const anchors = useMemo(
     () => [
       ...openThreads.map(({ root }) => ({
@@ -243,8 +248,11 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
         quote: root.quote,
         prefix: root.prefix,
         suffix: root.suffix,
+        structured: root.anchor,
       })),
-      ...(draftAnchor ? [{ id: DRAFT_COMMENT_ID, ...draftAnchor }] : []),
+      ...(draftAnchor
+        ? [{ id: DRAFT_COMMENT_ID, ...draftAnchor.anchor, structured: draftAnchor.structured }]
+        : []),
     ],
     [openThreads, draftAnchor],
   );
@@ -252,7 +260,55 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const startComment = () => {
     const anchor = editor ? selectionAnchor(editor) : null;
     if (!anchor || !activeTabId) return;
-    setDraft({ tabId: activeTabId, anchor });
+    setDraft({ tabId: activeTabId, anchor, structured: null });
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
+  const startCellComment = (structured: StructuredAnchor, text: string) => {
+    if (!activeTabId) return;
+    setDraft({ tabId: activeTabId, anchor: { quote: text, prefix: "", suffix: "" }, structured });
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
+  // A diagram label just clicked: its thread opens, or "Comment" is offered beside the diagram.
+  const [labelPick, setLabelPick] = useState<{
+    anchor: StructuredAnchor;
+    top: number;
+  } | null>(null);
+  const openThreadsRef = useRef(openThreads);
+  useLayoutEffect(() => {
+    openThreadsRef.current = openThreads;
+  });
+  useEffect(() => {
+    if (!docBody) return;
+    const onPick = (event: Event) => {
+      const { diagramId, textId } = (event as CustomEvent<WidgetPickDetail>).detail;
+      if (!textId || !(event.target instanceof HTMLElement)) {
+        setLabelPick(null);
+        return;
+      }
+      const thread = openThreadsRef.current.find(
+        ({ root }) =>
+          root.anchor?.kind === "label" &&
+          root.anchor.blockId === diagramId &&
+          root.anchor.textId === textId,
+      );
+      if (thread) setActiveCommentId(thread.root.id);
+      const top = event.target.getBoundingClientRect().top - docBody.getBoundingClientRect().top;
+      setLabelPick({
+        anchor: { kind: "label", blockId: diagramId, textId },
+        top: Math.round(top),
+      });
+    };
+    docBody.addEventListener(WIDGET_PICK_EVENT, onPick);
+    return () => docBody.removeEventListener(WIDGET_PICK_EVENT, onPick);
+  }, [docBody]);
+
+  const startLabelComment = (structured: StructuredAnchor) => {
+    if (!activeTabId) return;
+    setLabelPick(null);
+    // The Worker fills the quote with the label's current words.
+    setDraft({ tabId: activeTabId, anchor: { quote: "", prefix: "", suffix: "" }, structured });
     setActiveCommentId(DRAFT_COMMENT_ID);
   };
 
@@ -260,8 +316,12 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     anchors,
     activeId: activeCommentId,
     container: docBody,
-    onClick: setActiveCommentId,
+    onClick: (id) => {
+      setLabelPick(null);
+      setActiveCommentId(id);
+    },
     onShortcut: startComment,
+    onCellComment: startCellComment,
   });
 
   const commentFailed = (cause: unknown) => {
@@ -449,13 +509,17 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
               tops={tops}
               activeId={activeCommentId}
               narrow={narrow}
-              selectionTop={selectionTop}
+              selectionTop={selectionTop ?? labelPick?.top ?? null}
               draftOpen={draftAnchor !== null}
-              onStartComment={startComment}
+              onStartComment={
+                selectionTop === null && labelPick
+                  ? () => startLabelComment(labelPick.anchor)
+                  : startComment
+              }
               onSubmitDraft={async (body) => {
                 if (!draft) return;
                 const comment = await comments.actions
-                  .create(draft.tabId, draft.anchor, body)
+                  .create(draft.tabId, draft.anchor, body, draft.structured)
                   .catch(commentFailed);
                 setDraft(null);
                 setActiveCommentId(comment.id);

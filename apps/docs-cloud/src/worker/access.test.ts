@@ -527,3 +527,42 @@ describe("migration 0004 backfill", () => {
     });
   });
 });
+
+describe("rich table access", () => {
+  it("lets a commenter comment on a cell but only an editor change the table", async () => {
+    const { api, owner, as, tab, person } = await setup();
+    const table = {
+      id: "t1",
+      columns: [{ id: "a", name: "A", type: "text" }],
+      rows: [{ id: "r1", cells: { a: "x" } }],
+    };
+    await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: {
+        baseVersion: tab.version,
+        markdown: `\`\`\`t3-table\n${JSON.stringify(table)}\n\`\`\``,
+      },
+      headers: as(owner),
+    });
+    const commenter = await mintToken(api, await person("c@example.com", "commenter"));
+    const editor = await mintToken(api, await person("e@example.com", "editor"));
+    const cell = { tabId: tab.id, tableId: "t1", rowId: "r1", colId: "a", value: "y" };
+    const anchor = { kind: "cell", blockId: "t1", rowId: "r1", colId: "a" };
+
+    const comment = await mcpTool(api, commenter, "create_comment", {
+      tabId: tab.id,
+      anchor,
+      body: "?",
+    });
+    expect(comment.isError).toBe(false);
+    for (const [name, args] of [
+      ["update_table_cell", cell],
+      ["add_table_row", { tabId: tab.id, tableId: "t1", cells: {} }],
+    ] as const) {
+      expect(await mcpTool(api, commenter, name, args)).toMatchObject({
+        isError: true,
+        body: { error: "forbidden" },
+      });
+    }
+    expect((await mcpTool(api, editor, "update_table_cell", cell)).isError).toBe(false);
+  });
+});
