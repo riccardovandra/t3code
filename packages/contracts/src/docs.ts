@@ -1,6 +1,12 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 // Docs are markdown files in the project, read and written through the
 // existing project file RPCs. Only comments live on the server, keyed by
@@ -158,6 +164,100 @@ export class DocsError extends Schema.TaggedError<DocsError>()("DocsError", {
         return "The thread to send this comment to no longer exists.";
       case "delivery_failed":
         return "The comment was saved, but it could not be sent to the agent.";
+    }
+  }
+}
+
+// Moving file docs into Docs Cloud. Each T3 project imports into the Docs Cloud
+// project with the same name; the server holds the token and records each
+// imported file so a second import skips it or updates the same doc.
+export const DocsCloudProject = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: Schema.String,
+  url: Schema.String,
+});
+export type DocsCloudProject = typeof DocsCloudProject.Type;
+
+export const DocsCloudImportRecord = Schema.Struct({
+  docPath: DocPath,
+  docId: TrimmedNonEmptyString,
+  url: Schema.String,
+  importedAt: IsoDateTime,
+});
+export type DocsCloudImportRecord = typeof DocsCloudImportRecord.Type;
+
+export const DocsCloudImportsInput = Schema.Struct({
+  projectId: ProjectId,
+  cwd: TrimmedNonEmptyString,
+});
+export type DocsCloudImportsInput = typeof DocsCloudImportsInput.Type;
+
+export const DocsCloudImportsResult = Schema.Struct({
+  // Every doc under docs/ in the checkout, so a client can import them one by one.
+  docs: Schema.Array(Schema.Struct({ docPath: DocPath, title: Schema.String })),
+  imports: Schema.Array(DocsCloudImportRecord),
+});
+export type DocsCloudImportsResult = typeof DocsCloudImportsResult.Type;
+
+export const DocsCloudImportInput = Schema.Struct({
+  projectId: ProjectId,
+  // The checkout to read files from; comments are shared by every checkout of the project.
+  cwd: TrimmedNonEmptyString,
+  // Omitted imports every doc under docs/.
+  docPaths: Schema.optional(Schema.Array(DocPath).check(Schema.isMaxLength(200))),
+  // Already-imported docs are skipped unless this replaces their first tab with the file.
+  update: Schema.optional(Schema.Boolean),
+});
+export type DocsCloudImportInput = typeof DocsCloudImportInput.Type;
+
+export const DocsCloudSkippedComment = Schema.Struct({
+  commentId: DocCommentId,
+  quote: Schema.String,
+  reason: Schema.Literals(["text_not_found", "failed"]),
+});
+export type DocsCloudSkippedComment = typeof DocsCloudSkippedComment.Type;
+
+export const DocsCloudImportFileResult = Schema.Struct({
+  docPath: Schema.String,
+  status: Schema.Literals(["imported", "updated", "skipped", "failed"]),
+  doc: Schema.NullOr(DocsCloudImportRecord),
+  error: Schema.NullOr(Schema.String),
+  commentsImported: NonNegativeInt,
+  commentsSkipped: Schema.Array(DocsCloudSkippedComment),
+});
+export type DocsCloudImportFileResult = typeof DocsCloudImportFileResult.Type;
+
+export const DocsCloudImportResult = Schema.Struct({
+  project: DocsCloudProject,
+  results: Schema.Array(DocsCloudImportFileResult),
+});
+export type DocsCloudImportResult = typeof DocsCloudImportResult.Type;
+
+export class DocsCloudError extends Schema.TaggedError<DocsCloudError>()("DocsCloudError", {
+  reason: Schema.Literals([
+    "not_configured",
+    "unreachable",
+    "unauthorized",
+    "failed",
+    "not_found",
+    "persistence",
+  ]),
+  detail: Schema.optional(Schema.String),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "not_configured":
+        return "Docs Cloud is not set up. Add it under Settings > MCP servers.";
+      case "unreachable":
+        return "Docs Cloud could not be reached. Check the connection and try again.";
+      case "unauthorized":
+        return "Docs Cloud rejected the API token. Paste a new one under Settings > MCP servers.";
+      case "failed":
+        return `Docs Cloud returned an error${this.detail ? ` (${this.detail})` : ""}.`;
+      case "not_found":
+        return "The T3 Code project was not found.";
+      case "persistence":
+        return "The import record could not be saved. Try again.";
     }
   }
 }

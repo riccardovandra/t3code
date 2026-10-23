@@ -72,6 +72,7 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import * as DocsCloudImport from "../docs/DocsCloudImport.ts";
 import * as DocsHandlers from "./toolkits/docs/handlers.ts";
 import { DocsToolkit } from "./toolkits/docs/tools.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
@@ -1002,6 +1003,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   );
 
 export const layerDocsToolkit = toolkitRegistration(DocsToolkit, DocsHandlers.layer).pipe(
+  Layer.provide(DocsCloudImport.layer),
   Layer.provide(WorkspaceDocs.layer),
 );
 

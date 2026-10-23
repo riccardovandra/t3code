@@ -103,6 +103,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.docsSendCloudComment]: "workspace",
   [WS_METHODS.docsSetCommentResolved]: "workspace",
   [WS_METHODS.docsDeleteComment]: "workspace",
+  [WS_METHODS.docsCloudListImports]: "workspace",
+  [WS_METHODS.docsCloudImport]: "workspace",
   [WS_METHODS.scheduledTasksList]: "scheduledTasks",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",
   [WS_METHODS.scheduledTasksUpsert]: "scheduledTasks",

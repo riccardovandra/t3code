@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseParentMessage } from "./embed.ts";
+import { parseParentMessage, projectNameKey } from "./embed.ts";
 
 describe("parseParentMessage", () => {
   it("keeps only the features this app knows from hello", () => {
@@ -20,6 +20,19 @@ describe("parseParentMessage", () => {
     });
     expect(parseParentMessage({ type: "t3-docs:navigate", path: "//evil.test" })).toBeNull();
     expect(parseParentMessage({ type: "t3-docs:navigate", path: "https://evil.test" })).toBeNull();
+  });
+
+  it("takes the project context as a trimmed name or null", () => {
+    expect(parseParentMessage({ type: "t3-docs:context", projectName: " Site " })).toEqual({
+      type: "t3-docs:context",
+      projectName: "Site",
+    });
+    expect(parseParentMessage({ type: "t3-docs:context", projectName: "   " })).toEqual({
+      type: "t3-docs:context",
+      projectName: null,
+    });
+    expect(parseParentMessage({ type: "t3-docs:context", projectName: 3 })).toBeNull();
+    expect(projectNameKey("  Uplifted   SITE ")).toBe(projectNameKey("uplifted site"));
   });
 
   it("validates thread links and drops malformed thread entries", () => {

@@ -3,6 +3,8 @@ import * as McpServerOAuth from "./mcpHub/McpServerOAuth.ts";
 import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
+import * as DocsCloudImport from "./docs/DocsCloudImport.ts";
+import * as WorkspaceDocs from "./workspace/WorkspaceDocs.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -578,6 +580,8 @@ const FORK_RPC_METHODS = [
   WS_METHODS.docsSendCloudComment,
   WS_METHODS.docsSetCommentResolved,
   WS_METHODS.docsDeleteComment,
+  WS_METHODS.docsCloudListImports,
+  WS_METHODS.docsCloudImport,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1288,6 +1292,7 @@ const layerAiPmDocsRpc = Layer.unwrap(
     const aiPm = yield* AiPmService.AiPmService;
     const docComments = yield* DocCommentsService.DocCommentsService;
     const docCommentDelivery = yield* DocCommentDelivery.DocCommentDelivery;
+    const docsCloudImport = yield* DocsCloudImport.DocsCloudImport;
     return Layer.mergeAll(
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmList, () => aiPm.list()),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmBrief, (input) => aiPm.brief(input)),
@@ -1315,6 +1320,12 @@ const layerAiPmDocsRpc = Layer.unwrap(
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsDeleteComment, (input) =>
         docComments.delete(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudListImports, (input) =>
+        docsCloudImport.listImports(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudImport, (input) =>
+        docsCloudImport.importDocs(input),
       ),
     );
   }),
@@ -3393,7 +3404,12 @@ export const layer = Layer.unwrap(
               // their defects, not the rest of the server's.
               Layer.provide(DefectReporter.layer),
               Layer.provide(
-                DocCommentDelivery.layer.pipe(Layer.provideMerge(DocCommentsService.layer)),
+                DocsCloudImport.layer.pipe(
+                  Layer.provideMerge(
+                    DocCommentDelivery.layer.pipe(Layer.provideMerge(DocCommentsService.layer)),
+                  ),
+                  Layer.provide(WorkspaceDocs.layer),
+                ),
               ),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AiPmService.layer.pipe(Layer.provide(ProcessRunner.layer))),

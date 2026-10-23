@@ -5,7 +5,8 @@
  * `location`; `features` lists what this T3 Code can do for the doc),
  * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
  * thread started from a doc), `threads` (which linked threads it can open, with
- * their current titles) and `comment-sent` (how a sent comment went).
+ * their current titles), `comment-sent` (how a sent comment went) and `context`
+ * (the T3 Code project the panel belongs to, after hello and on change).
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
@@ -39,7 +40,15 @@ export type EmbedParentMessage =
       readonly requestId: string;
       /** Null when it reached the agent, else a message for the user. */
       readonly error: string | null;
-    };
+    }
+  | { readonly type: "t3-docs:context"; readonly projectName: string | null };
+
+/**
+ * A T3 Code project uses the Docs Cloud project with the same name, ignoring
+ * case and spacing. The T3 server's DocsCloudImport matches names the same way.
+ */
+export const projectNameKey = (name: string): string =>
+  name.trim().replace(/\s+/g, " ").toLowerCase();
 
 export interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -146,6 +155,13 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
     case "t3-docs:comment-sent":
       return isText(data.requestId) && (data.error === null || isText(data.error, 1_000))
         ? { type: data.type, requestId: data.requestId, error: data.error }
+        : null;
+    case "t3-docs:context":
+      return data.projectName === null || isText(data.projectName, 1_000)
+        ? {
+            type: data.type,
+            projectName: data.projectName === null ? null : data.projectName.trim() || null,
+          }
         : null;
     default:
       return null;

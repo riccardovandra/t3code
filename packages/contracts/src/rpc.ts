@@ -18,6 +18,11 @@ import {
   DocCommentSetResolvedInput,
   DocCommentsListInput,
   DocCommentsResult,
+  DocsCloudError,
+  DocsCloudImportInput,
+  DocsCloudImportResult,
+  DocsCloudImportsInput,
+  DocsCloudImportsResult,
   DocsError,
 } from "./docs.ts";
 import {
@@ -554,6 +559,8 @@ export const WS_METHODS = {
   docsSendCloudComment: "docs.sendCloudComment",
   docsSetCommentResolved: "docs.setCommentResolved",
   docsDeleteComment: "docs.deleteComment",
+  docsCloudListImports: "docsCloud.listImports",
+  docsCloudImport: "docsCloud.import",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1892,6 +1899,17 @@ const WsDocsDeleteCommentRpc = Rpc.make(WS_METHODS.docsDeleteComment, {
   error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
 });
 
+const WsDocsCloudListImportsRpc = Rpc.make(WS_METHODS.docsCloudListImports, {
+  payload: DocsCloudImportsInput,
+  success: DocsCloudImportsResult,
+  error: Schema.Union([DocsCloudError, EnvironmentAuthorizationError]),
+});
+const WsDocsCloudImportRpc = Rpc.make(WS_METHODS.docsCloudImport, {
+  payload: DocsCloudImportInput,
+  success: DocsCloudImportResult,
+  error: Schema.Union([DocsCloudError, EnvironmentAuthorizationError]),
+});
+
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   payload: Schema.Struct({}),
   success: McpServerListResult,
@@ -2037,6 +2055,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsDocsSendCloudCommentRpc,
   WsDocsSetCommentResolvedRpc,
   WsDocsDeleteCommentRpc,
+  WsDocsCloudListImportsRpc,
+  WsDocsCloudImportRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

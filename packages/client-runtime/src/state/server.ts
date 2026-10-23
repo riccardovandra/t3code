@@ -1121,6 +1121,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.docsListComments,
       staleTimeMs: 5_000,
     }),
+    docsCloudImports: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:docs-cloud:imports",
+      tag: WS_METHODS.docsCloudListImports,
+      staleTimeMs: 5_000,
+    }),
     scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:scheduled-task:webhook-deliveries",
       tag: WS_METHODS.scheduledTasksListWebhookDeliveries,
@@ -1356,6 +1361,10 @@ export function createServerEnvironmentAtoms<R, E>(
     deleteDocComment: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:docs:delete-comment",
       tag: WS_METHODS.docsDeleteComment,
+    }),
+    importDocsToCloud: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs-cloud:import",
+      tag: WS_METHODS.docsCloudImport,
     }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",

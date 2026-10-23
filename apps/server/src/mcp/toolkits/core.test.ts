@@ -34,6 +34,8 @@ import {
 } from "../../orchestration-v2/Orchestrator.ts";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import * as McpServerRegistry from "../../mcpHub/McpServerRegistry.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as ServerConfig from "../../config.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
@@ -330,6 +332,9 @@ it.effect("returns a created doc that Codex and Claude tool rows both carry", ()
             ),
             Layer.provide(Layer.mock(DocCommentsService.DocCommentsService)({})),
             Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+            Layer.provide(Layer.mock(McpServerRegistry.McpServerRegistry)({})),
+            Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
+            Layer.provide(FetchHttpClient.layer),
             Layer.provide(
               Layer.mock(ThreadManagement.ThreadManagementService)({
                 getThreadShell: (id) =>

@@ -340,6 +340,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   docs_create: tool(["Create", "Creating", "Created", "a doc"], "docs"),
   docs_open: tool(["Open", "Opening", "Opened", "a doc"], "docs"),
   docs_list_comments: tool(["Read", "Reading", "Read", "doc comments"], "docs-comments"),
+  docs_cloud_project: tool(["Find", "Finding", "Found", "the Docs Cloud project"], "docs"),
+  docs_cloud_import: tool(["Import", "Importing", "Imported", "docs into Docs Cloud"], "docs"),
   docs_comment_create: tool(
     ["Comment on", "Commenting on", "Commented on", "a doc"],
     "docs-comments",

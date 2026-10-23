@@ -3,6 +3,8 @@ import {
   DocCommentId,
   DocCommentMutationResult,
   DocPath,
+  DocsCloudImportResult,
+  DocsCloudProject,
   NonNegativeInt,
   OrchestratorMcpFailure,
   TrimmedNonEmptyString,
@@ -11,6 +13,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as DocCommentsService from "../../../docs/DocCommentsService.ts";
+import * as DocsCloudImport from "../../../docs/DocsCloudImport.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as WorkspaceDocs from "../../../workspace/WorkspaceDocs.ts";
@@ -185,6 +188,44 @@ const DocsCommentResolveTool = Tool.make("docs_comment_resolve", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
+const cloudShared = {
+  ...shared,
+  dependencies: [...shared.dependencies, DocsCloudImport.DocsCloudImport],
+};
+
+const DocsCloudProjectTool = Tool.make("docs_cloud_project", {
+  ...cloudShared,
+  description:
+    "The Docs Cloud project for the calling thread's T3 Code project: the one with the same name, created if it does not exist yet. Pass its id as projectId to the docs-cloud create_doc tool so the doc lands in this project's library. Fails when Docs Cloud is not set up.",
+  parameters: Tool.EmptyParams,
+  success: Schema.Struct({ project: DocsCloudProject }),
+})
+  .annotate(Tool.Title, "Find this project in Docs Cloud")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, true);
+
+const DocsCloudImportTool = Tool.make("docs_cloud_import", {
+  ...cloudShared,
+  description:
+    "Move this project's markdown docs (files under docs/) into Docs Cloud, each as its own doc in this project's Docs Cloud library, with open review comments re-created where their quoted text is still present. The files and their comments stay where they are. Docs imported before are skipped unless update is true, which replaces the Docs Cloud doc's first tab with the file. Omit docPaths to import every doc. Returns each file's result and the comments that could not be placed.",
+  parameters: Schema.Struct({
+    docPaths: Schema.optional(Schema.Array(DocPathParameter).check(Schema.isMaxLength(200))),
+    update: Schema.optional(
+      Schema.Boolean.annotate({
+        description: "Overwrite already-imported docs with the current file. Defaults to false.",
+      }),
+    ),
+  }),
+  success: DocsCloudImportResult,
+})
+  .annotate(Tool.Title, "Import docs into Docs Cloud")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true);
+
 export const DocsToolkit = Toolkit.make(
   DocsListTool,
   DocsReadTool,
@@ -194,4 +235,6 @@ export const DocsToolkit = Toolkit.make(
   DocsCommentCreateTool,
   DocsCommentReplyTool,
   DocsCommentResolveTool,
+  DocsCloudProjectTool,
+  DocsCloudImportTool,
 );

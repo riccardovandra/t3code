@@ -11,6 +11,7 @@ import {
 import { isAgentAuthor } from "../shared/threads.ts";
 import { api } from "./api.ts";
 import { setSendToAgentHandler } from "./comments/sendToAgent.ts";
+import { setEmbedProjectName } from "./embedContext.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 
 let parentOrigin: string | null = null;
@@ -114,6 +115,8 @@ export function startEmbedBridge(): void {
     if (!parentOrigin) return;
     if (message.type === "t3-docs:navigate") {
       navigate(message.path);
+    } else if (message.type === "t3-docs:context") {
+      setEmbedProjectName(message.projectName);
     } else if (message.type === "t3-docs:link-thread") {
       const { docId, environmentId, threadId, title } = message;
       // Acknowledged only once stored, so T3 Code retries a link that failed.
