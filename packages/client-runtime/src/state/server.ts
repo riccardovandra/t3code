@@ -1265,6 +1265,35 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsImport,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Fork: saved skill sources and the library previewed from them.
+    listSkillSources: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skill-sources:list",
+      tag: WS_METHODS.skillSourcesList,
+      staleTimeMs: 60_000,
+      idleTtlMs: 5 * 60_000,
+    }),
+    upsertSkillSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-sources:upsert",
+      tag: WS_METHODS.skillSourcesUpsert,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    removeSkillSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-sources:remove",
+      tag: WS_METHODS.skillSourcesRemove,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    // A preview fetches the source, so the server caches it too; a refresh
+    // runs as a command with `refresh`, then the query reads the new cache.
+    listSkillLibrary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skill-library:list",
+      tag: WS_METHODS.skillLibraryList,
+      staleTimeMs: 10 * 60_000,
+      idleTtlMs: 30 * 60_000,
+    }),
+    refreshSkillLibrary: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skill-library:refresh",
+      tag: WS_METHODS.skillLibraryList,
+    }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,

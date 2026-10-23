@@ -17,6 +17,7 @@ import * as Ref from "effect/Ref";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import * as SkillLibrary from "./SkillLibrary.ts";
 import { lockedInstallSource } from "./SkillLibrary.ts";
 
@@ -51,6 +52,10 @@ const withLibrary = <A, E>(
     readonly providers: Ref.Ref<ReadonlyArray<ServerProvider>>;
     readonly refreshed: Ref.Ref<ReadonlyArray<string>>;
   }) => Effect.Effect<A, E>,
+  options: {
+    /** Fork: instances whose Claude home is under the temp HOME, by instance id. */
+    readonly claudeHomes?: Readonly<Record<string, string>>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -135,12 +140,33 @@ const withLibrary = <A, E>(
           Layer.provide(ProcessRunner.layer),
           Layer.provide(Layer.succeed(ProviderRegistry.ProviderRegistry, registry)),
           Layer.provide(Layer.succeed(ProjectService.ProjectService, projects)),
+          Layer.provide(
+            ServerSettingsService.layerTest({
+              providerInstances: Object.fromEntries(
+                Object.entries(options.claudeHomes ?? {}).map(([instanceId, relative]) => [
+                  instanceId,
+                  {
+                    driver: "claudeAgent",
+                    environment: [
+                      {
+                        name: "CLAUDE_CONFIG_DIR",
+                        value: path.join(home, relative),
+                        sensitive: false,
+                      },
+                    ],
+                  },
+                ]),
+              ),
+            }),
+          ),
         ),
       ),
       Effect.provideService(HostProcess.Environment, {
         ...process.env,
         HOME: home,
         XDG_STATE_HOME: "",
+        // The default Claude instance would otherwise use the real one.
+        CLAUDE_CONFIG_DIR: "",
       }),
       Effect.provideService(HostProcess.Arguments, [process.execPath, entry]),
       Effect.provideService(HostProcess.IsExecutable, false),
@@ -570,3 +596,56 @@ describe("lockedInstallSource", () => {
     ).toBeNull();
   });
 });
+
+it.effect("links environment installs into each Claude instance's own home and lists them", () =>
+  withLibrary(
+    ({ library, home, source, providers }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const bark = { ...claude, instanceId: ProviderInstanceId.make("claudeBark") };
+        yield* Ref.set(providers, [claude, bark]);
+
+        yield* library.install({ source, skills: ["review"], target: { kind: "environment" } });
+        const installed = path.join(home, ".agents", "skills", "review");
+        const barkLink = path.join(home, ".claude-bark", "skills", "review");
+        assert.equal(yield* fileSystem.readLink(barkLink), installed);
+        assert.isTrue(yield* fileSystem.exists(path.join(home, ".claude", "skills", "review")));
+
+        // Claude Bark reports its copy; it is the environment's, from the source.
+        yield* Ref.set(providers, [
+          claude,
+          {
+            ...bark,
+            skills: [
+              {
+                name: "review",
+                path: path.join(barkLink, "SKILL.md"),
+                scope: "user",
+                enabled: true,
+              },
+            ],
+          },
+        ]);
+        const inspected = yield* library.inspect({});
+        assert.deepEqual(
+          inspected.folders.map((folder) => [
+            folder.path,
+            folder.location?.kind,
+            folder.installed?.target.kind,
+          ]),
+          [[path.join(barkLink, "SKILL.md"), "environment", "environment"]],
+        );
+
+        yield* library.remove({ name: "review", target: { kind: "environment" } });
+        assert.isFalse(yield* fileSystem.exists(installed));
+        assert.isFalse(
+          yield* fileSystem.readLink(barkLink).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+      }).pipe(Effect.provide(NodeServices.layer)),
+    { claudeHomes: { claudeBark: ".claude-bark" } },
+  ),
+);
