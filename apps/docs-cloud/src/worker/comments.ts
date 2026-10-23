@@ -2,7 +2,14 @@
 // go through `applyCommentOp`, which the DocRoom runs so open editors hear
 // about them; reads come straight from D1.
 
-import { locateAnchor, type DocAnchor } from "../shared/anchors.ts";
+import {
+  locateAnchor,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+  type DocAnchor,
+  type StructuredAnchor,
+  type StructuredAnchorTarget,
+} from "../shared/anchors.ts";
 import type { Comment, RoomMessage } from "../shared/protocol.ts";
 import { AGENT_AUTHOR_PREFIX, isAgentAuthor } from "../shared/threads.ts";
 import { randomId } from "./crypto.ts";
@@ -20,6 +27,7 @@ interface CommentRow {
   quote: string;
   prefix: string;
   suffix: string;
+  anchor: string | null;
   body: string;
   author: string;
   resolved_at: number | null;
@@ -35,12 +43,22 @@ const toComment = (row: CommentRow): Comment => ({
   quote: row.quote,
   prefix: row.prefix,
   suffix: row.suffix,
+  anchor: parseStoredAnchor(row.anchor),
   body: row.body,
   author: row.author,
   resolvedAt: row.resolved_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+function parseStoredAnchor(json: string | null): StructuredAnchor | null {
+  if (json === null) return null;
+  try {
+    return parseStructuredAnchor(JSON.parse(json));
+  } catch {
+    return null;
+  }
+}
 
 /** Who is acting on a comment: the owner (any owner email) or a named agent. */
 export type CommentActor =
@@ -83,16 +101,36 @@ export async function getComment(db: D1Database, commentId: string): Promise<Com
   return toComment(row);
 }
 
-/** Whether a thread's quoted passage is still in its tab, given the tab's `markdownToText`. */
-export function anchorStatus(root: Comment, tabText: string): "anchored" | "text_removed" {
-  return locateAnchor(tabText, root) ? "anchored" : "text_removed";
+export type AnchorStatus = "anchored" | "text_removed" | "orphaned";
+
+/**
+ * Whether a thread still has its place in the tab: a quote anchor whose text
+ * is gone reads `text_removed`; a structured anchor whose cell or label is
+ * gone reads `orphaned`. `tabText` is the tab's `markdownToText`, computed
+ * only when a quote anchor needs it.
+ */
+export function anchorStatus(
+  root: Comment,
+  tab: { readonly markdown: string },
+  tabText: () => string,
+): AnchorStatus {
+  if (root.anchor !== null) {
+    return resolveStructuredAnchor(tab.markdown, root.anchor) ? "anchored" : "orphaned";
+  }
+  return locateAnchor(tabText(), root) ? "anchored" : "text_removed";
 }
+
+/** The quote stored with a structured anchor: the cell's text, else the caller's label. */
+export const structuredQuote = (target: StructuredAnchorTarget, fallback: string) =>
+  (target.kind === "cell" ? target.text : fallback).slice(0, MAX_QUOTE_LENGTH);
 
 export type CommentOp =
   | {
       readonly kind: "create";
       readonly tabId: string;
       readonly anchor: DocAnchor;
+      /** A cell or label anchor; `anchor.quote` then holds its text. */
+      readonly structuredAnchor?: StructuredAnchor | null;
       readonly body: string;
       readonly author: string;
     }
@@ -128,6 +166,7 @@ export async function applyCommentOp(
           tabId: tab.id,
           parentId: null,
           ...op.anchor,
+          anchor: op.structuredAnchor ?? null,
           body: op.body,
           author: op.author,
           resolvedAt: null,
@@ -150,6 +189,7 @@ export async function applyCommentOp(
           quote: "",
           prefix: "",
           suffix: "",
+          anchor: null,
           body: op.body,
           author: op.author,
           resolvedAt: null,
@@ -203,9 +243,9 @@ export function commentMessage(result: CommentOpResult, origin: string | null): 
 async function insertComment(db: D1Database, comment: Comment): Promise<Comment> {
   await db
     .prepare(
-      `INSERT INTO comments (id, doc_id, tab_id, parent_id, quote, prefix, suffix, body, author,
-         resolved_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO comments (id, doc_id, tab_id, parent_id, quote, prefix, suffix, anchor, body,
+         author, resolved_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       comment.id,
@@ -215,6 +255,7 @@ async function insertComment(db: D1Database, comment: Comment): Promise<Comment>
       comment.quote,
       comment.prefix,
       comment.suffix,
+      comment.anchor === null ? null : JSON.stringify(comment.anchor),
       comment.body,
       comment.author,
       comment.resolvedAt,

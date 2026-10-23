@@ -1,7 +1,12 @@
 // The agent tools behind `/mcp`. Reads go through `docs.ts`; every write to an
 // existing doc goes through `deps.rooms` so open editors receive it live.
 
-import { findQuote, markdownToText } from "../shared/anchors.ts";
+import {
+  findQuote,
+  markdownToText,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+} from "../shared/anchors.ts";
 import {
   DOC_STATUSES,
   type Comment,
@@ -9,6 +14,19 @@ import {
   type DocSummary,
   type Tab,
 } from "../shared/protocol.ts";
+import {
+  checkCell,
+  checkCells,
+  checkTablesIn,
+  findTables,
+  MAX_TABLE_ROWS,
+  newTableId,
+  replaceTable,
+  TableError,
+  withCell,
+  type RichTable,
+  type TableColumn,
+} from "../shared/table.ts";
 import { groupThreads } from "../shared/threads.ts";
 import type { ApiDeps } from "./api.ts";
 import * as Comments from "./comments.ts";
@@ -72,6 +90,78 @@ function requireVersion(args: Args, key: string): number {
     return fail("invalid_argument", `"${key}" must be an integer tab version.`);
   }
   return value;
+}
+
+/** Rejects markdown whose ```t3-table blocks do not parse, before anything is written. */
+function checkTables(markdown: string): void {
+  const problem = checkTablesIn(markdown);
+  if (problem) {
+    fail("invalid_table", `${problem} Nothing was written.`, {
+      format:
+        '{"id","columns":[{"id","name","type":"text|select|link|number|date","options?":[{"value","color"}]}],"rows":[{"id","cells":{"<columnId>":value}}]}',
+    });
+  }
+}
+
+const listIds = (items: ReadonlyArray<{ readonly id: string }>) => {
+  const ids = items.slice(0, 20).map((item) => `"${item.id}"`);
+  return items.length > 20 ? `${ids.join(", ")}, ...` : ids.join(", ");
+};
+
+/**
+ * Applies `change` to one table in a tab and writes it through the DocRoom,
+ * re-reading and re-applying when someone else wrote first. `change` throws a
+ * `TableError` for a value or id the table rejects.
+ */
+async function changeTable<A>(
+  ctx: ToolContext,
+  tabId: string,
+  tableId: string,
+  change: (table: RichTable) => { readonly table: RichTable; readonly result: A },
+): Promise<{ readonly tab: Tab; readonly result: A }> {
+  let tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+  for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt += 1) {
+    const blocks = findTables(tab.markdown);
+    const block = blocks.find(({ parsed }) => parsed.ok && parsed.table.id === tableId);
+    if (!block?.parsed.ok) {
+      const ids = blocks.flatMap(({ parsed }) => (parsed.ok ? [parsed.table] : []));
+      return fail(
+        "table_not_found",
+        `No t3-table with id "${tableId}" in this tab${ids.length > 0 ? ` (tables: ${listIds(ids)})` : ""}. Re-read it with read_doc.`,
+        { url: tabUrl(ctx, tab) },
+      );
+    }
+    let changed: { readonly table: RichTable; readonly result: A };
+    try {
+      changed = change(block.parsed.table);
+    } catch (cause) {
+      if (cause instanceof TableError) return fail("invalid_value", cause.message);
+      throw cause;
+    }
+    const markdown = replaceTable(tab.markdown, block, changed.table);
+    if (markdown.length > MAX_MARKDOWN_LENGTH) fail("too_large", "The tab would be too large.");
+    const written = await ctx.deps.rooms.writeTab(tab.docId, {
+      tabId,
+      baseVersion: tab.version,
+      markdown,
+      origin: null,
+    });
+    if (written.ok) return { tab: written.tab, result: changed.result };
+    tab = written.conflict;
+  }
+  return fail("busy", "The tab kept changing while editing the table. Try again.");
+}
+
+function findRow(table: RichTable, rowId: string) {
+  const index = table.rows.findIndex((row) => row.id === rowId);
+  if (index === -1) throw new TableError(`No row "${rowId}" (rows: ${listIds(table.rows)}).`);
+  return index;
+}
+
+function findColumn(table: RichTable, colId: string): TableColumn {
+  const column = table.columns.find((candidate) => candidate.id === colId);
+  if (!column) throw new TableError(`No column "${colId}" (columns: ${listIds(table.columns)}).`);
+  return column;
 }
 
 async function load<A>(promise: Promise<A>, what: string): Promise<A> {
@@ -305,9 +395,40 @@ export const TOOLS = [
     },
   },
   {
+    name: "update_table_cell",
+    description:
+      'Set one cell of a ```t3-table block, by the table, row and column ids from its JSON. The value must fit the column type: a string for text, a "YYYY-MM-DD" string for date, a number for number, one of the column\'s option values for select, {"text","url"} for link; null clears the cell. Open editors update live.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        tableId: { type: "string" },
+        rowId: { type: "string" },
+        colId: { type: "string" },
+        value: { description: "The new cell value, or null to clear it." },
+      },
+      required: ["tabId", "tableId", "rowId", "colId", "value"],
+    },
+  },
+  {
+    name: "add_table_row",
+    description:
+      "Add a row to a ```t3-table block. `cells` maps column ids (or exact column names) to values, typed as for update_table_cell; omitted columns stay empty. The row goes after afterRowId, or last. Returns the new row id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        tableId: { type: "string" },
+        cells: { type: "object" },
+        afterRowId: { type: "string" },
+      },
+      required: ["tabId", "tableId", "cells"],
+    },
+  },
+  {
     name: "list_comments",
     description:
-      'List comment threads on a doc (optionally one tab): the quoted passage, whether it is still in the tab ("anchored" or "text_removed"), and every reply. Resolved threads are left out unless includeResolved is true.',
+      'List comment threads on a doc (optionally one tab): the quoted passage, the structured `anchor` for a table cell ({kind:"cell",blockId,rowId,colId}) or diagram label, whether the thread still has its place (`status`: "anchored", "text_removed" for a quote whose text is gone, "orphaned" for a deleted cell or label), and every reply. Resolved threads are left out unless includeResolved is true.',
     inputSchema: {
       type: "object",
       properties: {
@@ -321,15 +442,20 @@ export const TOOLS = [
   {
     name: "create_comment",
     description:
-      "Start a comment thread on a passage. `quote` is exact text from the tab (markdown syntax is ignored) and must appear exactly once; include more surrounding words if it repeats.",
+      'Start a comment thread on a passage. `quote` is exact text from the tab (markdown syntax is ignored) and must appear exactly once; include more surrounding words if it repeats. To comment on a ```t3-table cell, pass `anchor` {"kind":"cell","blockId":<table id>,"rowId","colId"} instead of a quote.',
     inputSchema: {
       type: "object",
       properties: {
         tabId: { type: "string" },
         quote: { type: "string" },
+        anchor: {
+          type: "object",
+          description:
+            'A structured anchor: {"kind":"cell","blockId","rowId","colId"} or {"kind":"label","blockId","textId"}.',
+        },
         body: { type: "string", description: "The comment, in markdown." },
       },
-      required: ["tabId", "quote", "body"],
+      required: ["tabId", "body"],
     },
   },
   {
@@ -390,6 +516,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const projectId = requireString(args, "projectId");
     const title = requireString(args, "title");
     const markdown = markdownArg(args, "markdown", false);
+    if (markdown) checkTables(markdown);
     const created = await load(
       Docs.createDoc(ctx.deps.db, { projectId, title, now: ctx.deps.now() }),
       "project",
@@ -442,6 +569,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const title = requireString(args, "title");
     const parentTabId = optionalString(args, "parentTabId") ?? null;
     const markdown = markdownArg(args, "markdown", false) ?? "";
+    checkTables(markdown);
     await load(Docs.getDoc(ctx.deps.db, docId), "doc");
     if (parentTabId !== null) {
       const parent = await load(Docs.getTab(ctx.deps.db, parentTabId), "parent tab");
@@ -480,6 +608,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       const at = tab.markdown.indexOf(find);
       const markdown = tab.markdown.slice(0, at) + replace + tab.markdown.slice(at + find.length);
       if (markdown.length > MAX_MARKDOWN_LENGTH) fail("too_large", "The tab would be too large.");
+      checkTables(markdown);
       const result = await ctx.deps.rooms.writeTab(tab.docId, {
         tabId,
         baseVersion: tab.version,
@@ -499,6 +628,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const tabId = requireString(args, "tabId");
     const markdown = markdownArg(args, "markdown", true)!;
     const baseVersion = requireVersion(args, "baseVersion");
+    checkTables(markdown);
     const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
     const result = await ctx.deps.rooms.writeTab(current.docId, {
       tabId,
@@ -567,7 +697,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     }
     const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
     const texts = new Map<string, string>();
-    const textOf = (tab: Tab) => {
+    const textOf = (tab: Tab) => () => {
       const cached = texts.get(tab.id) ?? markdownToText(tab.markdown);
       texts.set(tab.id, cached);
       return cached;
@@ -584,7 +714,8 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
           tabId: root.tabId,
           tabUrl: tabUrl(ctx, tab),
           quote: root.quote,
-          anchor: Comments.anchorStatus(root, textOf(tab)),
+          anchor: root.anchor,
+          status: Comments.anchorStatus(root, tab, textOf(tab)),
           resolved: root.resolvedAt !== null,
           replies: replies.map(commentSummary),
         };
@@ -594,9 +725,44 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
 
   create_comment: async (args, ctx) => {
     const tabId = requireString(args, "tabId");
+    const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
+    if (args.anchor !== undefined && args.anchor !== null) {
+      const anchor = parseStructuredAnchor(args.anchor);
+      if (!anchor) {
+        fail(
+          "invalid_argument",
+          '"anchor" must be {"kind":"cell","blockId","rowId","colId"} or {"kind":"label","blockId","textId"}.',
+        );
+      }
+      const tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+      const target = resolveStructuredAnchor(tab.markdown, anchor);
+      if (!target) {
+        fail(
+          "anchor_not_found",
+          "No block, row, column or label with those ids in the tab. Re-read it with read_doc.",
+          { url: tabUrl(ctx, tab) },
+        );
+      }
+      const label = typeof args.quote === "string" ? args.quote : "";
+      const comment = await commentWrite(ctx, tab.docId, {
+        kind: "create",
+        tabId,
+        anchor: { quote: Comments.structuredQuote(target, label), prefix: "", suffix: "" },
+        structuredAnchor: anchor,
+        body,
+        author: commentAuthor(ctx),
+      });
+      return {
+        comment: {
+          ...commentSummary(comment),
+          quote: comment.quote,
+          anchor: comment.anchor,
+          url: tabUrl(ctx, tab),
+        },
+      };
+    }
     const quote = markdownArg(args, "quote", true)!;
     if (quote.length > Comments.MAX_QUOTE_LENGTH) fail("too_large", '"quote" is too long.');
-    const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
     const tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
     const match = findQuote(markdownToText(tab.markdown), quote);
     if (match.kind === "missing") {
@@ -619,6 +785,56 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       author: commentAuthor(ctx),
     });
     return { comment: { ...commentSummary(comment), quote: comment.quote, url: tabUrl(ctx, tab) } };
+  },
+
+  update_table_cell: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const tableId = requireString(args, "tableId");
+    const rowId = requireString(args, "rowId");
+    const colId = requireString(args, "colId");
+    if (!Object.hasOwn(args, "value"))
+      fail("invalid_argument", '"value" is required (null clears).');
+    const { tab, result } = await changeTable(ctx, tabId, tableId, (table) => {
+      const index = findRow(table, rowId);
+      const column = findColumn(table, colId);
+      const value = checkCell(column, args.value, `"value"`);
+      const rows = table.rows.with(index, withCell(table.rows[index]!, colId, value));
+      return { table: { ...table, rows }, result: value };
+    });
+    return { tab: tabSummary(ctx, tab), cell: { tableId, rowId, colId, value: result } };
+  },
+
+  add_table_row: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const tableId = requireString(args, "tableId");
+    const afterRowId = optionalString(args, "afterRowId");
+    const raw = args.cells;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      fail("invalid_argument", '"cells" must be an object keyed by column id.');
+    }
+    const { tab, result } = await changeTable(ctx, tabId, tableId, (table) => {
+      if (table.rows.length >= MAX_TABLE_ROWS) {
+        throw new TableError(`A table can have at most ${MAX_TABLE_ROWS} rows.`);
+      }
+      // Column names are accepted too, since that is what an agent sees in a rendered table.
+      const byId: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        const named = table.columns.filter((column) => column.name === key);
+        const id = table.columns.some((column) => column.id === key)
+          ? key
+          : named.length === 1
+            ? named[0]!.id
+            : key;
+        byId[id] = value;
+      }
+      const cells = checkCells(table.columns, byId, '"cells"');
+      let rowId = newTableId("r");
+      while (table.rows.some((row) => row.id === rowId)) rowId = newTableId("r");
+      const at = afterRowId === undefined ? table.rows.length : findRow(table, afterRowId) + 1;
+      const rows = table.rows.toSpliced(at, 0, { id: rowId, cells });
+      return { table: { ...table, rows }, result: rowId };
+    });
+    return { tab: tabSummary(ctx, tab), row: { tableId, rowId: result } };
   },
 
   reply_comment: async (args, ctx) => {

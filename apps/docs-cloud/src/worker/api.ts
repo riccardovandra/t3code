@@ -6,7 +6,12 @@ import {
   type Tab,
   type TabPlacement,
 } from "../shared/protocol.ts";
-import { locateAnchor, markdownToText } from "../shared/anchors.ts";
+import {
+  locateAnchor,
+  markdownToText,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+} from "../shared/anchors.ts";
 import * as Auth from "./auth.ts";
 import * as Comments from "./comments.ts";
 import * as DocThreads from "./docThreads.ts";
@@ -404,15 +409,22 @@ async function handleComments(
 
   if (resource === "tabs" && id && sub === "comments" && method === "POST") {
     const body = await readJson(request);
-    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, true);
+    // A cell or label anchor; the quote then only labels the thread.
+    const structured = body.anchor == null ? null : parseStructuredAnchor(body.anchor);
+    if (body.anchor != null && structured === null) return error(400, "invalid_anchor");
+    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, structured === null);
     const prefix = anchorText(body.prefix, Comments.MAX_CONTEXT_LENGTH, false);
     const suffix = anchorText(body.suffix, Comments.MAX_CONTEXT_LENGTH, false);
     if (quote === null || prefix === null || suffix === null) return error(400, "invalid_anchor");
     const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
     if (!text) return error(400, "invalid_body");
     const tab = await Docs.getTab(deps.db, id);
+    const target = structured ? resolveStructuredAnchor(tab.markdown, structured) : null;
+    // A structured anchor must name a part that exists; there is no text to fall back on.
+    if (structured && !target) return error(409, "anchor_not_found");
     // Imports ask for this so a comment whose passage is gone is reported, not stored detached.
     if (
+      !structured &&
       body.requireAnchor === true &&
       !locateAnchor(markdownToText(tab.markdown), { quote, prefix, suffix })
     ) {
@@ -422,7 +434,10 @@ async function handleComments(
       op: {
         kind: "create",
         tabId: id,
-        anchor: { quote, prefix, suffix },
+        anchor: target
+          ? { quote: Comments.structuredQuote(target, quote), prefix: "", suffix: "" }
+          : { quote, prefix, suffix },
+        structuredAnchor: structured,
         body: text,
         author: Comments.actorAuthor(actor),
       },
