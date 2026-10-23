@@ -92,13 +92,13 @@ export const DocImage = Node.create<DocImageOptions>({
         props: {
           handlePaste: (view, event) => {
             const files = imageFiles(event.clipboardData?.files);
-            if (files.length === 0) return false;
+            if (files.length === 0 || !view.editable) return false;
             insertAll(view, files, null);
             return true;
           },
           handleDrop: (view, event) => {
             const files = imageFiles(event.dataTransfer?.files);
-            if (files.length === 0) return false;
+            if (files.length === 0 || !view.editable) return false;
             event.preventDefault();
             const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null;
             insertAll(view, files, at);

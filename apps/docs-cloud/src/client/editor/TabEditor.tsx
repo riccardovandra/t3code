@@ -17,15 +17,28 @@ export function TabEditor(props: {
   readonly revision: number;
   readonly onChange: (markdown: string) => void;
   readonly onEditor?: (editor: Editor | null) => void;
+  /** False for viewers and commenters: the text can be selected, not changed. */
+  readonly editable: boolean;
+  /** Uploads a pasted or dropped image; resolves to its URL. */
+  readonly uploadImage: (file: File) => Promise<string>;
+  readonly onUploadError: (error: unknown) => void;
 }) {
   const onChange = useRef(props.onChange);
   useLayoutEffect(() => {
     onChange.current = props.onChange;
   });
   const knownMarkdown = useRef(props.markdown);
+  const images = useRef({ upload: props.uploadImage, onUploadError: props.onUploadError });
+  useLayoutEffect(() => {
+    images.current = { upload: props.uploadImage, onUploadError: props.onUploadError };
+  });
 
   const editor = useEditor({
-    extensions: createEditorExtensions(),
+    extensions: createEditorExtensions({
+      upload: (file) => images.current.upload(file),
+      onUploadError: (error) => images.current.onUploadError(error),
+    }),
+    editable: props.editable,
     content: props.markdown,
     contentType: "markdown",
     onUpdate: ({ editor: current, transaction }) => {
@@ -35,6 +48,10 @@ export function TabEditor(props: {
       onChange.current(markdown);
     },
   });
+
+  useEffect(() => {
+    if (editor.isEditable !== props.editable) editor.setEditable(props.editable, false);
+  }, [editor, props.editable]);
 
   const { onEditor } = props;
   useEffect(() => {
