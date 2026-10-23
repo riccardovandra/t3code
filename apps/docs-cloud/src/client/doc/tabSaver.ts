@@ -56,6 +56,9 @@ export class TabSaver {
         this.draft = null;
         this.baseVersion = cause.body.tab.version;
         this.callbacks.onConflict(cause.body.tab);
+      } else if (cause instanceof ApiError && cause.status === 404) {
+        // The tab was deleted; there is nowhere left to save to.
+        this.draft = null;
       } else {
         // Keep the edit for the next attempt unless a newer one replaced it.
         this.draft ??= markdown;
