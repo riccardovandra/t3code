@@ -46,6 +46,35 @@ const initial: ServerSettings = {
   },
 };
 
+// The calling thread: live, on this environment.
+const callerLayers = Layer.mergeAll(
+  ThreadCommandExecutor.layer,
+  Layer.succeed(McpInvocationContext.McpInvocationContext, {
+    environmentId,
+    requestNamespace: "provider:tools",
+    thread: {
+      threadId,
+      providerSessionId: "provider:tools",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    },
+    client: undefined,
+    capabilities: new Set(["orchestration" as const]),
+    issuedAt: 0,
+  }),
+  Layer.mock(ThreadManagement.ThreadManagementService)({
+    getThreadShell: () => Effect.succeed(liveThreadShell(threadId)),
+  }),
+  Layer.mock(Environment.ServerEnvironment)({
+    getDescriptor: Effect.succeed({
+      environmentId,
+      label: "Test",
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: "0.0.0",
+      capabilities: { repositoryIdentity: false },
+    }),
+  }),
+);
+
 it.effect("switches skills and servers for a project as one patch, and never returns secrets", () =>
   Effect.gen(function* () {
     const settings = yield* Ref.make(initial);
@@ -53,31 +82,7 @@ it.effect("switches skills and servers for a project as one patch, and never ret
     // Applied once, right after the next read, as a concurrent write would be.
     const interleave = yield* Ref.make<((current: ServerSettings) => ServerSettings) | null>(null);
     const layerDependencies = Layer.mergeAll(
-      ThreadCommandExecutor.layer,
-      Layer.succeed(McpInvocationContext.McpInvocationContext, {
-        environmentId,
-        requestNamespace: "provider:tools",
-        thread: {
-          threadId,
-          providerSessionId: "provider:tools",
-          providerInstanceId: ProviderInstanceId.make("codex"),
-        },
-        client: undefined,
-        capabilities: new Set(["orchestration" as const]),
-        issuedAt: 0,
-      }),
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: () => Effect.succeed(liveThreadShell(threadId)),
-      }),
-      Layer.mock(Environment.ServerEnvironment)({
-        getDescriptor: Effect.succeed({
-          environmentId,
-          label: "Test",
-          platform: { os: "linux", arch: "x64" },
-          serverVersion: "0.0.0",
-          capabilities: { repositoryIdentity: false },
-        }),
-      }),
+      callerLayers,
       Layer.mock(Settings.ServerSettingsService)({
         getSettings: Ref.get(settings).pipe(
           Effect.tap(() =>
@@ -153,4 +158,40 @@ it.effect("switches skills and servers for a project as one patch, and never ret
       ),
     );
   }),
+);
+
+it.effect("reports the trash entry a removal made, so an agent can restore it", () =>
+  Effect.gen(function* () {
+    const toolkit = yield* ToolsToolkit;
+    const result = yield* toolkit
+      .handle("t3_skills_remove", { name: "teach" })
+      .pipe(Stream.unwrap, Stream.runCollect);
+    expect(result.at(-1)?.result).toEqual({
+      id: "trash-1",
+      name: "teach",
+      paths: ["/home/user/.agents/skills/teach", "/home/user/.claude/skills/teach"],
+    });
+  }).pipe(
+    Effect.provide(
+      McpToolAccess.HandlersLayer.layer(ToolsHandlers.layer).pipe(
+        Layer.provideMerge(
+          Layer.mergeAll(
+            callerLayers,
+            Layer.mock(Settings.ServerSettingsService)({}),
+            Layer.mock(ProjectService.ProjectService)({}),
+            Layer.mock(SkillLibrary.SkillLibrary)({
+              remove: (input) =>
+                Effect.succeed({
+                  id: "trash-1",
+                  name: input.name,
+                  target: input.target,
+                  removedAt: "2026-10-24T00:00:00.000Z",
+                  paths: ["/home/user/.agents/skills/teach", "/home/user/.claude/skills/teach"],
+                }),
+            }),
+          ),
+        ),
+      ),
+    ),
+  ),
 );

@@ -41,7 +41,7 @@ export const layer = McpToolAccess.toLayer(SkillTrashToolkit, {
         Effect.mapError((error) =>
           error._tag === "SkillTrashError" ? trashFailure(error) : error,
         ),
-        Effect.as({}),
+        Effect.map((entry) => ({ name: entry.name, paths: entry.paths })),
       );
       return yield* scope.thread === undefined
         ? restore

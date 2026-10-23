@@ -1,5 +1,6 @@
 import {
   OrchestratorMcpFailure,
+  SkillTrashEntry,
   SkillTrashEntryId,
   SkillTrashListResult,
 } from "@t3tools/contracts";
@@ -38,7 +39,11 @@ const SkillsRestoreTool = Tool.make("t3_skills_restore", {
   description:
     "Put a skill from the trash back exactly where it was, with its agent links and its lock entry, by its id from t3_skills_trash_list. Refuses when something now occupies one of its original paths. Requires a live full-access/default calling thread.",
   parameters: Schema.Struct({ id: SkillTrashEntryId }),
-  success: Schema.Struct({}),
+  // The skill put back and every path it returned to.
+  success: Schema.Struct({
+    name: SkillTrashEntry.fields.name,
+    paths: SkillTrashEntry.fields.paths,
+  }),
 }).annotate(Tool.Destructive, false);
 
 export const SkillTrashToolkit = Toolkit.make(SkillsTrashListTool, SkillsRestoreTool);

@@ -612,7 +612,7 @@ it.effect("moves an installed skill to the trash with its lock entry, and restor
       const lockEntry = (yield* lockedSkills).review as { readonly source: string };
       const linkTarget = yield* fileSystem.readLink(link);
 
-      yield* library.remove({ name: "review", target });
+      const removed = yield* library.remove({ name: "review", target });
       assert.isFalse(yield* fileSystem.exists(folder));
       assert.isFalse(yield* fileSystem.exists(link));
       assert.notProperty(yield* lockedSkills, "review");
@@ -622,10 +622,11 @@ it.effect("moves an installed skill to the trash with its lock entry, and restor
         [["review", target, [folder, link], lockEntry.source]],
       );
       const id = entries[0]?.id ?? "";
+      assert.deepEqual(removed, entries[0]);
       const trashed = path.join(path.dirname(home), "t3", "userdata", "skill-trash", id);
       assert.isTrue(yield* fileSystem.exists(path.join(trashed, "items", "0", "bin", "run")));
 
-      yield* library.restoreFromTrash({ id });
+      assert.deepEqual(yield* library.restoreFromTrash({ id }), removed);
       assert.equal(
         yield* fileSystem.readFileString(path.join(folder, "SKILL.md")),
         SKILL("review", "Review a change."),

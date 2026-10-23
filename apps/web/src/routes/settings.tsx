@@ -20,6 +20,7 @@ import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScope
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
+  settingsScopeKey,
   validateSettingsRouteSearch,
 } from "../components/settings/settingsScopeNavigation";
 import {
@@ -122,7 +123,7 @@ function SettingsContentLayout() {
     location.pathname === "/settings/diagnostics" ||
     SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(location.pathname)
       ? environment?.environmentId
-      : JSON.stringify(search);
+      : settingsScopeKey(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (

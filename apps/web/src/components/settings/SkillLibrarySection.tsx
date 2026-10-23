@@ -40,7 +40,15 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import { Menu, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -283,15 +291,17 @@ function LibrarySource({
                     <ChevronDownIcon aria-hidden className="size-3" />
                   </MenuTrigger>
                   <MenuPopup align="end">
-                    <MenuGroupLabel>Install {skill.folder} for</MenuGroupLabel>
-                    {options.map((option, index) => (
-                      <div key={option.key}>
-                        {index === 1 ? <MenuSeparator /> : null}
-                        <MenuItem onClick={() => void installSkill(skill, option)}>
-                          {option.label}
-                        </MenuItem>
-                      </div>
-                    ))}
+                    <MenuGroup>
+                      <MenuGroupLabel>Install {skill.folder} for</MenuGroupLabel>
+                      {options.map((option, index) => (
+                        <div key={option.key}>
+                          {index === 1 ? <MenuSeparator /> : null}
+                          <MenuItem onClick={() => void installSkill(skill, option)}>
+                            {option.label}
+                          </MenuItem>
+                        </div>
+                      ))}
+                    </MenuGroup>
                   </MenuPopup>
                 </Menu>
               ) : null}
