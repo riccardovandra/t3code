@@ -1,4 +1,4 @@
-import type { Tab } from "../shared/protocol.ts";
+import type { Tab, TabPlacement } from "../shared/protocol.ts";
 import * as Auth from "./auth.ts";
 import * as Docs from "./docs.ts";
 
@@ -23,6 +23,20 @@ export interface DocRooms {
       readonly origin: string | null;
     },
   ): Promise<Docs.TabWriteResult>;
+  moveTab(
+    docId: string,
+    input: {
+      readonly tabId: string;
+      readonly parentTabId: string | null;
+      readonly position: number;
+      readonly origin: string | null;
+    },
+  ): Promise<ReadonlyArray<TabPlacement>>;
+  /** Returns the ids of the tab and every descendant it took with it. */
+  deleteTab(
+    docId: string,
+    input: { readonly tabId: string; readonly origin: string | null },
+  ): Promise<ReadonlyArray<string>>;
   openSocket(docId: string, request: Request): Promise<Response>;
 }
 
@@ -198,9 +212,40 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
         : json({ error: "version_conflict", tab: result.conflict }, 409);
     }
 
+    if (resource === "tabs" && id && sub === "move" && method === "POST") {
+      const body = await readJson(request);
+      const parentTabId = body.parentTabId === undefined ? null : body.parentTabId;
+      if (parentTabId !== null && typeof parentTabId !== "string") {
+        return error(400, "invalid_parent");
+      }
+      const position = body.position;
+      if (typeof position !== "number" || !Number.isInteger(position) || position < 0) {
+        return error(400, "invalid_position");
+      }
+      const current = await Docs.getTab(deps.db, id);
+      const placements = await deps.rooms.moveTab(current.docId, {
+        tabId: id,
+        parentTabId,
+        position,
+        origin: str(body.clientId),
+      });
+      return json({ placements });
+    }
+
+    if (resource === "tabs" && id && !sub && method === "DELETE") {
+      const current = await Docs.getTab(deps.db, id);
+      const tabIds = await deps.rooms.deleteTab(current.docId, {
+        tabId: id,
+        origin: url.searchParams.get("clientId"),
+      });
+      return json({ tabIds });
+    }
+
     return error(404, "not_found");
   } catch (cause) {
     if (cause instanceof Docs.NotFoundError) return error(404, "not_found");
+    if (cause instanceof Docs.InvalidMoveError) return error(400, "invalid_move");
+    if (cause instanceof Docs.LastTabError) return error(409, "last_tab");
     throw cause;
   }
 }

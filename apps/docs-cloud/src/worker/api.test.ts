@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DocWithTabs, Tab } from "../shared/protocol.ts";
+import * as Docs from "./docs.ts";
 import { makeApiHarness } from "./testing/apiHarness.ts";
 
 async function seedDoc(api: ReturnType<typeof makeApiHarness>, cookie: string) {
@@ -147,5 +148,138 @@ describe("tab writes", () => {
       headers: { Cookie: cookie },
     });
     expect(response.status).toBe(404);
+  });
+});
+
+describe("tab tree", () => {
+  async function seedTree() {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc, tabs } = await seedDoc(api, cookie);
+    const headers = { Cookie: cookie };
+    const create = async (title: string, parentTabId?: string) => {
+      const response = await api.call("POST", `/api/docs/${doc.id}/tabs`, {
+        body: { title, ...(parentTabId ? { parentTabId } : {}) },
+        headers,
+      });
+      return ((await response.json()) as { tab: Tab }).tab;
+    };
+    const root = tabs[0]!;
+    const second = await create("Second");
+    const third = await create("Third");
+    const child = await create("Child", root.id);
+    const grandchild = await create("Grandchild", child.id);
+    const move = (tabId: string, body: Record<string, unknown>) =>
+      api.call("POST", `/api/tabs/${tabId}/move`, { body, headers });
+    const remove = (tabId: string) =>
+      api.call("DELETE", `/api/tabs/${tabId}?clientId=editor-a`, { headers });
+    const layout = async () => {
+      const response = await api.call("GET", `/api/docs/${doc.id}`, { headers });
+      const loaded = (await response.json()) as DocWithTabs;
+      return Object.fromEntries(
+        loaded.tabs.map((tab) => [tab.title, [tab.parentTabId, tab.position] as const]),
+      );
+    };
+    return { api, headers, root, second, third, child, grandchild, move, remove, layout };
+  }
+
+  it("reorders siblings and keeps positions dense", async () => {
+    const { api, root, second, third, move, layout } = await seedTree();
+    const response = await move(third.id, { parentTabId: null, position: 0, clientId: "editor-a" });
+    expect(response.status).toBe(200);
+    expect(await layout()).toMatchObject({
+      Third: [null, 0],
+      Plan: [null, 1],
+      Second: [null, 2],
+    });
+    const message = api.broadcasts.at(-1);
+    expect(message).toMatchObject({ type: "tab.moved", origin: "editor-a" });
+    const placements = message?.type === "tab.moved" ? message.placements : [];
+    expect(placements[0]).toEqual({ tabId: third.id, parentTabId: null, position: 0 });
+    expect(placements.map((placement) => placement.tabId).toSorted()).toEqual(
+      [third.id, root.id, second.id].toSorted(),
+    );
+  });
+
+  it("re-parents a subtree and closes the gap it left", async () => {
+    const { root, second, child, move, layout } = await seedTree();
+    // Child (with its grandchild) moves from Plan to the end of Second.
+    expect((await move(child.id, { parentTabId: second.id, position: 99 })).status).toBe(200);
+    expect(await layout()).toMatchObject({
+      Child: [second.id, 0],
+      Grandchild: [child.id, 0],
+    });
+    // Outdent Second's child to the top level between Plan and Second.
+    await move(child.id, { parentTabId: null, position: 1 });
+    expect(await layout()).toMatchObject({
+      Plan: [null, 0],
+      Child: [null, 1],
+      Second: [null, 2],
+      Third: [null, 3],
+    });
+    expect(root.parentTabId).toBeNull();
+  });
+
+  it("refuses to move a tab under itself or its descendants", async () => {
+    const { api, root, grandchild, move } = await seedTree();
+    const before = api.broadcasts.length;
+    expect((await move(root.id, { parentTabId: grandchild.id, position: 0 })).status).toBe(400);
+    expect((await move(root.id, { parentTabId: root.id, position: 0 })).status).toBe(400);
+    expect((await move(root.id, { parentTabId: null, position: -1 })).status).toBe(400);
+    expect(api.broadcasts).toHaveLength(before);
+  });
+
+  it("refuses a parent from another doc", async () => {
+    const { api, headers, root, move } = await seedTree();
+    const other = await seedDoc(api, headers.Cookie);
+    expect((await move(root.id, { parentTabId: other.tabs[0]!.id, position: 0 })).status).toBe(404);
+  });
+
+  it("deletes a tab with its subtree and renumbers its siblings", async () => {
+    const { api, root, child, grandchild, remove, layout } = await seedTree();
+    const response = await remove(root.id);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { tabIds: Array<string> }).tabIds.toSorted()).toEqual(
+      [root.id, child.id, grandchild.id].toSorted(),
+    );
+    expect(await layout()).toEqual({ Second: [null, 0], Third: [null, 1] });
+    expect(api.broadcasts.at(-1)).toMatchObject({ type: "tab.deleted", origin: "editor-a" });
+  });
+
+  it("keeps the last top-level tab", async () => {
+    const { second, third, root, remove } = await seedTree();
+    expect((await remove(second.id)).status).toBe(200);
+    expect((await remove(third.id)).status).toBe(200);
+    expect((await remove(root.id)).status).toBe(409);
+  });
+
+  it("requires a same-origin session or a token", async () => {
+    const { api, headers, root, child } = await seedTree();
+    expect(
+      (await api.call("POST", `/api/tabs/${child.id}/move`, { body: { position: 0 } })).status,
+    ).toBe(401);
+    expect((await api.call("DELETE", `/api/tabs/${root.id}`)).status).toBe(401);
+    const crossSite = { ...headers, Origin: "https://evil.test" };
+    expect(
+      (
+        await api.call("POST", `/api/tabs/${child.id}/move`, {
+          body: { position: 0 },
+          headers: crossSite,
+        })
+      ).status,
+    ).toBe(403);
+    expect((await api.call("DELETE", `/api/tabs/${child.id}`, { headers: crossSite })).status).toBe(
+      403,
+    );
+  });
+});
+
+describe("DocRoom errors", () => {
+  it("restore their class after crossing Durable Object RPC as plain errors", () => {
+    const overRpc = (cause: Error) => Docs.reviveError(new Error(cause.message));
+    expect(overRpc(new Docs.InvalidMoveError())).toBeInstanceOf(Docs.InvalidMoveError);
+    expect(overRpc(new Docs.LastTabError())).toBeInstanceOf(Docs.LastTabError);
+    expect(overRpc(new Docs.NotFoundError("tab"))).toBeInstanceOf(Docs.NotFoundError);
+    expect(overRpc(new Error("boom"))).not.toBeInstanceOf(Docs.NotFoundError);
   });
 });

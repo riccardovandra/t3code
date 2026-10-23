@@ -4,6 +4,7 @@ import type {
   LibraryProject,
   Project,
   Tab,
+  TabPlacement,
 } from "../shared/protocol.ts";
 
 export class ApiError extends Error {
@@ -49,6 +50,16 @@ export const api = {
     request<{ tab: Tab }>("POST", `/api/docs/${docId}/tabs`, { ...input, clientId }),
   writeTab: (tabId: string, input: { baseVersion: number; markdown?: string; title?: string }) =>
     request<{ tab: Tab }>("PATCH", `/api/tabs/${tabId}`, { ...input, clientId }),
+  moveTab: (tabId: string, input: { parentTabId: string | null; position: number }) =>
+    request<{ placements: Array<TabPlacement> }>("POST", `/api/tabs/${tabId}/move`, {
+      ...input,
+      clientId,
+    }),
+  deleteTab: (tabId: string) =>
+    request<{ tabIds: Array<string> }>(
+      "DELETE",
+      `/api/tabs/${tabId}?clientId=${encodeURIComponent(clientId)}`,
+    ),
   tokens: () => request<{ tokens: Array<ApiTokenSummary> }>("GET", "/api/tokens"),
   createToken: (name: string) =>
     request<{ id: string; token: string }>("POST", "/api/tokens", { name }),
