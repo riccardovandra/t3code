@@ -11,7 +11,9 @@ export async function withEmbedPolicy(
   sources: ReadonlyArray<string>,
 ): Promise<Response> {
   const headers = new Headers(response.headers);
-  headers.set("Content-Security-Policy", frameAncestorsPolicy(sources));
+  // Images load only from this origin: doc uploads under /api/images. A remote
+  // URL in a doc's markdown is never fetched, so it cannot track readers.
+  headers.set("Content-Security-Policy", `${frameAncestorsPolicy(sources)}; img-src 'self'`);
   const isHtml = (headers.get("Content-Type") ?? "").startsWith("text/html");
   if (!isHtml || !response.body) {
     return new Response(response.body, { status: response.status, headers });

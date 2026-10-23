@@ -39,7 +39,7 @@ describe("embed policy", () => {
     });
     const response = await withEmbedPolicy(html, SOURCES);
     expect(response.headers.get("Content-Security-Policy")).toBe(
-      "frame-ancestors https://app.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app",
+      "frame-ancestors https://app.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app; img-src 'self'",
     );
     expect(response.headers.get("ETag")).toBeNull();
     expect(await response.text()).toContain(
@@ -52,7 +52,9 @@ describe("embed policy", () => {
       new Response("x", { headers: { "Content-Type": "text/javascript" } }),
       parseEmbedOrigins(undefined),
     );
-    expect(response.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
+    expect(response.headers.get("Content-Security-Policy")).toBe(
+      "frame-ancestors 'none'; img-src 'self'",
+    );
     expect(await response.text()).toBe("x");
   });
 });

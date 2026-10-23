@@ -186,6 +186,24 @@ export async function setDocStatus(
   return toDoc(row);
 }
 
+export async function renameDoc(
+  db: D1Database,
+  input: { readonly docId: string; readonly title: string; readonly now: number },
+): Promise<DocSummary> {
+  const row = await db
+    .prepare("UPDATE docs SET title = ?, updated_at = ? WHERE id = ? RETURNING *")
+    .bind(input.title, input.now, input.docId)
+    .first<DocRow>();
+  if (!row) throw new NotFoundError("doc");
+  return toDoc(row);
+}
+
+/** Deletes a doc; foreign keys cascade to its tabs, comments, linked threads and members. */
+export async function deleteDoc(db: D1Database, docId: string): Promise<void> {
+  const row = await db.prepare("DELETE FROM docs WHERE id = ? RETURNING id").bind(docId).first();
+  if (!row) throw new NotFoundError("doc");
+}
+
 export async function getTab(db: D1Database, tabId: string): Promise<Tab> {
   const row = await db.prepare("SELECT * FROM tabs WHERE id = ?").bind(tabId).first<TabRow>();
   if (!row) throw new NotFoundError("tab");

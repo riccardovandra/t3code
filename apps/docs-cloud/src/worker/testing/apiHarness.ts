@@ -18,6 +18,7 @@ export function makeApiHarness() {
   const broadcasts: Array<RoomMessage> = [];
   const invites: Array<DocInvite> = [];
   const sockets: Array<{ docId: string; userId: string; open: boolean }> = [];
+  const images = new Map<string, { body: ArrayBuffer; contentType: string }>();
   const deps: ApiDeps = {
     db,
     publicOrigin: ORIGIN,
@@ -48,6 +49,16 @@ export function makeApiHarness() {
         broadcasts.push({ type: "doc.updated", doc, origin });
         return doc;
       },
+      renameDoc: async (docId, { origin, title }) => {
+        const doc = await Docs.renameDoc(db, { docId, title, now: clock.now });
+        broadcasts.push({ type: "doc.updated", doc, origin });
+        return doc;
+      },
+      deleteDoc: async (docId, { origin }) => {
+        await Docs.deleteDoc(db, docId);
+        broadcasts.push({ type: "doc.deleted", docId, origin });
+        for (const socket of sockets) if (socket.docId === docId) socket.open = false;
+      },
       commentOp: async (_docId, { origin, op }) => {
         const result = await Comments.applyCommentOp(db, op, clock.now);
         broadcasts.push(Comments.commentMessage(result, origin));
@@ -66,6 +77,15 @@ export function makeApiHarness() {
         for (const socket of sockets) {
           if (socket.docId === docId && socket.userId === userId) socket.open = false;
         }
+      },
+    },
+    images: {
+      put: async (key, body, contentType) => {
+        images.set(key, { body, contentType });
+      },
+      get: async (key) => images.get(key) ?? null,
+      deletePrefix: async (prefix) => {
+        for (const key of [...images.keys()]) if (key.startsWith(prefix)) images.delete(key);
       },
     },
     sendLoginCode: async (email, code) => {
@@ -107,5 +127,5 @@ export function makeApiHarness() {
     return cookie.split(";")[0]!;
   };
 
-  return { db, clock, deps, sentCodes, broadcasts, invites, sockets, call, signIn };
+  return { db, clock, deps, sentCodes, broadcasts, invites, sockets, images, call, signIn };
 }

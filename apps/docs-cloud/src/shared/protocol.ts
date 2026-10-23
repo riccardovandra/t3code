@@ -115,6 +115,7 @@ export type RoomMessage =
       readonly origin: string | null;
     }
   | { readonly type: "doc.updated"; readonly doc: DocSummary; readonly origin: string | null }
+  | { readonly type: "doc.deleted"; readonly docId: string; readonly origin: string | null }
   | {
       readonly type: "doc.threads";
       readonly threads: ReadonlyArray<DocThreadLink>;
