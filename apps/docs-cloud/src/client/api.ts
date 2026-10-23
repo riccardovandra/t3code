@@ -1,12 +1,6 @@
-import type {
-  AccessibleLibrary,
-  DocMember,
-  DocRole,
-  DocView,
-  Me,
-  UserSummary,
-} from "../shared/access.ts";
+import type { DocMember, DocRole, DocView, Me, UserSummary } from "../shared/access.ts";
 import type { DocAnchor, StructuredAnchor } from "../shared/anchors.ts";
+import type { HomeLibrary, SearchHit } from "../shared/home.ts";
 import type {
   ApiTokenSummary,
   Comment,
@@ -30,9 +24,15 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(path, {
     method,
+    ...(signal ? { signal } : {}),
     credentials: "same-origin",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -56,7 +56,15 @@ export const api = {
   verifyCode: (email: string, code: string) =>
     request<{ email: string }>("POST", "/api/auth/verify", { email, code }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  library: () => request<AccessibleLibrary>("GET", "/api/library"),
+  library: () => request<HomeLibrary>("GET", "/api/library"),
+  /** Tabs whose Markdown contains `query`, in docs the caller is on. */
+  search: (query: string, signal?: AbortSignal) =>
+    request<{ hits: Array<SearchHit> }>(
+      "GET",
+      `/api/search?q=${encodeURIComponent(query)}`,
+      undefined,
+      signal,
+    ),
   /** Admin only. Returns the existing project when one already has the key (or, without one, the name). */
   createProject: (name: string, key?: string) =>
     request<{ project: Project }>("POST", "/api/projects", key ? { name, key } : { name }),

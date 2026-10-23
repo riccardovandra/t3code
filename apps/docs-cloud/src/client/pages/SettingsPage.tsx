@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type { ApiTokenSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
+import { AccountMenu } from "../home/AccountMenu.tsx";
+import { HomeLink } from "../home/HomeLink.tsx";
 import { setMe, useMe } from "../me.ts";
 
 export function SettingsPage() {
@@ -42,6 +44,10 @@ export function SettingsPage() {
 
   return (
     <main className="page">
+      <div className="settings-bar">
+        <HomeLink />
+        <AccountMenu />
+      </div>
       <h1>Settings</h1>
       <h2>Profile</h2>
       <p className="muted">
