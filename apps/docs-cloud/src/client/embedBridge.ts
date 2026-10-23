@@ -13,6 +13,7 @@ import { api } from "./api.ts";
 import { setSendToAgentHandler } from "./comments/sendToAgent.ts";
 import { setEmbedProjectName } from "./embedContext.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
+import { applyTheme } from "./theme.ts";
 
 let parentOrigin: string | null = null;
 /** What the T3 Code that said hello offers beyond navigation. */
@@ -117,6 +118,8 @@ export function startEmbedBridge(): void {
       navigate(message.path);
     } else if (message.type === "t3-docs:context") {
       setEmbedProjectName(message.projectName);
+    } else if (message.type === "t3-docs:theme") {
+      applyTheme(message);
     } else if (message.type === "t3-docs:link-thread") {
       const { docId, environmentId, threadId, title } = message;
       // Acknowledged only once stored, so T3 Code retries a link that failed.

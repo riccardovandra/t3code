@@ -483,6 +483,9 @@ importers:
 
   apps/docs-cloud:
     dependencies:
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tiptap/core':
         specifier: ^3.31.3
         version: 3.31.3(@tiptap/pm@3.31.3)
