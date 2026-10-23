@@ -2,7 +2,6 @@ import type { Editor, NodeViewRendererProps } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { NodeView } from "@tiptap/pm/view";
 
-import { formatDiagnostic } from "../../../shared/widget/validate.ts";
 import { widgetInfo } from "../../../shared/widget/fence.ts";
 import type { PreparedWidget } from "./engine.ts";
 import { readFrameMessage, WIDGET_SRCDOC, type FrameMessage, type WidgetPick } from "./frame.ts";
@@ -318,7 +317,7 @@ export class WidgetView implements NodeView {
 
   private apply(prepared: PreparedWidget) {
     this.prepared = prepared;
-    const problems = prepared.analysis.diagnostics.map(formatDiagnostic);
+    const problems = prepared.analysis.diagnostics.map((entry) => engine!.formatDiagnostic(entry));
     this.showProblems(problems);
     if (!prepared.code) {
       this.dom.dataset.state = "error";
