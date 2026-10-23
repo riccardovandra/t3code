@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { projectNameKey } from "../../shared/embed.ts";
-import type { DocSummary, LibraryProject } from "../../shared/protocol.ts";
+import {
+  DOC_STATUS_LABEL,
+  DOC_STATUSES,
+  type DocStatus,
+  type DocSummary,
+  type LibraryProject,
+} from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { useEmbedProjectName } from "../embedContext.ts";
 import { docPath, navigate } from "../router.ts";
 
-const STATUS_LABEL = {
-  thinking: "Thinking",
-  plan: "Plan",
-  in_progress: "In progress",
-  done: "Done",
-};
-
 export function LibraryPage() {
   const [projects, setProjects] = useState<ReadonlyArray<LibraryProject> | null>(null);
   const [projectName, setProjectName] = useState("");
+  const [statusFilter, setStatusFilter] = useState<DocStatus | null>(null);
   const embedProject = useEmbedProjectName();
   const [showAll, setShowAll] = useState(false);
 
@@ -37,6 +37,21 @@ export function LibraryPage() {
 
   if (!projects) return null;
 
+  const statusButtons = (
+    <div className="status-filter" role="group" aria-label="Filter by status">
+      {[null, ...DOC_STATUSES].map((status) => (
+        <button
+          key={status ?? "all"}
+          type="button"
+          aria-pressed={statusFilter === status}
+          onClick={() => setStatusFilter(status)}
+        >
+          {status === null ? "All" : DOC_STATUS_LABEL[status]}
+        </button>
+      ))}
+    </div>
+  );
+
   // Inside a T3 Code project the library opens on that project's docs. Its
   // Docs Cloud project is created with the first doc, not on every visit.
   if (embedProject !== null && !showAll) {
@@ -51,10 +66,12 @@ export function LibraryPage() {
             All projects
           </button>
         </div>
+        {match ? statusButtons : null}
         <ProjectSection
           key={match?.id ?? "new"}
           name={null}
           docs={match?.docs ?? []}
+          statusFilter={statusFilter}
           projectId={async () => match?.id ?? (await api.createProject(embedProject)).project.id}
         />
       </main>
@@ -82,11 +99,13 @@ export function LibraryPage() {
         </button>
       </form>
       {projects.length === 0 ? <p className="muted">No projects yet.</p> : null}
+      {projects.length > 0 ? statusButtons : null}
       {projects.map((project) => (
         <ProjectSection
           key={project.id}
           name={project.name}
           docs={project.docs}
+          statusFilter={statusFilter}
           projectId={async () => project.id}
         />
       ))}
@@ -95,11 +114,16 @@ export function LibraryPage() {
 }
 
 function ProjectSection(props: {
+  /** Null when the page heading already names the project. */
   readonly name: string | null;
   readonly docs: ReadonlyArray<DocSummary>;
+  readonly statusFilter: DocStatus | null;
   readonly projectId: () => Promise<string>;
 }) {
   const [title, setTitle] = useState("");
+  const { statusFilter } = props;
+  const docs =
+    statusFilter === null ? props.docs : props.docs.filter((doc) => doc.status === statusFilter);
 
   const createDoc = async (event: FormEvent) => {
     event.preventDefault();
@@ -114,8 +138,11 @@ function ProjectSection(props: {
       {props.name === null && props.docs.length === 0 ? (
         <p className="muted">No docs in this project yet.</p>
       ) : null}
+      {statusFilter !== null && docs.length === 0 ? (
+        <p className="muted">No {DOC_STATUS_LABEL[statusFilter]} docs.</p>
+      ) : null}
       <ul className="doc-list">
-        {props.docs.map((doc) => (
+        {docs.map((doc) => (
           <li key={doc.id}>
             <a
               href={docPath(doc.id)}
@@ -126,7 +153,7 @@ function ProjectSection(props: {
             >
               <span className="doc-list-title">{doc.title}</span>
               <span className="doc-list-meta">
-                {STATUS_LABEL[doc.status]} · {new Date(doc.updatedAt).toLocaleDateString()}
+                {DOC_STATUS_LABEL[doc.status]} · {new Date(doc.updatedAt).toLocaleDateString()}
               </span>
             </a>
           </li>

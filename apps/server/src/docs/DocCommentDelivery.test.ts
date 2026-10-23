@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import {
+  type DocsCloudCommentSendInput,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadShell,
   ProjectId,
@@ -331,6 +332,89 @@ layer("DocCommentDelivery", (it) => {
       const { comments } = yield* docs.list({ projectId, docPath });
       assert.strictEqual(comments.length, 1);
       assert.isNull(comments[0]!.sentToThreadId);
+    }),
+  );
+
+  const cloudComment = (overrides: Partial<DocsCloudCommentSendInput> = {}) =>
+    ({
+      fromThreadId: conversation,
+      requestId: "req-1",
+      docId: "doc-cloud-1",
+      tabId: "tab-1",
+      docTitle: "Importer plan",
+      url: "https://docs.test/d/doc-cloud-1/tab-1",
+      commentId: "comment-1",
+      quote: "phase two",
+      entries: [
+        { id: "comment-1", author: "user", body: "Split this phase" },
+        { id: "reply-1", author: "agent", body: "Which part first?" },
+        { id: "reply-2", author: "user", body: "The parser" },
+      ],
+      ...overrides,
+    }) satisfies DocsCloudCommentSendInput;
+
+  it.effect("routes a Docs Cloud comment to one doc agent per conversation and doc id", () =>
+    Effect.gen(function* () {
+      reset();
+      const delivery = yield* DocCommentDelivery.DocCommentDelivery;
+
+      const first = yield* delivery.sendCloudComment(cloudComment());
+      assert.strictEqual(creates.length, 1);
+      assert.strictEqual(creates[0]!.parentThreadId, conversation);
+      assert.strictEqual(creates[0]!.title, "Doc: Importer plan");
+      assert.strictEqual(first.threadId, creates[0]!.threadId);
+      assert.strictEqual(
+        yield* mappedThread(conversation, "docs-cloud:doc-cloud-1"),
+        first.threadId,
+      );
+
+      const text = sent[0]!.text;
+      assert.strictEqual(sent[0]!.threadId, first.threadId);
+      assert.include(text, "You are the doc agent for the Docs Cloud doc");
+      assert.include(text, "Docs Cloud doc id: doc-cloud-1, tab id: tab-1");
+      assert.include(text, 'Quoted text: "phase two"');
+      // The newest entry is the request; earlier ones are context.
+      assert.include(text, "\n\nThe parser\n\nEarlier in this thread:");
+      assert.include(text, "- You: Split this phase\n- Agent: Which part first?");
+      assert.include(text, "reply_comment (commentId: comment-1)");
+      assert.include(text, "read_doc tool (docId: doc-cloud-1, tabId: tab-1)");
+
+      // A later click on the same doc reuses the agent and skips the preface.
+      const second = yield* delivery.sendCloudComment(cloudComment({ requestId: "req-2" }));
+      assert.strictEqual(second.threadId, first.threadId);
+      assert.strictEqual(creates.length, 1);
+      assert.notInclude(sent[1]!.text, "You are the doc agent");
+      assert.strictEqual(sent[1]!.commandId, "command:docs-cloud-comment:req-2");
+
+      const otherDoc = yield* delivery.sendCloudComment(
+        cloudComment({ requestId: "req-3", docId: "doc-cloud-2" }),
+      );
+      assert.notStrictEqual(otherDoc.threadId, first.threadId);
+      assert.strictEqual(creates.length, 2);
+    }),
+  );
+
+  it.effect("refuses a Docs Cloud comment from a missing conversation", () =>
+    Effect.gen(function* () {
+      reset();
+      const delivery = yield* DocCommentDelivery.DocCommentDelivery;
+      const error = yield* delivery
+        .sendCloudComment(cloudComment({ fromThreadId: ThreadId.make("thread-missing") }))
+        .pipe(Effect.flip);
+      assert.strictEqual(error.reason, "thread_not_found");
+      assert.strictEqual(creates.length, 0);
+      assert.strictEqual(sent.length, 0);
+    }),
+  );
+
+  it.effect("reports a Docs Cloud comment that could not be delivered", () =>
+    Effect.gen(function* () {
+      reset();
+      const delivery = yield* DocCommentDelivery.DocCommentDelivery;
+      const error = yield* delivery
+        .sendCloudComment(cloudComment({ fromThreadId: failingConversation }))
+        .pipe(Effect.flip);
+      assert.strictEqual(error.reason, "delivery_failed");
     }),
   );
 });

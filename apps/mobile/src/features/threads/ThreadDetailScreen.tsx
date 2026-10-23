@@ -125,6 +125,8 @@ import { deviceEnvironment } from "../../state/device";
 import { useEnvironmentQuery } from "../../state/query";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
 import { ThreadBrowserFloat } from "../browser/ThreadBrowserFloat";
+import { DocsCloudTabNotice } from "../docs-cloud/DocsCloudTabNotice";
+import { resolveThreadProviderInstance } from "./thread-provider-instance";
 import { useThreadServerBrowserTabs } from "../../state/preview";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -1409,6 +1411,17 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
           loaded={browserTabs.loaded}
           top={navigationHeaderHeight + 8}
           onOpen={openBrowserPreview}
+        />
+      ) : null}
+
+      {showContent ? (
+        <DocsCloudTabNotice
+          threadRef={props.selectedThreadDetailRef}
+          agentName={
+            resolveThreadProviderInstance(props.serverConfig?.providers, props.selectedThread)
+              ?.displayName ?? "Agent"
+          }
+          top={navigationHeaderHeight + 8}
         />
       ) : null}
 

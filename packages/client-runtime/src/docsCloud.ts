@@ -124,3 +124,162 @@ export function docsCloudToolEvent(
   const path = result ? docsCloudPath(result.ref.url, baseUrl) : null;
   return result && path !== null ? { ...result, path } : null;
 }
+
+/** A thread by the environment that owns it, as the Docs Cloud embed names it. */
+export interface DocsCloudThreadRef {
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
+export interface DocsCloudStartWork {
+  readonly docId: string;
+  readonly tabId: string | null;
+  readonly title: string;
+  readonly url: string;
+}
+
+export interface DocsCloudCommentEntry {
+  readonly id: string;
+  readonly author: "user" | "agent";
+  readonly body: string;
+}
+
+export interface DocsCloudCommentSend {
+  readonly requestId: string;
+  readonly docId: string;
+  readonly tabId: string;
+  readonly docTitle: string;
+  readonly url: string;
+  readonly commentId: string;
+  readonly quote: string;
+  readonly entries: ReadonlyArray<DocsCloudCommentEntry>;
+}
+
+/** The Docs Cloud frame's requests that T3 Code acts on beyond `location`. */
+export type DocsCloudFrameRequest =
+  | ({ readonly type: "t3-docs:start-work" } & DocsCloudStartWork)
+  | {
+      readonly type: "t3-docs:resolve-threads";
+      readonly threads: ReadonlyArray<DocsCloudThreadRef>;
+    }
+  | ({ readonly type: "t3-docs:open-thread" } & DocsCloudThreadRef)
+  | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & DocsCloudThreadRef)
+  | ({ readonly type: "t3-docs:send-comment" } & DocsCloudCommentSend);
+
+const DOCS_CLOUD_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const isId = (value: unknown): value is string =>
+  typeof value === "string" && DOCS_CLOUD_ID.test(value);
+const isText = (value: unknown, max: number): value is string =>
+  typeof value === "string" && value.length <= max;
+const isRef = (value: unknown): value is DocsCloudThreadRef => {
+  if (typeof value !== "object" || value === null) return false;
+  const ref = value as Record<string, unknown>;
+  return (
+    isText(ref.environmentId, 200) &&
+    ref.environmentId !== "" &&
+    isText(ref.threadId, 200) &&
+    ref.threadId !== ""
+  );
+};
+
+/** True when `url` is the doc's own page (optionally at a tab) on the Docs Cloud origin. */
+function isDocUrl(
+  url: unknown,
+  origin: string,
+  docId: string,
+  tabId: string | null,
+): url is string {
+  if (typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    const path = tabId === null ? `/d/${docId}` : `/d/${docId}/${tabId}`;
+    return parsed.origin === origin && parsed.pathname === path && parsed.search === "";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The frame's request, or null when it is not one or is malformed. Origin and
+ * source are the caller's checks. Doc URLs must be the doc's own page on the
+ * Docs Cloud origin, because they go into prompts an agent follows.
+ */
+export function parseDocsCloudFrameRequest(
+  value: unknown,
+  origin: string,
+): DocsCloudFrameRequest | null {
+  if (typeof value !== "object" || value === null) return null;
+  const message = value as Record<string, unknown>;
+  switch (message.type) {
+    case "t3-docs:start-work": {
+      const { docId, title, url } = message;
+      const tabId = message.tabId ?? null;
+      if (!isId(docId) || (tabId !== null && !isId(tabId)) || !isText(title, 500)) return null;
+      if (!isDocUrl(url, origin, docId, tabId)) return null;
+      return { type: message.type, docId, tabId, title: title.trim() || "Untitled", url };
+    }
+    case "t3-docs:resolve-threads":
+      return Array.isArray(message.threads) && message.threads.length <= 200
+        ? {
+            type: message.type,
+            threads: message.threads
+              .filter(isRef)
+              .map(({ environmentId, threadId }) => ({ environmentId, threadId })),
+          }
+        : null;
+    case "t3-docs:open-thread":
+      return isRef(message)
+        ? { type: message.type, environmentId: message.environmentId, threadId: message.threadId }
+        : null;
+    case "t3-docs:thread-linked":
+      return isId(message.docId) && isRef(message)
+        ? {
+            type: message.type,
+            docId: message.docId,
+            environmentId: message.environmentId,
+            threadId: message.threadId,
+          }
+        : null;
+    case "t3-docs:send-comment": {
+      const { requestId, docId, tabId, docTitle, url, commentId, quote, entries } = message;
+      if (!isId(requestId) || !isId(docId) || !isId(tabId) || !isId(commentId)) return null;
+      if (!isText(docTitle, 500) || !isText(quote, 2_000)) return null;
+      if (!isDocUrl(url, origin, docId, tabId)) return null;
+      if (!Array.isArray(entries) || entries.length === 0 || entries.length > 200) return null;
+      const parsed: Array<DocsCloudCommentEntry> = [];
+      for (const entry of entries as Array<Record<string, unknown>>) {
+        if (typeof entry !== "object" || entry === null || !isId(entry.id)) return null;
+        if (entry.author !== "user" && entry.author !== "agent") return null;
+        if (!isText(entry.body, 10_000)) return null;
+        parsed.push({ id: entry.id, author: entry.author, body: entry.body });
+      }
+      return {
+        type: message.type,
+        requestId,
+        docId,
+        tabId,
+        docTitle,
+        url,
+        commentId,
+        quote,
+        entries: parsed,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The drafted first message of a thread started from a doc. The doc is the
+ * plan, so the agent reads all of it through the docs-cloud tools rather than
+ * a pasted copy that would go stale.
+ */
+export function docsCloudWorkBrief(work: DocsCloudStartWork): string {
+  return [
+    `Work from the Docs Cloud doc ${JSON.stringify(work.title)}: ${work.url}`,
+    "",
+    `Read the whole doc first with the docs-cloud read_doc tool (docId: "${work.docId}", no tabId) and treat it as the plan for this thread.${work.tabId === null ? "" : ` I started from the tab with id "${work.tabId}".`} Follow its steps and decisions, and check with me before departing from them.`,
+    `When you begin, set the doc's status to in_progress with set_doc_status. Keep the doc current as the work changes the plan, and set it to done only when I confirm the work is finished.`,
+  ].join("\n");
+}

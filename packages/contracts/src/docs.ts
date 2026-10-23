@@ -110,6 +110,42 @@ export const DocCommentMutationResult = Schema.Struct({
 });
 export type DocCommentMutationResult = typeof DocCommentMutationResult.Type;
 
+// Docs Cloud docs live in the hosted app, not the project, so a comment sent
+// from its embed carries the thread itself: the server only routes it to the
+// conversation's doc agent for that Docs Cloud doc.
+const DocsCloudId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+
+export const DocsCloudCommentEntry = Schema.Struct({
+  id: DocsCloudId,
+  author: Schema.Literals(["user", "agent"]),
+  body: Schema.String.check(Schema.isMaxLength(10_000)),
+});
+export type DocsCloudCommentEntry = typeof DocsCloudCommentEntry.Type;
+
+export const DocsCloudCommentSendInput = Schema.Struct({
+  // The conversation the Docs panel belongs to. Delivery goes to its doc agent.
+  fromThreadId: ThreadId,
+  // One per click, so a retried request replays and a second click sends again.
+  requestId: DocsCloudId,
+  docId: DocsCloudId,
+  tabId: DocsCloudId,
+  docTitle: Schema.String.check(Schema.isMaxLength(500)),
+  url: TrimmedNonEmptyString.check(Schema.isMaxLength(2_000)),
+  commentId: DocsCloudId,
+  quote: Schema.String.check(Schema.isMaxLength(2_000)),
+  entries: Schema.Array(DocsCloudCommentEntry).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(200),
+  ),
+});
+export type DocsCloudCommentSendInput = typeof DocsCloudCommentSendInput.Type;
+
+export const DocsCloudCommentSendResult = Schema.Struct({
+  // The doc agent thread that received the comment.
+  threadId: ThreadId,
+});
+export type DocsCloudCommentSendResult = typeof DocsCloudCommentSendResult.Type;
+
 export class DocsError extends Schema.TaggedError<DocsError>()("DocsError", {
   reason: Schema.Literals([
     "comment_not_found",

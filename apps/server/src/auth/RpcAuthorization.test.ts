@@ -64,6 +64,7 @@ describe("RPC authorization scopes", () => {
     for (const method of [
       WS_METHODS.docsCreateComment,
       WS_METHODS.docsReplyComment,
+      WS_METHODS.docsSendCloudComment,
       WS_METHODS.docsSetCommentResolved,
       WS_METHODS.docsDeleteComment,
     ]) {

@@ -2,6 +2,7 @@ import type { RoomMessage } from "../../shared/protocol.ts";
 import { handleApi, type ApiDeps } from "../api.ts";
 import { parseOwnerEmails } from "../auth.ts";
 import * as Comments from "../comments.ts";
+import * as DocThreads from "../docThreads.ts";
 import * as Docs from "../docs.ts";
 import { makeTestD1 } from "./sqliteD1.ts";
 
@@ -16,6 +17,7 @@ export function makeApiHarness() {
   const broadcasts: Array<RoomMessage> = [];
   const deps: ApiDeps = {
     db,
+    publicOrigin: ORIGIN,
     owners: parseOwnerEmails(`${OWNER}, second@example.com`),
     rooms: {
       createTab: async (docId, { origin, ...input }) => {
@@ -47,6 +49,11 @@ export function makeApiHarness() {
         const result = await Comments.applyCommentOp(db, op, clock.now);
         broadcasts.push(Comments.commentMessage(result, origin));
         return result;
+      },
+      threadOp: async (docId, { origin, op }) => {
+        const threads = await DocThreads.applyDocThreadOp(db, docId, op, clock.now);
+        broadcasts.push({ type: "doc.threads", threads, origin });
+        return threads;
       },
       openSocket: async () => new Response(null, { status: 204 }),
     },

@@ -166,6 +166,36 @@ describe("buildThreadFeed", () => {
     expect(buildThreadFeed([projected(reply, 0)])[0]?.type).toBe("message");
   });
 
+  it("shows docs an agent created in Docs Cloud as their own entry", () => {
+    const tab = {
+      tabId: "tab-1",
+      title: "Overview",
+      url: "https://docs.example.com/d/doc-1/tab-1",
+    };
+    const result = (value: unknown) => ({
+      content: [{ type: "text", text: JSON.stringify(value) }],
+    });
+    const createDoc: OrchestrationV2TurnItem = {
+      ...base("create-doc", "2026-06-20T00:00:02.000Z", 1),
+      type: "dynamic_tool",
+      toolName: "mcp__docs-cloud__create_doc",
+      input: {},
+      output: result({ doc: { docId: "doc-1", title: "Launch plan", url: tab.url }, tab }),
+    };
+    const createTab: OrchestrationV2TurnItem = {
+      ...base("create-tab", "2026-06-20T00:00:03.000Z", 2),
+      type: "dynamic_tool",
+      toolName: "mcp__docs-cloud__create_tab",
+      input: {},
+      output: result({ tab: { ...tab, tabId: "tab-2", url: `${tab.url}2` } }),
+    };
+    const feed = buildThreadFeed([projected(createDoc, 0), projected(createTab, 1)]);
+    expect(feed.map((entry) => entry.type)).toEqual(["docs-cloud", "activity-group"]);
+    expect(feed[0]).toMatchObject({
+      doc: { url: tab.url, docId: "doc-1", tabId: "tab-1", docTitle: "Launch plan" },
+    });
+  });
+
   it.each([false, true])(
     "keeps answered questions outside settled work (attachments only: %s)",
     (attachmentsOnly) => {

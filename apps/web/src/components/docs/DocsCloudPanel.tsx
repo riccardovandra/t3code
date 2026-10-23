@@ -1,15 +1,25 @@
+import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useRightPanelStore } from "~/rightPanelStore";
-import { useProject } from "~/state/entities";
-
-import { useStableCallback } from "~/hooks/useStableCallback";
+import { useProject, useThreadShell } from "~/state/entities";
+import { serverEnvironment } from "~/state/server";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { buildThreadRouteParams } from "~/threadRoutes";
 
 import { Button } from "../ui/button";
 import { type CopyToClaudeDocRequest, parseCopyToClaudeDocMessage } from "./copyToClaudeDoc";
 import { CopyToClaudeDocDialog } from "./CopyToClaudeDocDialog";
+import {
+  clearPendingDocLink,
+  openableDocThreads,
+  pendingDocLink,
+  toThreadRef,
+  useStartWorkFromDoc,
+} from "./docsCloudWork";
 
 interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -52,12 +62,62 @@ export function DocsCloudPanel(props: {
         ? null
         : { environmentId: threadRef.environmentId, projectId: props.projectId },
     )?.title ?? null;
-  const postContext = useStableCallback(() =>
-    frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin),
-  );
   useEffect(() => {
     frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin);
   }, [origin, projectName]);
+  // True once the loaded frame has answered hello, so it can take requests.
+  const [frameReady, setFrameReady] = useState(false);
+  const navigate = useNavigate();
+  const startWork = useStartWorkFromDoc(threadRef.environmentId, props.projectId);
+  const sendComment = useAtomCommand(
+    serverEnvironment.sendDocsCloudComment,
+    "send Docs Cloud comment to agent",
+  );
+  const shell = useThreadShell(threadRef);
+
+  const postToFrame = (message: Record<string, unknown>) =>
+    frame.current?.contentWindow?.postMessage(message, origin);
+
+  const onFrameRequest = useEffectEvent((data: unknown) => {
+    const request = parseDocsCloudFrameRequest(data, origin);
+    if (request === null) return;
+    switch (request.type) {
+      case "t3-docs:start-work": {
+        const docPath = docsCloudPath(request.url, origin);
+        if (startWork && docPath !== null) void startWork(request, docPath);
+        return;
+      }
+      case "t3-docs:resolve-threads":
+        postToFrame({ type: "t3-docs:threads", threads: openableDocThreads(request.threads) });
+        return;
+      case "t3-docs:open-thread": {
+        const ref = toThreadRef(request);
+        if (openableDocThreads([request]).length === 0) return;
+        void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) });
+        return;
+      }
+      case "t3-docs:thread-linked":
+        clearPendingDocLink(toThreadRef(request), request.docId);
+        return;
+      case "t3-docs:send-comment": {
+        const { type: _type, ...comment } = request;
+        void sendComment({
+          environmentId: threadRef.environmentId,
+          input: { ...comment, fromThreadId: threadRef.threadId },
+        }).then((result) =>
+          postToFrame({
+            type: "t3-docs:comment-sent",
+            requestId: request.requestId,
+            error:
+              result._tag === "Success"
+                ? null
+                : "The comment could not be sent to the agent. Try again.",
+          }),
+        );
+        return;
+      }
+    }
+  });
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -67,13 +127,34 @@ export function DocsCloudPanel(props: {
         setCopyRequest(copy);
         return;
       }
-      if (!isLocationMessage(event.data)) return;
+      if (!isLocationMessage(event.data)) {
+        onFrameRequest(event.data);
+        return;
+      }
       reported.current = event.data.path;
+      setFrameReady(true);
       useRightPanelStore.getState().selectDocsCloud(threadRef, event.data.path, true);
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [origin, threadRef]);
+
+  // A thread started from a doc is linked once it exists, i.e. once its draft
+  // is sent. The frame acknowledges with thread-linked, which clears it.
+  const pendingDocId = shell === null ? undefined : pendingDocLink(threadRef);
+  useEffect(() => {
+    if (!frameReady || shell === null || pendingDocId === undefined) return;
+    frame.current?.contentWindow?.postMessage(
+      {
+        type: "t3-docs:link-thread",
+        docId: pendingDocId,
+        environmentId: threadRef.environmentId,
+        threadId: threadRef.threadId,
+        title: shell.title,
+      },
+      origin,
+    );
+  }, [frameReady, shell, pendingDocId, threadRef, origin]);
 
   useEffect(() => {
     if (path === undefined || reported.current === null || path === reported.current) return;
@@ -113,8 +194,15 @@ export function DocsCloudPanel(props: {
         className="min-h-0 w-full flex-1 border-0 bg-background"
         onLoad={() => {
           reported.current = null;
-          frame.current?.contentWindow?.postMessage({ type: "t3-docs:hello" }, origin);
-          postContext();
+          setFrameReady(false);
+          frame.current?.contentWindow?.postMessage(
+            {
+              type: "t3-docs:hello",
+              features: startWork ? ["start-work", "send-to-agent"] : ["send-to-agent"],
+            },
+            origin,
+          );
+          postToFrame({ type: "t3-docs:context", projectName });
         }}
       />
       {copyRequest ? (

@@ -2,15 +2,45 @@
  * T3 Code embeds Docs Cloud in an iframe and talks to it over postMessage.
  *
  * Parent -> frame: `hello` (sent on every iframe load; the frame answers with
- * `location`), `navigate` (an app path such as `/d/:docId/:tabId`) and
- * `context` (the T3 Code project the panel belongs to, after hello and on change).
- * Frame -> parent: `location` after hello and on every route change, and
- * `copy-to-claude-doc` when the user asks T3 Code to recreate a doc in Claude
- * Docs (only offered once a parent has said hello).
+ * `location`; `features` lists what this T3 Code can do for the doc),
+ * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
+ * thread started from a doc), `threads` (which linked threads it can open, with
+ * their current titles), `comment-sent` (how a sent comment went) and `context`
+ * (the T3 Code project the panel belongs to, after hello and on change).
+ * Frame -> parent: `location` after hello and on every route change,
+ * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
+ * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
+ * stored) and `send-comment`. Frame actions are only offered once a parent has
+ * said hello. Every message is additive: an older peer ignores unknown types.
  */
+export type EmbedFeature = "start-work" | "send-to-agent";
+
+/** A T3 Code thread, by the environment that owns it. */
+export interface EmbedThreadRef {
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
 export type EmbedParentMessage =
-  | { readonly type: "t3-docs:hello" }
+  | { readonly type: "t3-docs:hello"; readonly features?: ReadonlyArray<EmbedFeature> }
   | { readonly type: "t3-docs:navigate"; readonly path: string }
+  | {
+      readonly type: "t3-docs:link-thread";
+      readonly docId: string;
+      readonly environmentId: string;
+      readonly threadId: string;
+      readonly title: string;
+    }
+  | {
+      readonly type: "t3-docs:threads";
+      readonly threads: ReadonlyArray<EmbedThreadRef & { readonly title: string }>;
+    }
+  | {
+      readonly type: "t3-docs:comment-sent";
+      readonly requestId: string;
+      /** Null when it reached the agent, else a message for the user. */
+      readonly error: string | null;
+    }
   | { readonly type: "t3-docs:context"; readonly projectName: string | null };
 
 /**
@@ -35,7 +65,108 @@ export interface EmbedCopyToClaudeDocMessage {
   readonly url: string;
 }
 
-export type EmbedFrameMessage = EmbedLocationMessage | EmbedCopyToClaudeDocMessage;
+/** One message of a comment thread, oldest first. */
+export interface EmbedCommentEntry {
+  readonly id: string;
+  readonly author: "user" | "agent";
+  readonly body: string;
+}
+
+export type EmbedFrameMessage =
+  | EmbedLocationMessage
+  | EmbedCopyToClaudeDocMessage
+  | {
+      readonly type: "t3-docs:start-work";
+      readonly docId: string;
+      readonly tabId: string | null;
+      readonly title: string;
+      readonly url: string;
+    }
+  | { readonly type: "t3-docs:resolve-threads"; readonly threads: ReadonlyArray<EmbedThreadRef> }
+  | ({ readonly type: "t3-docs:open-thread" } & EmbedThreadRef)
+  | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & EmbedThreadRef)
+  | {
+      readonly type: "t3-docs:send-comment";
+      readonly requestId: string;
+      readonly docId: string;
+      readonly tabId: string;
+      readonly docTitle: string;
+      readonly url: string;
+      readonly commentId: string;
+      readonly quote: string;
+      readonly entries: ReadonlyArray<EmbedCommentEntry>;
+    };
+
+const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "send-to-agent"];
+
+type Fields = Record<string, unknown>;
+const isObject = (value: unknown): value is Fields =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isText = (value: unknown, max = 200): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= max;
+const isThreadRef = (value: unknown): value is EmbedThreadRef =>
+  isObject(value) && isText(value.environmentId) && isText(value.threadId);
+
+/**
+ * The parent's message when it is well formed, else null. The origin and
+ * source are checked by the caller; this guards the shape, since the parent
+ * is a different app that may be older or newer than this one.
+ */
+export function parseParentMessage(data: unknown): EmbedParentMessage | null {
+  if (!isObject(data)) return null;
+  switch (data.type) {
+    case "t3-docs:hello":
+      return {
+        type: data.type,
+        features: Array.isArray(data.features)
+          ? FEATURES.filter((feature) => (data.features as Array<unknown>).includes(feature))
+          : [],
+      };
+    case "t3-docs:navigate":
+      return typeof data.path === "string" &&
+        data.path.startsWith("/") &&
+        !data.path.startsWith("//")
+        ? { type: data.type, path: data.path }
+        : null;
+    case "t3-docs:link-thread": {
+      const { docId, title } = data;
+      return isText(docId) && isText(title, 1_000) && isThreadRef(data)
+        ? {
+            type: data.type,
+            docId,
+            environmentId: data.environmentId,
+            threadId: data.threadId,
+            title,
+          }
+        : null;
+    }
+    case "t3-docs:threads":
+      return Array.isArray(data.threads)
+        ? {
+            type: data.type,
+            threads: data.threads
+              .filter(
+                (thread): thread is EmbedThreadRef & { title: string } =>
+                  isObject(thread) && isText(thread.title, 1_000) && isThreadRef(thread),
+              )
+              .map(({ environmentId, threadId, title }) => ({ environmentId, threadId, title })),
+          }
+        : null;
+    case "t3-docs:comment-sent":
+      return isText(data.requestId) && (data.error === null || isText(data.error, 1_000))
+        ? { type: data.type, requestId: data.requestId, error: data.error }
+        : null;
+    case "t3-docs:context":
+      return data.projectName === null || isText(data.projectName, 1_000)
+        ? {
+            type: data.type,
+            projectName: data.projectName === null ? null : data.projectName.trim() || null,
+          }
+        : null;
+    default:
+      return null;
+  }
+}
 
 export const EMBED_ORIGINS_META = "t3-embed-origins";
 

@@ -6,6 +6,8 @@ import {
   docsCloudPath,
   docsCloudToolEvent,
   docsCloudUpsertInput,
+  docsCloudWorkBrief,
+  parseDocsCloudFrameRequest,
 } from "./docsCloud.ts";
 
 const BASE = "https://docs.example.com";
@@ -133,5 +135,101 @@ describe("docsCloudToolEvent", () => {
         "https://other.example.com",
       ),
     ).toBeNull();
+  });
+});
+
+describe("parseDocsCloudFrameRequest", () => {
+  const startWork = {
+    type: "t3-docs:start-work",
+    docId: "doc-1",
+    tabId: "tab-1",
+    title: "Importer plan",
+    url: `${BASE}/d/doc-1/tab-1`,
+  };
+  const sendComment = {
+    type: "t3-docs:send-comment",
+    requestId: "8b0c4f3e-1d2a-4c5b-9e6f-7a8b9c0d1e2f",
+    docId: "doc-1",
+    tabId: "tab-1",
+    docTitle: "Importer plan",
+    url: `${BASE}/d/doc-1/tab-1`,
+    commentId: "comment-1",
+    quote: "phase two",
+    entries: [{ id: "comment-1", author: "user", body: "Split this" }],
+  };
+
+  it("accepts well-formed requests", () => {
+    expect(parseDocsCloudFrameRequest(startWork, BASE)).toEqual(startWork);
+    expect(
+      parseDocsCloudFrameRequest({ ...startWork, tabId: null, url: `${BASE}/d/doc-1` }, BASE),
+    ).toMatchObject({ tabId: null });
+    expect(parseDocsCloudFrameRequest(sendComment, BASE)).toEqual(sendComment);
+    expect(
+      parseDocsCloudFrameRequest(
+        { type: "t3-docs:open-thread", environmentId: "env-1", threadId: "thread-1" },
+        BASE,
+      ),
+    ).toEqual({ type: "t3-docs:open-thread", environmentId: "env-1", threadId: "thread-1" });
+    expect(
+      parseDocsCloudFrameRequest(
+        {
+          type: "t3-docs:resolve-threads",
+          threads: [{ environmentId: "env-1", threadId: "thread-1" }, { threadId: 3 }],
+        },
+        BASE,
+      ),
+    ).toEqual({
+      type: "t3-docs:resolve-threads",
+      threads: [{ environmentId: "env-1", threadId: "thread-1" }],
+    });
+  });
+
+  it("rejects URLs that are not the doc's own page on the Docs Cloud origin", () => {
+    for (const url of [
+      `https://evil.example.com/d/doc-1/tab-1`,
+      `${BASE}/d/doc-2/tab-1`,
+      `${BASE}/d/doc-1/tab-1?next=https://evil.example.com`,
+      "not a url",
+    ]) {
+      expect(parseDocsCloudFrameRequest({ ...startWork, url }, BASE)).toBeNull();
+      expect(parseDocsCloudFrameRequest({ ...sendComment, url }, BASE)).toBeNull();
+    }
+  });
+
+  it("rejects malformed shapes", () => {
+    expect(parseDocsCloudFrameRequest(null, BASE)).toBeNull();
+    expect(parseDocsCloudFrameRequest({ type: "t3-docs:unknown" }, BASE)).toBeNull();
+    expect(parseDocsCloudFrameRequest({ ...startWork, docId: "../x" }, BASE)).toBeNull();
+    expect(parseDocsCloudFrameRequest({ ...sendComment, entries: [] }, BASE)).toBeNull();
+    expect(
+      parseDocsCloudFrameRequest(
+        { ...sendComment, entries: [{ id: "c", author: "system", body: "x" }] },
+        BASE,
+      ),
+    ).toBeNull();
+    expect(
+      parseDocsCloudFrameRequest({ type: "t3-docs:open-thread", environmentId: "env-1" }, BASE),
+    ).toBeNull();
+  });
+});
+
+describe("docsCloudWorkBrief", () => {
+  it("points the agent at the doc and its tools instead of pasting it", () => {
+    const brief = docsCloudWorkBrief({
+      docId: "doc-1",
+      tabId: "tab-1",
+      title: 'The "importer"',
+      url: `${BASE}/d/doc-1/tab-1`,
+    });
+    expect(brief).toContain(
+      `Work from the Docs Cloud doc "The \\"importer\\"": ${BASE}/d/doc-1/tab-1`,
+    );
+    expect(brief).toContain('read_doc tool (docId: "doc-1", no tabId)');
+    expect(brief).toContain("treat it as the plan");
+    expect(brief).toContain('tab with id "tab-1"');
+    expect(brief).toContain("set_doc_status");
+    expect(docsCloudWorkBrief({ docId: "doc-1", tabId: null, title: "x", url: "u" })).not.toContain(
+      "tab with id",
+    );
   });
 });

@@ -881,6 +881,7 @@ span.tab-row-toggle {
   .app-header,
   .doc-rail,
   .export-menu-wrap,
+  .doc-header-actions,
   .comment-margin,
   .resolved-comments,
   .notice {
@@ -933,4 +934,77 @@ span.tab-row-toggle {
     max-width: 100%;
     height: auto;
   }
+}
+
+/* Doc status and the threads started from a doc. */
+
+.status-select {
+  font: inherit;
+  font-size: 0.85rem;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+.doc-header-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.doc-thread-list {
+  min-width: 16rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.doc-thread-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.doc-thread-item > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-thread-label {
+  padding: 0.4rem 0.6rem;
+  color: var(--muted);
+}
+
+.export-menu-items .doc-thread-remove {
+  width: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+}
+
+.status-filter button {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+}
+
+.status-filter button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }

@@ -1,14 +1,25 @@
+import { useSyncExternalStore } from "react";
+
 import {
   EMBED_ORIGINS_META,
   isAllowedEmbedOrigin,
+  parseParentMessage,
+  type EmbedFeature,
   type EmbedFrameMessage,
   type EmbedParentMessage,
 } from "../shared/embed.ts";
+import { isAgentAuthor } from "../shared/threads.ts";
+import { api } from "./api.ts";
+import { setSendToAgentHandler } from "./comments/sendToAgent.ts";
 import { setEmbedProjectName } from "./embedContext.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 
 let parentOrigin: string | null = null;
+/** What the T3 Code that said hello offers beyond navigation. */
+let features: ReadonlyArray<EmbedFeature> = [];
 const parentListeners = new Set<() => void>();
+const messageListeners = new Set<(message: EmbedParentMessage) => void>();
+let removeSendToAgent: (() => void) | null = null;
 
 /** True once T3 Code has said hello, so features that need it can show. */
 export function hasEmbedParent(): boolean {
@@ -23,6 +34,44 @@ export function subscribeEmbedParent(listener: () => void): () => void {
 /** Sends to the T3 Code window that said hello; a no-op outside T3 Code. */
 export function postToEmbedParent(message: EmbedFrameMessage): void {
   if (parentOrigin) window.parent.postMessage(message, parentOrigin);
+}
+
+const embedFeatures = () => (parentOrigin === null ? null : features);
+
+/** The embedding T3 Code's features; null outside T3 Code or before its hello. */
+export function useEmbedFeatures(): ReadonlyArray<EmbedFeature> | null {
+  return useSyncExternalStore(subscribeEmbedParent, embedFeatures);
+}
+
+/** Parent messages a page reacts to (`threads`, `comment-sent`). */
+export function subscribeParentMessages(
+  listener: (message: EmbedParentMessage) => void,
+): () => void {
+  messageListeners.add(listener);
+  return () => messageListeners.delete(listener);
+}
+
+function installSendToAgent(enabled: boolean): void {
+  removeSendToAgent?.();
+  removeSendToAgent = enabled
+    ? setSendToAgentHandler(({ docId, docTitle, tabId, thread, url }) =>
+        postToEmbedParent({
+          type: "t3-docs:send-comment",
+          requestId: crypto.randomUUID(),
+          docId,
+          tabId,
+          docTitle,
+          url,
+          commentId: thread.root.id,
+          quote: thread.root.quote,
+          entries: [thread.root, ...thread.replies].map((comment) => ({
+            id: comment.id,
+            author: isAgentAuthor(comment.author) ? "agent" : "user",
+            body: comment.body,
+          })),
+        }),
+      )
+    : null;
 }
 
 /**
@@ -49,25 +98,34 @@ export function startEmbedBridge(): void {
     });
   };
 
-  window.addEventListener("message", (event: MessageEvent<EmbedParentMessage>) => {
+  window.addEventListener("message", (event: MessageEvent) => {
     if (event.source !== window.parent || !isAllowedEmbedOrigin(event.origin, sources)) return;
-    const message = event.data;
-    if (message?.type === "t3-docs:hello") {
-      const changed = parentOrigin !== event.origin;
+    const message = parseParentMessage(event.data);
+    if (!message) return;
+    if (message.type === "t3-docs:hello") {
+      const next = message.features ?? [];
+      const changed = parentOrigin !== event.origin || next.join(" ") !== features.join(" ");
       parentOrigin = event.origin;
+      features = next;
+      installSendToAgent(next.includes("send-to-agent"));
       if (changed) for (const listener of parentListeners) listener();
       postLocation();
-    } else if (
-      message?.type === "t3-docs:navigate" &&
-      typeof message.path === "string" &&
-      message.path.startsWith("/") &&
-      !message.path.startsWith("//")
-    ) {
-      navigate(message.path);
-    } else if (message?.type === "t3-docs:context") {
-      const name = typeof message.projectName === "string" ? message.projectName.trim() : "";
-      setEmbedProjectName(name === "" ? null : name);
+      return;
     }
+    if (!parentOrigin) return;
+    if (message.type === "t3-docs:navigate") {
+      navigate(message.path);
+    } else if (message.type === "t3-docs:context") {
+      setEmbedProjectName(message.projectName);
+    } else if (message.type === "t3-docs:link-thread") {
+      const { docId, environmentId, threadId, title } = message;
+      // Acknowledged only once stored, so T3 Code retries a link that failed.
+      void api.linkThread(docId, { environmentId, threadId, title }).then(
+        () => postToEmbedParent({ type: "t3-docs:thread-linked", docId, environmentId, threadId }),
+        () => undefined,
+      );
+    }
+    for (const listener of messageListeners) listener(message);
   });
   subscribePathname(postLocation);
 }
