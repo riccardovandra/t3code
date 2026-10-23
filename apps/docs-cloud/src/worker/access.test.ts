@@ -499,6 +499,73 @@ describe("MCP sharing", () => {
   });
 });
 
+describe("projects and access", () => {
+  it("keeps project sync and new projects with the admin", async () => {
+    const { api, owner, person, as } = await setup();
+    const editor = await person("e@example.com", "editor");
+    const sync = (cookie: string) =>
+      api.call("POST", "/api/projects/sync", {
+        body: { projects: [{ key: "github.com/up/site", name: "Site" }] },
+        headers: as(cookie),
+      });
+    expect((await sync(editor)).status).toBe(403);
+    expect((await sync(owner)).status).toBe(200);
+
+    const agent = await mintToken(api, editor);
+    const fresh = await mcpTool(api, agent, "create_doc", {
+      projectKey: "github.com/someone/else",
+      title: "x",
+    });
+    expect(fresh.body.error).toBe("forbidden");
+    // The synced project holds no doc shared with them, so it is hidden.
+    const hidden = await mcpTool(api, agent, "create_doc", {
+      projectKey: "github.com/up/site",
+      title: "x",
+    });
+    expect(hidden.body.error).toBe("not_found");
+    const loose = await mcpTool(api, agent, "create_doc", { title: "Mine" });
+    expect(loose.body.doc.projectId).toBeNull();
+  });
+
+  it("scopes no-project docs to their members", async () => {
+    const { api, owner, person, as } = await setup();
+    const editor = await person("e@example.com", "editor");
+    await api.call("POST", "/api/docs", {
+      body: { projectId: null, title: "Private" },
+      headers: as(owner),
+    });
+    const library = await body<{ noProjectDocs: Array<LibraryDoc> }>(
+      await api.call("GET", "/api/library", { headers: as(editor) }),
+    );
+    expect(library.noProjectDocs).toEqual([]);
+    const own = await body<{ noProjectDocs: Array<LibraryDoc> }>(
+      await api.call("GET", "/api/library", { headers: as(owner) }),
+    );
+    expect(own.noProjectDocs.map((doc) => [doc.title, doc.role])).toEqual([["Private", "owner"]]);
+  });
+
+  it("moves a doc only with editor access, into a project the mover can see", async () => {
+    const { api, owner, docId, projectId, person, as } = await setup();
+    const viewer = await person("v@example.com", "viewer");
+    const editor = await person("e@example.com", "editor");
+    const move = (cookie: string, target: string | null) =>
+      api.call("PATCH", `/api/docs/${docId}`, { body: { projectId: target }, headers: as(cookie) });
+    expect((await move(viewer, null)).status).toBe(403);
+
+    const { project: other } = await body<{ project: { id: string } }>(
+      await api.call("POST", "/api/projects", { body: { name: "Other" }, headers: as(owner) }),
+    );
+    expect((await move(editor, other.id)).status).toBe(404);
+    expect((await move(editor, null)).status).toBe(200);
+    expect((await move(editor, projectId)).status).toBe(404);
+    expect((await move(owner, projectId)).status).toBe(200);
+
+    const agent = await mintToken(api, viewer);
+    const byAgent = await mcpTool(api, agent, "move_doc", { docId, projectId: null });
+    expect(byAgent.body.error).toBe("forbidden");
+  });
+});
+
 describe("migration 0004 backfill", () => {
   it("gives existing docs and tokens to the admin", async () => {
     const db = makeTestD1({ before: "0004" });

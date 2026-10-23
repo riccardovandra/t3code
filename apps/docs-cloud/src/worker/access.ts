@@ -4,21 +4,20 @@
 
 import {
   hasRole,
-  type AccessibleLibraryProject,
+  isAdmin,
+  OWNER_USER_ID,
+  type AccessibleLibrary,
   type DocMember,
   type DocRole,
   type Me,
   type UserSummary,
 } from "../shared/access.ts";
-import type { LibraryProject } from "../shared/protocol.ts";
+import type { DocSummary, Library } from "../shared/protocol.ts";
 import { normalizeEmail } from "./auth.ts";
 import { randomId } from "./crypto.ts";
 import { NotFoundError } from "./docs.ts";
 
-/** The admin: owns everything that predates sharing, and is the only one who creates projects. */
-export const OWNER_USER_ID = "owner";
-
-export const isAdmin = (userId: string) => userId === OWNER_USER_ID;
+export { isAdmin, OWNER_USER_ID } from "../shared/access.ts";
 
 /** A member asked for more than their role allows. Non-members get NotFoundError instead. */
 export class ForbiddenError extends Error {
@@ -373,11 +372,11 @@ export async function removeMember(
 export async function scopeLibrary(
   db: D1Database,
   input: {
-    readonly projects: ReadonlyArray<LibraryProject>;
+    readonly library: Library;
     readonly userId: string;
     readonly owners: ReadonlySet<string>;
   },
-): Promise<ReadonlyArray<AccessibleLibraryProject>> {
+): Promise<AccessibleLibrary> {
   const [mine, docOwners] = await db.batch<Record<string, unknown>>([
     db.prepare("SELECT doc_id, role FROM doc_members WHERE user_id = ?").bind(input.userId),
     db
@@ -401,13 +400,18 @@ export async function scopeLibrary(
   for (const row of (docOwners?.results ?? []) as unknown as Array<UserRow & { doc_id: string }>) {
     ownerOf.set(row.doc_id, toUser(row, input.owners));
   }
-  return input.projects.flatMap((project) => {
-    const docs = project.docs.flatMap((doc) => {
+  const visible = (docs: ReadonlyArray<DocSummary>) =>
+    docs.flatMap((doc) => {
       const role = roles.get(doc.id);
       return role ? [{ ...doc, role, owner: ownerOf.get(doc.id) ?? null }] : [];
     });
-    return docs.length > 0 || isAdmin(input.userId) ? [{ ...project, docs }] : [];
-  });
+  return {
+    projects: input.library.projects.flatMap((project) => {
+      const docs = visible(project.docs);
+      return docs.length > 0 || isAdmin(input.userId) ? [{ ...project, docs }] : [];
+    }),
+    noProjectDocs: visible(input.library.noProjectDocs),
+  };
 }
 
 /**

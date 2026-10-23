@@ -173,6 +173,8 @@ export class DocsError extends Schema.TaggedError<DocsError>()("DocsError", {
 // imported file so a second import skips it or updates the same doc.
 export const DocsCloudProject = Schema.Struct({
   id: TrimmedNonEmptyString,
+  /** The repository's canonical key, or `title:<normalised title>` without a remote. */
+  key: Schema.String,
   name: Schema.String,
   url: Schema.String,
 });

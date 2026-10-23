@@ -59,6 +59,11 @@ export function makeApiHarness() {
         broadcasts.push({ type: "doc.deleted", docId, origin });
         for (const socket of sockets) if (socket.docId === docId) socket.open = false;
       },
+      setDocProject: async (docId, { origin, projectId }) => {
+        const doc = await Docs.setDocProject(db, { docId, projectId });
+        broadcasts.push({ type: "doc.updated", doc, origin });
+        return doc;
+      },
       commentOp: async (_docId, { origin, op }) => {
         const result = await Comments.applyCommentOp(db, op, clock.now);
         broadcasts.push(Comments.commentMessage(result, origin));

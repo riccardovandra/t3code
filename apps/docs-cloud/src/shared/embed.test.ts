@@ -22,14 +22,28 @@ describe("parseParentMessage", () => {
     expect(parseParentMessage({ type: "t3-docs:navigate", path: "https://evil.test" })).toBeNull();
   });
 
-  it("takes the project context as a trimmed name or null", () => {
+  it("takes the project context as a trimmed name and a normalised key", () => {
+    expect(
+      parseParentMessage({
+        type: "t3-docs:context",
+        projectName: " Site ",
+        projectKey: " github.com/uplifted/site ",
+      }),
+    ).toEqual({
+      type: "t3-docs:context",
+      projectName: "Site",
+      projectKey: "github.com/uplifted/site",
+    });
+    // An older T3 Code sends only the name.
     expect(parseParentMessage({ type: "t3-docs:context", projectName: " Site " })).toEqual({
       type: "t3-docs:context",
       projectName: "Site",
+      projectKey: null,
     });
     expect(parseParentMessage({ type: "t3-docs:context", projectName: "   " })).toEqual({
       type: "t3-docs:context",
       projectName: null,
+      projectKey: null,
     });
     expect(parseParentMessage({ type: "t3-docs:context", projectName: 3 })).toBeNull();
     expect(projectNameKey("  Uplifted   SITE ")).toBe(projectNameKey("uplifted site"));

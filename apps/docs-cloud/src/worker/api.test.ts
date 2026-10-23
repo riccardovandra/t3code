@@ -4,6 +4,7 @@ import type {
   DocSummary,
   DocThreadLink,
   DocWithTabs,
+  Library,
   LibraryProject,
   Tab,
 } from "../shared/protocol.ts";
@@ -352,6 +353,135 @@ describe("doc status", () => {
       headers: { Cookie: cookie, Origin: "https://evil.test" },
     });
     expect(crossSite.status).toBe(403);
+  });
+});
+
+describe("projects", () => {
+  const sync = (api: ReturnType<typeof makeApiHarness>, cookie: string, projects: unknown) =>
+    api.call("POST", "/api/projects/sync", { body: { projects }, headers: { Cookie: cookie } });
+  const library = async (api: ReturnType<typeof makeApiHarness>, cookie: string) =>
+    (await (
+      await api.call("GET", "/api/library", { headers: { Cookie: cookie } })
+    ).json()) as Library;
+
+  it("upserts by key: a repeat sync keeps ids, renames follow the latest title", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const first = await sync(api, cookie, [
+      { key: "github.com/riccardovandra/t3code", name: "T3 Code" },
+      { key: "title:Herbox  Netherlands", name: "Herbox Netherlands" },
+    ]);
+    expect(first.status).toBe(200);
+    const { projects } = (await first.json()) as {
+      projects: Array<{ id: string; key: string; name: string }>;
+    };
+    expect(projects.map(({ key, name }) => [key, name])).toEqual([
+      ["github.com/riccardovandra/t3code", "T3 Code"],
+      ["title:herbox netherlands", "Herbox Netherlands"],
+    ]);
+
+    // The VPS checkout of the same repository has another title.
+    const again = await sync(api, cookie, [
+      { key: "github.com/riccardovandra/t3code", name: "T3 Code + AI PM" },
+      { key: "title:herbox netherlands", name: "Herbox Netherlands" },
+    ]);
+    const renamed = ((await again.json()) as { projects: typeof projects }).projects;
+    expect(renamed.map((project) => project.id)).toEqual(projects.map((project) => project.id));
+    expect(renamed[0]!.name).toBe("T3 Code + AI PM");
+    expect((await library(api, cookie)).projects).toHaveLength(2);
+  });
+
+  it("adopts the same-titled project made by name before the repository synced", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { doc } = await seedDoc(api, cookie);
+    const response = await sync(api, cookie, [{ key: "github.com/up/site", name: " uplifted " }]);
+    const [synced] = ((await response.json()) as { projects: Array<{ id: string; key: string }> })
+      .projects;
+    expect(synced).toMatchObject({ id: doc.projectId, key: "github.com/up/site" });
+    // A second repository with the same title gets its own project.
+    await sync(api, cookie, [{ key: "github.com/fork/site", name: "Uplifted" }]);
+    expect((await library(api, cookie)).projects.map((project) => project.key).toSorted()).toEqual([
+      "github.com/fork/site",
+      "github.com/up/site",
+    ]);
+  });
+
+  it("creating a project by name or key returns the existing one", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const create = async (body: unknown) =>
+      (
+        (await (
+          await api.call("POST", "/api/projects", { body, headers: { Cookie: cookie } })
+        ).json()) as {
+          project: { id: string; key: string; name: string };
+        }
+      ).project;
+    const byName = await create({ name: "Client  Work" });
+    expect(byName.key).toBe("title:client work");
+    expect((await create({ name: "client work" })).id).toBe(byName.id);
+    const byKey = await create({ name: "Site", key: "github.com/up/site" });
+    expect(await create({ name: "Other name", key: "github.com/up/site" })).toEqual(byKey);
+    expect(
+      (
+        await api.call("POST", "/api/projects", {
+          body: { name: "x", key: " " },
+          headers: { Cookie: cookie },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("rejects malformed sync payloads", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    expect((await sync(api, cookie, "nope")).status).toBe(400);
+    expect((await sync(api, cookie, [{ key: "", name: "x" }])).status).toBe(400);
+    expect((await sync(api, cookie, [{ key: "k", name: "" }])).status).toBe(400);
+    expect((await sync(api, cookie, [])).status).toBe(200);
+  });
+
+  it("files docs in no project and moves docs between projects", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const created = await api.call("POST", "/api/docs", {
+      body: { title: "Loose", projectId: null },
+      headers: { Cookie: cookie },
+    });
+    expect(created.status).toBe(201);
+    const loose = ((await created.json()) as DocWithTabs).doc;
+    expect(loose.projectId).toBeNull();
+    expect((await library(api, cookie)).noProjectDocs.map((doc) => doc.id)).toEqual([loose.id]);
+
+    const { doc } = await seedDoc(api, cookie);
+    const moved = await api.call("PATCH", `/api/docs/${loose.id}`, {
+      body: { projectId: doc.projectId, clientId: "editor-a" },
+      headers: { Cookie: cookie },
+    });
+    expect(((await moved.json()) as { doc: DocSummary }).doc.projectId).toBe(doc.projectId);
+    expect(api.broadcasts.at(-1)).toMatchObject({ type: "doc.updated", origin: "editor-a" });
+    let after = await library(api, cookie);
+    expect(after.noProjectDocs).toEqual([]);
+    expect(after.projects[0]!.docs).toHaveLength(2);
+
+    await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: { projectId: null },
+      headers: { Cookie: cookie },
+    });
+    after = await library(api, cookie);
+    expect(after.noProjectDocs.map((entry) => entry.id)).toEqual([doc.id]);
+
+    const missing = await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: { projectId: "missing" },
+      headers: { Cookie: cookie },
+    });
+    expect(missing.status).toBe(404);
+    const empty = await api.call("PATCH", `/api/docs/${doc.id}`, {
+      body: {},
+      headers: { Cookie: cookie },
+    });
+    expect(empty.status).toBe(400);
   });
 });
 

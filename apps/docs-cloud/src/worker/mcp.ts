@@ -13,13 +13,15 @@ import { callTool, McpToolError, TOOLS } from "./mcpTools.ts";
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 export const MCP_INSTRUCTIONS = `Docs Cloud holds living markdown docs that the user watches update live in their editor.
+Projects are T3 Code projects, identified by key: the git repository (github.com/owner/repo), or title:<name> for a project without a remote. Inside T3 Code, docs_cloud_project gives the current project's key.
 Workflow:
-1. When asked for a doc, plan or write-up, create it first: create_doc with the title and a skeleton (the section headings, each with a one-line placeholder). Do this before research.
+1. When asked for a doc, plan or write-up, create it first: create_doc with projectKey (and projectName), the title and a skeleton (the section headings, each with a one-line placeholder). Do this before research. Omit projectKey only when the doc belongs to no project.
 2. Give the user the doc URL from the response right away, then work.
 3. Fill sections one at a time with edit_tab (replace a placeholder with the finished section), so the user watches the doc build. Use write_tab only for a new or fully rewritten tab.
 4. Use tabs (create_tab) for distinct parts such as research, plan and decisions; nest with parentTabId.
 5. Draw diagrams as \`\`\`t3-widget blocks (below). Existing \`\`\`mermaid blocks keep working; edit them in place, never convert them.
 6. Keep findings in the doc, not the chat. End with one line and the URL.
+Move a doc with move_doc (projectId: null for no project).
 Re-read a tab (read_doc with tabId) before editing it if the user may have changed it.
 Rich tables (status chips, links, per-cell comments): a \`\`\`t3-table block whose body is JSON. Ids are yours to pick (letters, digits, _ and -) and must stay stable. Column types: text, select (cells hold one of its options' values; colors gray, blue, green, yellow, orange, red, purple, pink), link (cells are {"text","url"}), number, date ("YYYY-MM-DD"). Example:
 \`\`\`t3-table

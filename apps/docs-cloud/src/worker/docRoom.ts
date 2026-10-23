@@ -139,6 +139,18 @@ export class DocRoom extends DurableObject<Env> {
     });
   }
 
+  async setDocProject(input: {
+    readonly docId: string;
+    readonly projectId: string | null;
+    readonly origin: string | null;
+  }): Promise<DocSummary> {
+    return this.serialize(async () => {
+      const doc = await Docs.setDocProject(this.env.DB, input);
+      this.broadcast({ type: "doc.updated", doc, origin: input.origin });
+      return doc;
+    });
+  }
+
   /** Deletes the doc, tells its open pages, then closes every socket. */
   async deleteDoc(input: {
     readonly docId: string;

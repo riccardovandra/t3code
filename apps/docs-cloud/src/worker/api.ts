@@ -13,6 +13,7 @@ import {
   parseStructuredAnchor,
   resolveStructuredAnchor,
 } from "../shared/anchors.ts";
+import { normalizeProjectKey } from "../shared/embed.ts";
 import * as Access from "./access.ts";
 import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
@@ -71,6 +72,10 @@ export interface DocRooms {
   ): Promise<DocSummary>;
   /** Deletes the doc and closes every open socket on it. */
   deleteDoc(docId: string, input: { readonly origin: string | null }): Promise<void>;
+  setDocProject(
+    docId: string,
+    input: { readonly projectId: string | null; readonly origin: string | null },
+  ): Promise<DocSummary>;
   commentOp(
     docId: string,
     input: { readonly op: Comments.CommentOp; readonly origin: string | null },
@@ -123,6 +128,31 @@ const str = (value: unknown, max = 200): string | null =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max ? value.trim() : null;
 
 const MAX_MARKDOWN_LENGTH = 1_000_000;
+/** One T3 Code environment's projects per sync call. */
+const MAX_SYNCED_PROJECTS = 500;
+
+/** `undefined` when absent, null for "no project", a string id, or `false` when malformed. */
+function projectIdArg(value: unknown): string | null | undefined | false {
+  if (value === undefined || value === null) return value;
+  return str(value) ?? false;
+}
+
+function syncedProjects(
+  value: unknown,
+): ReadonlyArray<{ readonly key: string; readonly name: string }> | null {
+  if (!Array.isArray(value) || value.length > MAX_SYNCED_PROJECTS) return null;
+  const byKey = new Map<string, string>();
+  for (const entry of value as Array<unknown>) {
+    if (!entry || typeof entry !== "object") return null;
+    const fields = entry as Record<string, unknown>;
+    const key = typeof fields.key === "string" ? normalizeProjectKey(fields.key) : null;
+    const name = str(fields.name);
+    if (!key || !name) return null;
+    // Two checkouts of one repository share a key; the last title wins.
+    byKey.set(key, name);
+  }
+  return [...byKey].map(([key, name]) => ({ key, name }));
+}
 
 /**
  * Cookies are SameSite=None so the app works inside T3 Code's iframe, which
@@ -225,31 +255,50 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (path === "/api/library" && method === "GET") {
-      const projects = await Access.scopeLibrary(deps.db, {
-        projects: await Docs.listLibrary(deps.db),
-        userId: principal.userId,
-        owners: deps.owners,
-      });
-      return json({ projects });
+      return json(
+        await Access.scopeLibrary(deps.db, {
+          library: await Docs.listLibrary(deps.db),
+          userId: principal.userId,
+          owners: deps.owners,
+        }),
+      );
     }
 
     if (path === "/api/projects" && method === "POST") {
       if (!Access.isAdmin(principal.userId)) return error(403, "forbidden");
-      const name = str((await readJson(request)).name);
+      const body = await readJson(request);
+      const name = str(body.name);
       if (!name) return error(400, "invalid_name");
-      return json({ project: await Docs.createProject(deps.db, name, now) }, 201);
+      if (body.key === undefined) {
+        return json({ project: await Docs.createProject(deps.db, name, now) }, 201);
+      }
+      const key = typeof body.key === "string" ? normalizeProjectKey(body.key) : null;
+      if (!key) return error(400, "invalid_key");
+      return json({ project: await Docs.ensureProject(deps.db, { key, name, now }) }, 201);
+    }
+
+    // T3 Code upserts its environment's projects here, so every machine converges on one list.
+    if (path === "/api/projects/sync" && method === "POST") {
+      if (!Access.isAdmin(principal.userId)) return error(403, "forbidden");
+      const projects = syncedProjects((await readJson(request)).projects);
+      if (!projects) return error(400, "invalid_projects");
+      const synced = await Docs.syncProjects(deps.db, projects, now);
+      return json({ projects: synced.map(({ id, key, name }) => ({ id, key, name })) });
     }
 
     if (path === "/api/docs" && method === "POST") {
       const body = await readJson(request);
-      const projectId = str(body.projectId);
+      const projectId = projectIdArg(body.projectId);
       const title = str(body.title);
-      if (!projectId || !title) return error(400, "invalid_doc");
-      if (!(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
+      if (projectId === false || !title) return error(400, "invalid_doc");
+      if (projectId && !(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
         return error(404, "not_found");
       }
       const ownerId = principal.userId;
-      return json(await Docs.createDoc(deps.db, { projectId, title, ownerId, now }), 201);
+      return json(
+        await Docs.createDoc(deps.db, { projectId: projectId ?? null, title, ownerId, now }),
+        201,
+      );
     }
 
     if (resource === "docs" && id && !sub && method === "GET") {
@@ -270,12 +319,28 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       if (body.title !== undefined) {
         const title = str(body.title);
         if (!title) return error(400, "invalid_title");
-        if (body.status !== undefined) return error(400, "one_change_at_a_time");
+        if (body.status !== undefined || body.projectId !== undefined) {
+          return error(400, "one_change_at_a_time");
+        }
         return json({ doc: await deps.rooms.renameDoc(id, { title, origin }) });
       }
       const status = body.status;
-      if (!DOC_STATUSES.includes(status as DocStatus)) return error(400, "invalid_status");
-      const doc = await deps.rooms.setDocStatus(id, { status: status as DocStatus, origin });
+      if (status !== undefined && !DOC_STATUSES.includes(status as DocStatus)) {
+        return error(400, "invalid_status");
+      }
+      const projectId = projectIdArg(body.projectId);
+      if (projectId === false) return error(400, "invalid_project");
+      if (status === undefined && projectId === undefined) return error(400, "empty_write");
+      let doc: DocSummary | undefined;
+      if (projectId !== undefined) {
+        if (projectId && !(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
+          return error(404, "not_found");
+        }
+        doc = await deps.rooms.setDocProject(id, { projectId, origin });
+      }
+      if (status !== undefined) {
+        doc = await deps.rooms.setDocStatus(id, { status: status as DocStatus, origin });
+      }
       return json({ doc });
     }
 

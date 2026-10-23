@@ -1,8 +1,9 @@
 /**
- * DocsCloudImport - moves a project's markdown docs, with their open comments,
- * into Docs Cloud. The server holds the Docs Cloud token (the `docs-cloud` MCP
- * hub entry), so imports and the T3-project-to-Docs-Cloud-project mapping run
- * here rather than in a client.
+ * DocsCloudImport - keeps Docs Cloud's projects in step with this
+ * environment's projects, and moves a project's markdown docs, with their open
+ * comments, into Docs Cloud. The server holds the Docs Cloud token (the
+ * `docs-cloud` MCP hub entry), so the project sync and imports run here rather
+ * than in a client.
  *
  * @module DocsCloudImport
  */
@@ -19,30 +20,32 @@ import {
   type DocsCloudSkippedComment,
   type McpServerEntry,
   type ProjectId,
+  type RepositoryIdentity,
 } from "@t3tools/contracts";
 import { DOCS_ROOT, docTitleFromPath } from "@t3tools/shared/docPaths";
+import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
+import * as DocsCloudConnection from "./DocsCloudConnection.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
+import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
 import * as DocCommentsService from "./DocCommentsService.ts";
 
 /** Matches DOCS_CLOUD_SERVER_NAME in client-runtime's docsCloud.ts. */
 const DOCS_CLOUD_SERVER_NAME = "docs-cloud";
-
-/**
- * A T3 project uses the Docs Cloud project with the same name, ignoring case
- * and spacing. Docs Cloud's `projectNameKey` (src/shared/embed.ts) must agree.
- */
-const projectNameKey = (name: string): string => name.trim().replace(/\s+/g, " ").toLowerCase();
 
 /** The doc's title: its first `# ` heading, else the file name. */
 export const importTitle = (docPath: string, markdown: string): string => {
@@ -55,11 +58,10 @@ interface Connection {
   readonly authorization: string;
 }
 
-const Library = Schema.Struct({
-  projects: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
-});
-const CreatedProject = Schema.Struct({
-  project: Schema.Struct({ id: Schema.String, name: Schema.String }),
+const SyncedProjects = Schema.Struct({
+  projects: Schema.Array(
+    Schema.Struct({ id: Schema.String, key: Schema.String, name: Schema.String }),
+  ),
 });
 const TabRef = Schema.Struct({ id: Schema.String, version: Schema.Number });
 const DocWithTabs = Schema.Struct({
@@ -82,10 +84,12 @@ interface ImportRow {
 export class DocsCloudImport extends Context.Service<
   DocsCloudImport,
   {
-    /** The Docs Cloud project named after this T3 project, created on first use. */
+    /** This T3 project's Docs Cloud project (see `docsCloudProjectKey`), created on first use. */
     readonly project: (input: {
       readonly projectId: ProjectId;
     }) => Effect.Effect<DocsCloudProject, DocsCloudError>;
+    /** Upserts every project of this environment into Docs Cloud, renaming them to match. */
+    readonly syncProjects: Effect.Effect<ReadonlyArray<DocsCloudProject>, DocsCloudError>;
     /** The checkout's docs, and those already imported into the configured Docs Cloud. */
     readonly listImports: (
       input: DocsCloudImportsInput,
@@ -106,6 +110,7 @@ const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
   const registry = yield* McpServerRegistry.McpServerRegistry;
   const projects = yield* ProjectService.ProjectService;
+  const repositories = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const workspaceDocs = yield* WorkspaceDocs.WorkspaceDocs;
   const comments = yield* DocCommentsService.DocCommentsService;
 
@@ -196,29 +201,62 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // The shell's identity comes from an enrichment cache that may still be
+  // cold; the resolver answers from git (and its own cache).
+  const keyOf = Effect.fn("DocsCloudImport.keyOf")(function* (project: {
+    readonly title: string;
+    readonly workspaceRoot: string;
+    readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+  }) {
+    const resolved = yield* repositories.resolve(project.workspaceRoot);
+    return docsCloudProjectKey({
+      title: project.title,
+      repositoryIdentity: resolved ?? project.repositoryIdentity ?? null,
+    });
+  });
+
+  const upsert = Effect.fn("DocsCloudImport.upsert")(function* (
+    conn: Connection,
+    entries: ReadonlyArray<{ readonly key: string; readonly name: string }>,
+  ) {
+    const synced = yield* call(conn, "POST", "/api/projects/sync", SyncedProjects, {
+      projects: entries,
+    });
+    return synced.projects.map((project): DocsCloudProject => ({
+      ...project,
+      url: `${conn.origin}/`,
+    }));
+  });
+
   const resolveProject = Effect.fn("DocsCloudImport.resolveProject")(function* (
     conn: Connection,
-    name: string,
+    projectId: ProjectId,
   ) {
-    const library = yield* call(conn, "GET", "/api/library", Library);
-    const key = projectNameKey(name);
-    const existing = library.projects.find((project) => projectNameKey(project.name) === key);
-    const project =
-      existing ??
-      (yield* call(conn, "POST", "/api/projects", CreatedProject, { name: name.trim() })).project;
-    return {
-      id: project.id,
-      name: project.name,
-      url: `${conn.origin}/`,
-    } satisfies DocsCloudProject;
+    const t3 = yield* t3Project(projectId);
+    const [project] = yield* upsert(conn, [{ key: yield* keyOf(t3), name: t3.title.trim() }]);
+    if (!project)
+      return yield* new DocsCloudError({ reason: "failed", detail: "unexpected response" });
+    return project;
   });
 
   const project: DocsCloudImport["Service"]["project"] = Effect.fn("DocsCloudImport.project")(
     function* (input) {
-      const t3 = yield* t3Project(input.projectId);
-      return yield* resolveProject(yield* connection, t3.title);
+      return yield* resolveProject(yield* connection, input.projectId);
     },
   );
+
+  const syncProjects: DocsCloudImport["Service"]["syncProjects"] = Effect.gen(function* () {
+    const conn = yield* connection;
+    const shells = yield* projects
+      .listShells()
+      .pipe(Effect.mapError(() => new DocsCloudError({ reason: "persistence" })));
+    const entries = yield* Effect.forEach(
+      shells,
+      (shell) => Effect.map(keyOf(shell), (key) => ({ key, name: shell.title.trim() })),
+      { concurrency: 4 },
+    );
+    return yield* upsert(conn, entries);
+  }).pipe(Effect.withSpan("DocsCloudImport.syncProjects"));
 
   const docUrl = (origin: string, docId: string) => `${origin}/d/${docId}`;
   const toRecord = (origin: string, row: ImportRow): DocsCloudImportRecord => ({
@@ -397,9 +435,8 @@ const make = Effect.gen(function* () {
   const importDocs: DocsCloudImport["Service"]["importDocs"] = Effect.fn(
     "DocsCloudImport.importDocs",
   )(function* (input) {
-    const t3 = yield* t3Project(input.projectId);
     const conn = yield* connection;
-    const cloudProject = yield* resolveProject(conn, t3.title);
+    const cloudProject = yield* resolveProject(conn, input.projectId);
     const docPaths = input.docPaths ?? (yield* listDocPaths(input.cwd)).map((doc) => doc.docPath);
     const existing = new Map(
       (yield* readImports(conn.origin, input.projectId)).map((row) => [row.doc_path, row]),
@@ -437,7 +474,63 @@ const make = Effect.gen(function* () {
     return { project: cloudProject, results };
   });
 
-  return DocsCloudImport.of({ project, listImports, importDocs });
+  return DocsCloudImport.of({ project, syncProjects, listImports, importDocs });
 });
 
 export const layer = Layer.effect(DocsCloudImport, make);
+
+/** Bursts of project edits, and a Docs Cloud sign-in, settle into one sync. */
+const SYNC_DEBOUNCE = Duration.seconds(2);
+
+/**
+ * Syncs this environment's projects into Docs Cloud once the server is ready,
+ * then whenever a project is created or renamed or Docs Cloud is connected.
+ * Best effort: a failure is logged and the next trigger tries again; nothing
+ * waits on it.
+ */
+export const layerProjectSync = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const cloud = yield* DocsCloudImport;
+    const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+    const events = yield* OrchestrationEventStore.OrchestrationEventStore;
+    const connection = yield* DocsCloudConnection.DocsCloudConnection;
+
+    const sync = cloud.syncProjects.pipe(
+      Effect.tap((synced) =>
+        Effect.logDebug("Docs Cloud projects synced", { count: synced.length }),
+      ),
+      Effect.catch((error) =>
+        error.reason === "not_configured"
+          ? Effect.void
+          : Effect.logWarning("Docs Cloud project sync failed", {
+              reason: error.reason,
+              detail: error.detail,
+            }),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      yield* startup.awaitCommandReady;
+      const afterSequence = yield* events.latestApplicationSequence;
+      yield* sync;
+      const projectChanges = events
+        .streamApplicationEvents({ afterSequence })
+        .pipe(
+          Stream.filter(
+            (event) =>
+              "aggregateKind" in event &&
+              event.aggregateKind === "project" &&
+              event.type !== "project.deleted",
+          ),
+        );
+      const connected = connection.changes.pipe(Stream.filter((isConnected) => isConnected));
+      yield* Stream.merge(projectChanges, connected).pipe(
+        Stream.debounce(SYNC_DEBOUNCE),
+        Stream.runForEach(() => sync),
+      );
+    }).pipe(
+      Effect.catchCause((cause) => Effect.logWarning("Docs Cloud project sync stopped", { cause })),
+      Effect.forkScoped,
+    );
+  }),
+);

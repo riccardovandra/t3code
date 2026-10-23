@@ -33,6 +33,8 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
       setDocStatus: (docId, input) => revive(docRoom(env, docId).setDocStatus({ docId, ...input })),
       renameDoc: (docId, input) => revive(docRoom(env, docId).renameDoc({ docId, ...input })),
       deleteDoc: (docId, input) => revive(docRoom(env, docId).deleteDoc({ docId, ...input })),
+      setDocProject: (docId, input) =>
+        revive(docRoom(env, docId).setDocProject({ docId, ...input })),
       commentOp: (docId, input) => revive<CommentOpResult>(docRoom(env, docId).commentOp(input)),
       threadOp: (docId, input) => revive(docRoom(env, docId).threadOp({ docId, ...input })),
       openSocket: (docId, request, userId) => {
