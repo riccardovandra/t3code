@@ -39,6 +39,7 @@ import { TabSaver } from "../doc/tabSaver.ts";
 import { applyPlacements, orderTabs, removeTabs } from "../doc/tabTree.ts";
 import { useDocRoom } from "../doc/useDocRoom.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
+import { WIDGET_PICK_EVENT, type WidgetPickDetail } from "../editor/widget/WidgetView.ts";
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { docPath, navigate } from "../router.ts";
 
@@ -112,6 +113,8 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           "This tab was changed elsewhere, so it was reloaded. Your last edit was not saved.",
         );
       },
+      onInvalidWidget: () =>
+        setNotice("A diagram in this tab has errors, so it is not saved until they are fixed."),
     });
     saver.current = tabSaver;
     return () => {
@@ -263,11 +266,56 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     setActiveCommentId(DRAFT_COMMENT_ID);
   };
 
+  // A diagram label just clicked: its thread opens, or "Comment" is offered beside the diagram.
+  const [labelPick, setLabelPick] = useState<{
+    anchor: StructuredAnchor;
+    top: number;
+  } | null>(null);
+  const openThreadsRef = useRef(openThreads);
+  useLayoutEffect(() => {
+    openThreadsRef.current = openThreads;
+  });
+  useEffect(() => {
+    if (!docBody) return;
+    const onPick = (event: Event) => {
+      const { diagramId, textId } = (event as CustomEvent<WidgetPickDetail>).detail;
+      if (!textId || !(event.target instanceof HTMLElement)) {
+        setLabelPick(null);
+        return;
+      }
+      const thread = openThreadsRef.current.find(
+        ({ root }) =>
+          root.anchor?.kind === "label" &&
+          root.anchor.blockId === diagramId &&
+          root.anchor.textId === textId,
+      );
+      if (thread) setActiveCommentId(thread.root.id);
+      const top = event.target.getBoundingClientRect().top - docBody.getBoundingClientRect().top;
+      setLabelPick({
+        anchor: { kind: "label", blockId: diagramId, textId },
+        top: Math.round(top),
+      });
+    };
+    docBody.addEventListener(WIDGET_PICK_EVENT, onPick);
+    return () => docBody.removeEventListener(WIDGET_PICK_EVENT, onPick);
+  }, [docBody]);
+
+  const startLabelComment = (structured: StructuredAnchor) => {
+    if (!activeTabId) return;
+    setLabelPick(null);
+    // The Worker fills the quote with the label's current words.
+    setDraft({ tabId: activeTabId, anchor: { quote: "", prefix: "", suffix: "" }, structured });
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
   const { tops, selectionTop } = useEditorComments(editor, {
     anchors,
     activeId: activeCommentId,
     container: docBody,
-    onClick: setActiveCommentId,
+    onClick: (id) => {
+      setLabelPick(null);
+      setActiveCommentId(id);
+    },
     onShortcut: startComment,
     onCellComment: startCellComment,
   });
@@ -450,9 +498,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
               tops={tops}
               activeId={activeCommentId}
               narrow={narrow}
-              selectionTop={selectionTop}
+              selectionTop={selectionTop ?? labelPick?.top ?? null}
               draftOpen={draftAnchor !== null}
-              onStartComment={startComment}
+              onStartComment={
+                selectionTop === null && labelPick
+                  ? () => startLabelComment(labelPick.anchor)
+                  : startComment
+              }
               onSubmitDraft={async (body) => {
                 if (!draft) return;
                 const comment = await comments.actions

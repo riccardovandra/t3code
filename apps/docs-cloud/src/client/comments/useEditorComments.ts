@@ -11,6 +11,8 @@ import {
   type CellAnchor,
   type TableCommentSpec,
 } from "../editor/table/TableView.ts";
+import { widgetInfo } from "../../shared/widget/fence.ts";
+import { analyzeWidget } from "../../shared/widget/validate.ts";
 import { buildDocTextIndex, captureDocAnchor, resolveDocAnchor } from "./editorAnchors.ts";
 
 export interface EditorCommentAnchor extends DocAnchor {
@@ -30,12 +32,26 @@ interface PluginState {
   readonly activeId: string | null;
   readonly ranges: ReadonlyArray<CommentRange>;
   readonly cells: ReadonlyArray<CellAnchor & { readonly id: string }>;
+  /** Diagram label threads, by the position of their diagram block. */
+  readonly labels: ReadonlyArray<{ readonly id: string; readonly pos: number }>;
   readonly decorations: DecorationSet;
 }
 
 type TableHandlers = Pick<TableCommentSpec, "onActivate" | "onComment">;
 
 const commentsKey = new PluginKey<PluginState>("docsCloudComments");
+
+// Nodes are immutable, so a diagram is parsed once per version, and only when
+// a label thread points into it.
+const labelIdsByNode = new WeakMap<ProseMirrorNode, ReadonlySet<string>>();
+function labelIds(node: ProseMirrorNode): ReadonlySet<string> {
+  let ids = labelIdsByNode.get(node);
+  if (!ids) {
+    ids = new Set(analyzeWidget(node.textContent).labels.map((label) => label.id));
+    labelIdsByNode.set(node, ids);
+  }
+  return ids;
+}
 
 function computeState(
   doc: ProseMirrorNode,
@@ -60,7 +76,19 @@ function computeState(
   // Each table view reads its cell threads from a node decoration, so it
   // repaints highlights without the plugin knowing its DOM.
   const spec: TableCommentSpec = { cells, activeId, ...tables };
+  const labelAnchors = anchors.flatMap((anchor) =>
+    anchor.structured?.kind === "label" ? [{ id: anchor.id, ...anchor.structured }] : [],
+  );
+  const labels: Array<{ id: string; pos: number }> = [];
   doc.descendants((node, pos) => {
+    if (labelAnchors.length > 0 && node.type.name === "codeBlock") {
+      const diagramId = widgetInfo(node.attrs.language as string | null)?.id;
+      for (const label of labelAnchors) {
+        if (label.blockId === diagramId && labelIds(node).has(label.textId)) {
+          labels.push({ id: label.id, pos });
+        }
+      }
+    }
     if (isTableNode(node)) {
       decorations.push(
         Decoration.node(pos, pos + node.nodeSize, {}, { [TABLE_COMMENTS_SPEC]: spec }),
@@ -68,7 +96,14 @@ function computeState(
     }
     return !node.isTextblock;
   });
-  return { anchors, activeId, ranges, cells, decorations: DecorationSet.create(doc, decorations) };
+  return {
+    anchors,
+    activeId,
+    ranges,
+    cells,
+    labels,
+    decorations: DecorationSet.create(doc, decorations),
+  };
 }
 
 interface Callbacks {
@@ -176,6 +211,13 @@ export function useEditorComments(
           `table[data-table-id="${CSS.escape(cell.blockId)}"] td[data-row-id="${CSS.escape(cell.rowId)}"][data-col-id="${CSS.escape(cell.colId)}"]`,
         );
         if (element) next.set(cell.id, Math.round(element.getBoundingClientRect().top - origin));
+      }
+      // The diagram draws in a sandboxed frame, so a label thread sits beside its diagram.
+      for (const label of state?.labels ?? []) {
+        const element = editor.view.nodeDOM(label.pos);
+        if (element instanceof HTMLElement) {
+          next.set(label.id, Math.round(element.getBoundingClientRect().top - origin));
+        }
       }
       setTops((current) => (sameTops(current, next) ? current : next));
       const { from, empty } = editor.state.selection;

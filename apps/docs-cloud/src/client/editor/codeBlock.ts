@@ -6,6 +6,8 @@ import type { NodeView } from "@tiptap/pm/view";
 
 import type { DiagramCache, DiagramRender } from "./diagramCache.ts";
 import "./diagrams.css";
+import { widgetInfo } from "../../shared/widget/fence.ts";
+import { WidgetView } from "./widget/WidgetView.ts";
 import { tableSelectionPlugin } from "./table/tableBlock.ts";
 import { isTableNode, TableView } from "./table/TableView.ts";
 
@@ -16,6 +18,10 @@ const loadCache = () =>
   import("./renderDiagram.ts").then(({ diagramCache }) => (loadedCache = diagramCache));
 
 const isMermaid = (node: ProseMirrorNode) => node.attrs.language === "mermaid";
+/** ```t3-widget id=… blocks: Claude-style diagrams (see shared/widget/fence.ts). */
+const isWidget = (node: ProseMirrorNode) =>
+  widgetInfo(node.attrs.language as string | null) !== null;
+const isDiagram = (node: ProseMirrorNode) => isMermaid(node) || isWidget(node);
 
 /**
  * A fence that opens and closes `text` safely. CommonMark ends a block at the
@@ -67,7 +73,7 @@ export const DocsCodeBlock = CodeBlock.extend({
       // Leave the source and show the diagram, with the block selected.
       Escape: ({ editor }) => {
         const { $from } = editor.state.selection;
-        if ($from.parent.type.name !== this.name || !isMermaid($from.parent)) return false;
+        if ($from.parent.type.name !== this.name || !isDiagram($from.parent)) return false;
         const pos = $from.before();
         editor.view.dispatch(
           editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)),
@@ -80,7 +86,7 @@ export const DocsCodeBlock = CodeBlock.extend({
         if (
           selection instanceof NodeSelection &&
           selection.node.type.name === this.name &&
-          isMermaid(selection.node)
+          isDiagram(selection.node)
         ) {
           editSource(props.editor, selection.from, selection.node);
           return true;
@@ -98,6 +104,7 @@ export const DocsCodeBlock = CodeBlock.extend({
     return (props) => {
       // ```t3-table: a rich table whose JSON is the block's text.
       if (isTableNode(props.node)) return new TableView(props);
+      if (isWidget(props.node)) return new WidgetView(props, editSource);
       return isMermaid(props.node) ? new DiagramView(props) : new PlainCodeView(props);
     };
   },
@@ -121,7 +128,7 @@ class PlainCodeView implements NodeView {
   }
 
   update(node: ProseMirrorNode) {
-    if (node.type.name !== "codeBlock" || isMermaid(node) || isTableNode(node)) return false;
+    if (node.type.name !== "codeBlock" || isDiagram(node) || isTableNode(node)) return false;
     this.setLanguage(node);
     return true;
   }

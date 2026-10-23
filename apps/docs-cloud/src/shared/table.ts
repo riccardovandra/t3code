@@ -321,14 +321,28 @@ export const findTables = (markdown: string): ReadonlyArray<TableBlock> =>
     .filter((fence) => fence.language === TABLE_LANGUAGE)
     .map((fence) => ({ fence, parsed: parseTable(fence.body) }));
 
-/** Every table in a tab must parse, and table ids must be unique within the tab. */
-export function checkTablesIn(markdown: string): string | null {
+/**
+ * Every table a write adds or changes must parse, with an id unique in the
+ * tab. A table left byte-identical to `previous` is not re-checked, so older
+ * content never blocks an unrelated edit.
+ */
+export function checkTablesIn(markdown: string, previous?: string): string | null {
+  const unchanged = new Set(
+    previous === undefined ? [] : findTables(previous).map(({ fence }) => fence.body),
+  );
   const ids = new Set<string>();
   const tables = findTables(markdown);
-  for (const [index, { parsed }] of tables.entries()) {
+  for (const [index, { fence, parsed }] of tables.entries()) {
+    // An empty block is a table being started in the editor.
+    const checked = fence.body.trim() !== "" && !unchanged.has(fence.body);
     const which = tables.length === 1 ? "The t3-table block" : `t3-table block ${index + 1}`;
-    if (!parsed.ok) return `${which}: ${parsed.error}`;
-    if (ids.has(parsed.table.id)) return `${which}: table id "${parsed.table.id}" is repeated.`;
+    if (!parsed.ok) {
+      if (checked) return `${which}: ${parsed.error}`;
+      continue;
+    }
+    if (checked && ids.has(parsed.table.id)) {
+      return `${which}: table id "${parsed.table.id}" is repeated.`;
+    }
     ids.add(parsed.table.id);
   }
   return null;

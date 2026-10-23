@@ -181,6 +181,12 @@ describe("comment routes", () => {
       columns: [{ id: "a", name: "A", type: "text" }],
       rows: [{ id: "r1", cells: { a: "Fix Bing" } }],
     };
+    const invalid = await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: { baseVersion: tab.version, markdown: '```t3-table\n{"id": 1}\n```' },
+      headers: owner,
+    });
+    expect(invalid.status).toBe(422);
+    expect(await invalid.json()).toMatchObject({ error: "table_invalid" });
     await api.call("PATCH", `/api/tabs/${tab.id}`, {
       body: {
         baseVersion: tab.version,

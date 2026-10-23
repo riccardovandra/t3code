@@ -8,7 +8,9 @@
 // anchor instead, naming the block and the part by id, so a comment follows
 // its cell or label through edits and is orphaned only when that part goes.
 
-import { cellText, findFences, findTables, TABLE_LANGUAGE } from "./table.ts";
+import { cellText, findTables, TABLE_LANGUAGE } from "./table.ts";
+import { findWidgetFences } from "./widget/fence.ts";
+import { analyzeWidget } from "./widget/validate.ts";
 
 export interface DocAnchor {
   readonly quote: string;
@@ -45,9 +47,11 @@ export function parseStructuredAnchor(value: unknown): StructuredAnchor | null {
   return null;
 }
 
-export type StructuredAnchorTarget =
-  | { readonly kind: "cell"; readonly text: string }
-  | { readonly kind: "label" };
+/** The part a structured anchor names, with its current words. */
+export interface StructuredAnchorTarget {
+  readonly kind: StructuredAnchor["kind"];
+  readonly text: string;
+}
 
 /**
  * Finds the part a structured anchor names in a tab's markdown, or null when
@@ -68,18 +72,14 @@ export function resolveStructuredAnchor(
     }
     return null;
   }
-  // A diagram label: a fenced block declaring the block id (`id=<blockId>` in
-  // its info string) whose source carries the label's literal text id.
-  const textId = new RegExp(`data-claude-text-id=["'{]+${escapeRegExp(anchor.textId)}["'}]`);
-  for (const fence of findFences(markdown)) {
-    if (fence.language === TABLE_LANGUAGE) continue;
-    const declared = /(?:^|\s)id=["']?([^\s"']+)/.exec(fence.info)?.[1];
-    if (declared === anchor.blockId && textId.test(fence.body)) return { kind: "label" };
+  // A diagram label: the ```t3-widget id=<blockId> block's label with that text id.
+  for (const fence of findWidgetFences(markdown)) {
+    if (fence.id !== anchor.blockId) continue;
+    const label = analyzeWidget(fence.source).labels.find((entry) => entry.id === anchor.textId);
+    return label ? { kind: "label", text: label.text } : null;
   }
   return null;
 }
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Finds the quote in `text`. With several matches, the one whose surroundings

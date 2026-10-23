@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { formatTable } from "../../shared/table.ts";
 import { codeFence } from "./codeBlock.ts";
+import { FLOW_EXAMPLE } from "../../shared/widget/testing/examples.ts";
 import { createEditorExtensions } from "./extensions.ts";
 
 const markdown = new MarkdownManager({ extensions: flattenExtensions(createEditorExtensions()) });
@@ -30,6 +31,11 @@ describe("code block markdown", () => {
         columns: [{ id: "a", name: "A", type: "link" }],
         rows: [{ id: "r1", cells: { a: { text: "PENG-1", url: "https://x.test" } } }],
       })}\n\`\`\``,
+    ],
+    ["a diagram widget", `\`\`\`t3-widget id=release-flow\n${FLOW_EXAMPLE}\n\`\`\``],
+    [
+      "a multi-line widget among prose",
+      "Intro.\n\n```t3-widget id=a\nconst W = 1;\n\nexport default () => (\n  <svg viewBox='0 0 760 40'>\n    <text data-claude-text-id='t'>Hi &amp; bye</text>\n  </svg>\n);\n```\n\nAfter.",
     ],
   ])("keeps %s byte-stable", (_, source) => {
     expect(roundTrip(source)).toBe(source);

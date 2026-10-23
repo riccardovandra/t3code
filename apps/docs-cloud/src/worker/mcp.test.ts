@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Docs from "./docs.ts";
 import { handleMcp } from "./mcp.ts";
 import { makeApiHarness, ORIGIN } from "./testing/apiHarness.ts";
+import { FLOW_EXAMPLE } from "../shared/widget/testing/examples.ts";
 
 /** `requestOrigin` stands in for what request.url reports, which `wrangler dev` rewrites. */
 async function makeMcpHarness(requestOrigin = ORIGIN) {
@@ -355,7 +356,7 @@ describe("MCP table tools", () => {
       markdown: '```t3-table\n{"id": "t", "columns": [}\n```',
       baseVersion: 2,
     });
-    expect(broken).toMatchObject({ isError: true, body: { error: "invalid_table" } });
+    expect(broken).toMatchObject({ isError: true, body: { error: "table_invalid" } });
     expect(broken.body.message).toContain("not valid JSON");
 
     const badOption = await mcp.tool("edit_tab", {
@@ -363,7 +364,7 @@ describe("MCP table tools", () => {
       find: "Start.",
       replace: tableMarkdown({ ...TABLE, rows: [{ id: "r1", cells: { status: "Blocked" } }] }),
     });
-    expect(badOption).toMatchObject({ isError: true, body: { error: "invalid_table" } });
+    expect(badOption).toMatchObject({ isError: true, body: { error: "table_invalid" } });
     expect(badOption.body.message).toContain('"Blocked", which is not one of its options');
 
     const created = await mcp.tool("create_tab", {
@@ -494,5 +495,118 @@ describe("MCP table tools", () => {
       status: "orphaned",
       replies: [expect.anything()],
     });
+  });
+});
+
+describe("MCP diagrams", () => {
+  const diagram = (id: string, code: string) => `\`\`\`t3-widget id=${id}\n${code}\n\`\`\``;
+  const invalid = FLOW_EXAMPLE.replace("fill={ink}>Commit lands", "fill='#123456'>Commit lands");
+
+  it("refuses writes that add an invalid diagram, naming the rule and position", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc("# Plan\n\nTODO");
+    const created = await mcp.tool("create_tab", {
+      docId: doc.docId,
+      title: "Flow",
+      markdown: diagram("flow", invalid),
+    });
+    expect(created.isError).toBe(true);
+    expect(created.body.error).toBe("widget_invalid");
+    expect(created.body.message).toMatch(/diagram 'flow' .* 1:\d+ colour:/);
+    expect(created.body.problems[0].diagnostics[0]).toMatchObject({ rule: "colour", line: 1 });
+
+    const edited = await mcp.tool("edit_tab", {
+      tabId: tab.tabId,
+      find: "TODO",
+      replace: diagram("flow", invalid),
+    });
+    expect(edited.body.error).toBe("widget_invalid");
+    const written = await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      markdown: diagram("", FLOW_EXAMPLE),
+      baseVersion: 1,
+    });
+    expect(written.body.problems[0].diagnostics[0].rule).toBe("diagram-id");
+    const read = await mcp.tool("read_doc", { docId: doc.docId, tabId: tab.tabId });
+    expect(read.body.tab.markdown).toBe("# Plan\n\nTODO");
+  });
+
+  it("reads a diagram's code and text ids, and edits one label in place", async () => {
+    const mcp = await makeMcpHarness();
+    const markdown = `# Plan\n\n${diagram("release-flow", FLOW_EXAMPLE)}\n\nAfter.`;
+    const { tab } = await mcp.seedDoc(markdown);
+
+    const read = await mcp.tool("read_diagram", { tabId: tab.tabId, diagramId: "release-flow" });
+    expect(read.body).toMatchObject({
+      code: FLOW_EXAMPLE,
+      title: "Only a green build reaches production",
+      diagnostics: [],
+    });
+    expect(read.body.texts).toContainEqual({
+      textId: "ship",
+      text: "Ship to production",
+      anchor: "step-ship",
+    });
+
+    const edit = await mcp.tool("edit_diagram_label", {
+      tabId: tab.tabId,
+      diagramId: "release-flow",
+      textId: "ship",
+      value: "THIS IS CHANGED",
+    });
+    expect(edit.body).toMatchObject({ changed: true, previous: "Ship to production" });
+    const after = await mcp.tool("read_doc", {
+      docId: (await mcp.tool("list_docs", {})).body.docs[0].docId,
+      tabId: tab.tabId,
+    });
+    expect(after.body.tab.markdown).toBe(markdown.replace("Ship to production", "THIS IS CHANGED"));
+
+    const missing = await mcp.tool("edit_diagram_label", {
+      tabId: tab.tabId,
+      diagramId: "release-flow",
+      textId: "nope",
+      value: "x",
+    });
+    expect(missing.body.error).toBe("unknown_text_id");
+    expect(missing.body.textIds).toContain("ship");
+    const noDiagram = await mcp.tool("read_diagram", { tabId: tab.tabId, diagramId: "other" });
+    expect(noDiagram.body).toMatchObject({ error: "not_found", diagramIds: ["release-flow"] });
+  });
+
+  it("documents the format with an example that passes the validator", async () => {
+    const { MCP_INSTRUCTIONS } = await import("./mcp.ts");
+    const { findWidgetFences } = await import("../shared/widget/fence.ts");
+    const { analyzeWidget } = await import("../shared/widget/validate.ts");
+    const [example] = findWidgetFences(MCP_INSTRUCTIONS);
+    expect(example?.id).toBe("release-flow");
+    expect(analyzeWidget(example!.source).diagnostics).toEqual([]);
+  });
+
+  it("comments on a diagram label, and orphans the thread when the label goes", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc(diagram("release-flow", FLOW_EXAMPLE));
+    const anchor = { kind: "label", blockId: "release-flow", textId: "notify" };
+    const created = await mcp.tool("create_comment", { tabId: tab.tabId, anchor, body: "Who?" });
+    expect(created.body.comment).toMatchObject({ anchor, quote: "Notify the author" });
+    const missing = await mcp.tool("create_comment", {
+      tabId: tab.tabId,
+      anchor: { ...anchor, textId: "gone" },
+      body: "?",
+    });
+    expect(missing.body.error).toBe("anchor_not_found");
+
+    const withoutLabel = FLOW_EXAMPLE.replace(
+      /<text data-claude-text-id='notify'[^>]*>Notify the author<\/text>/,
+      "",
+    );
+    const current = await Docs.getTab(mcp.api.db, tab.tabId);
+    const written = await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      baseVersion: current.version,
+      markdown: diagram("release-flow", withoutLabel),
+    });
+    expect(written.isError).toBe(false);
+    const listed = await mcp.tool("list_comments", { docId: doc.docId });
+    expect(listed.body.threads[0]).toMatchObject({ anchor, status: "orphaned" });
   });
 });

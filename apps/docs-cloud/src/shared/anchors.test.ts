@@ -7,6 +7,7 @@ import {
   parseStructuredAnchor,
   resolveStructuredAnchor,
 } from "./anchors.ts";
+import { FLOW_EXAMPLE } from "./widget/testing/examples.ts";
 
 const located = (text: string, anchor: Parameters<typeof locateAnchor>[1]) => {
   const range = locateAnchor(text, anchor);
@@ -150,12 +151,14 @@ describe("structured anchors", () => {
     expect(resolveStructuredAnchor(table(rows), { ...cell, blockId: "t2" })).toBeNull();
   });
 
-  it("finds a diagram label by the block id in the fence info and the literal text id", () => {
-    const markdown =
-      '```t3-widget id=d1\nexport default () => <svg><text data-claude-text-id="title">Hi</text></svg>\n```';
-    const label = { kind: "label", blockId: "d1", textId: "title" } as const;
-    expect(resolveStructuredAnchor(markdown, label)).toEqual({ kind: "label" });
-    expect(resolveStructuredAnchor(markdown, { ...label, textId: "tit" })).toBeNull();
+  it("finds a diagram label by the diagram id and the label's text id", () => {
+    const markdown = `\`\`\`t3-widget id=d1\n${FLOW_EXAMPLE}\n\`\`\``;
+    const label = { kind: "label", blockId: "d1", textId: "ship" } as const;
+    expect(resolveStructuredAnchor(markdown, label)).toEqual({
+      kind: "label",
+      text: "Ship to production",
+    });
+    expect(resolveStructuredAnchor(markdown, { ...label, textId: "shi" })).toBeNull();
     expect(resolveStructuredAnchor(markdown, { ...label, blockId: "d2" })).toBeNull();
   });
 

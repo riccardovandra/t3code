@@ -139,9 +139,9 @@ export function anchorStatus(
   return locateAnchor(tabText(), root) ? "anchored" : "text_removed";
 }
 
-/** The quote stored with a structured anchor: the cell's text, else the caller's label. */
+/** The quote stored with a structured anchor: the part's words, else the caller's label. */
 export const structuredQuote = (target: StructuredAnchorTarget, fallback: string) =>
-  (target.kind === "cell" ? target.text : fallback).slice(0, MAX_QUOTE_LENGTH);
+  (target.text || fallback).slice(0, MAX_QUOTE_LENGTH);
 
 export type CommentOp =
   | {
