@@ -28,6 +28,10 @@
   "vars": {
     "OWNER_EMAILS": "riccardo@upliftedconsulting.com,riccardo.vandra@bark.com,riccardo.vandra@gmail.com",
     "EMAIL_FROM": "Docs <docs@upliftedconsulting.com>",
+    // Base of every URL the app hands out. `wrangler dev` reports the custom
+    // domain as request.url, so local runs override this in `.dev.vars`
+    // (PUBLIC_ORIGIN=http://localhost:8787).
+    "PUBLIC_ORIGIN": "https://docs.upliftedconsulting.com",
     // Origins allowed to embed the app (CSP frame-ancestors): app.t3.codes (and preview),
     // local `npx t3` and Vite dev, tailnet-served T3 Code, and the desktop
     // renderer (t3code://app, t3code-dev://app in dev builds).

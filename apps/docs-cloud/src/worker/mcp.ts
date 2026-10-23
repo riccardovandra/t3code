@@ -137,7 +137,7 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
       try {
         const result = await callTool(name, args, {
           deps,
-          origin: url.origin,
+          origin: deps.publicOrigin,
           agentName: clientNameFrom(request) ?? principal.tokenName,
         });
         return rpcResult(body.id, {

@@ -2,6 +2,9 @@ import type { DocAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
   Comment,
+  DocStatus,
+  DocSummary,
+  DocThreadLink,
   DocWithTabs,
   LibraryProject,
   Project,
@@ -47,6 +50,20 @@ export const api = {
   createDoc: (projectId: string, title: string) =>
     request<DocWithTabs>("POST", "/api/docs", { projectId, title }),
   doc: (docId: string) => request<DocWithTabs>("GET", `/api/docs/${docId}`),
+  setDocStatus: (docId: string, status: DocStatus) =>
+    request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { status, clientId }),
+  docThreads: (docId: string) =>
+    request<{ threads: Array<DocThreadLink> }>("GET", `/api/docs/${docId}/threads`),
+  linkThread: (docId: string, input: { environmentId: string; threadId: string; title: string }) =>
+    request<{ threads: Array<DocThreadLink> }>("POST", `/api/docs/${docId}/threads`, {
+      ...input,
+      clientId,
+    }),
+  unlinkThread: (docId: string, linkId: string) =>
+    request<{ threads: Array<DocThreadLink> }>(
+      "DELETE",
+      `/api/docs/${docId}/threads/${linkId}?clientId=${encodeURIComponent(clientId)}`,
+    ),
   tab: (tabId: string) => request<{ tab: Tab }>("GET", `/api/tabs/${tabId}`),
   createTab: (docId: string, input: { title: string; parentTabId?: string | null }) =>
     request<{ tab: Tab }>("POST", `/api/docs/${docId}/tabs`, { ...input, clientId }),

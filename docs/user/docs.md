@@ -20,6 +20,8 @@ Docs Cloud is a hosted doc editor with nested tabs that every agent can write to
 
 Once connected, the Docs panel shows Docs Cloud beside the chat, and **Project files** switches back to the markdown files above. Sign in to Docs Cloud inside the panel the first time. Agents in threads started afterwards get the Docs Cloud tools and use them for docs you ask for. A doc an agent creates opens in the panel with a card in the conversation, and a tab it adds shows a notice with **Open**.
 
+Each doc has a status (Thinking, Plan, In progress, Done) that you set in its header, and the library can be filtered by it. When a doc is ready to drive work, choose **Start work** in its header: T3 Code opens a new thread in the current project with a drafted message that points the agent at the doc as its plan, and shows the doc beside it. Review the message and send it. Once sent, the thread appears under **Threads** in the doc's header; threads from another T3 Code environment show as labels only. **Send to agent** on a Docs Cloud comment goes to one doc agent sub-thread per conversation and doc, which edits the doc and replies in the comment thread.
+
 The panel loads Docs Cloud directly in your browser, so it works the same over remote connections. Browsers that block cookies inside embedded pages, such as Safari, may not keep you signed in there; use **Open in browser** in the panel header instead.
 
 On mobile, the cloud button in a thread's header opens your Docs Cloud library, and tapping a doc card in the conversation opens that doc. Sign in inside that screen the first time. Links to other sites open in your browser.

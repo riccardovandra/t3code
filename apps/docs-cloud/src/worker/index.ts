@@ -22,6 +22,7 @@ async function revive<A>(call: PromiseLike<A>): Promise<A> {
 function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
   return {
     db: env.DB,
+    publicOrigin: env.PUBLIC_ORIGIN,
     owners: parseOwnerEmails(env.OWNER_EMAILS),
     rooms: {
       createTab: (docId, input) => revive(docRoom(env, docId).createTab({ docId, ...input })),
@@ -30,6 +31,7 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
       deleteTab: (docId, input) => revive(docRoom(env, docId).deleteTab(input)),
       setDocStatus: (docId, input) => revive(docRoom(env, docId).setDocStatus({ docId, ...input })),
       commentOp: (docId, input) => revive<CommentOpResult>(docRoom(env, docId).commentOp(input)),
+      threadOp: (docId, input) => revive(docRoom(env, docId).threadOp({ docId, ...input })),
       openSocket: (docId, request) => docRoom(env, docId).fetch(request),
     },
     sendLoginCode: (email, code) => sendLoginCode(env, email, code),

@@ -17,6 +17,8 @@ wrangler d1 migrations apply DB --local    # local D1 under .wrangler/
 wrangler dev --port 8787
 ```
 
+Put `PUBLIC_ORIGIN=http://localhost:8787` (your port) in `.dev.vars`. `wrangler dev` reports the production domain as the request URL, so without it the links agents get point at production.
+
 Without `RESEND_API_KEY`, sign-in codes are printed to the `wrangler dev` console. Rebuild with `vp build` (or `vp build --watch` in a second terminal) after client changes.
 
 Tests: `vp test run apps/docs-cloud` from the repo root. Typecheck: `vp run --filter @t3tools/docs-cloud typecheck`.
