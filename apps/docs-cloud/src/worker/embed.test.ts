@@ -37,13 +37,13 @@ describe("embed policy", () => {
     const html = new Response("<html><head><title>Docs</title></head><body></body></html>", {
       headers: { "Content-Type": "text/html; charset=utf-8", ETag: '"x"' },
     });
-    const response = await withEmbedPolicy(html, SOURCES);
+    const response = await withEmbedPolicy(html, SOURCES, "https://docs.example");
     expect(response.headers.get("Content-Security-Policy")).toBe(
       "frame-ancestors https://app.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app",
     );
     expect(response.headers.get("ETag")).toBeNull();
     expect(await response.text()).toContain(
-      '<meta name="t3-embed-origins" content="https://app.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app"></head>',
+      '<meta name="t3-embed-origins" content="https://app.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app"><meta name="t3-docs-public-origin" content="https://docs.example"></head>',
     );
   });
 
@@ -51,6 +51,7 @@ describe("embed policy", () => {
     const response = await withEmbedPolicy(
       new Response("x", { headers: { "Content-Type": "text/javascript" } }),
       parseEmbedOrigins(undefined),
+      "https://docs.example",
     );
     expect(response.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
     expect(await response.text()).toBe("x");
