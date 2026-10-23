@@ -27,6 +27,16 @@ export function makeApiHarness() {
         if (result.ok) broadcasts.push({ type: "tab.updated", tab: result.tab, origin });
         return result;
       },
+      moveTab: async (_docId, { origin, ...input }) => {
+        const placements = await Docs.moveTab(db, { ...input, now: clock.now });
+        if (placements.length > 0) broadcasts.push({ type: "tab.moved", placements, origin });
+        return placements;
+      },
+      deleteTab: async (_docId, { origin, tabId }) => {
+        const { deletedTabIds, placements } = await Docs.deleteTab(db, { tabId, now: clock.now });
+        broadcasts.push({ type: "tab.deleted", tabIds: deletedTabIds, placements, origin });
+        return deletedTabIds;
+      },
       openSocket: async () => new Response(null, { status: 204 }),
     },
     sendLoginCode: async (email, code) => {

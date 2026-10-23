@@ -10,6 +10,7 @@ import type {
   LibraryProject,
   Project,
   Tab,
+  TabPlacement,
 } from "../shared/protocol.ts";
 import { randomId } from "./crypto.ts";
 
@@ -53,7 +54,39 @@ const toTab = (row: TabRow): Tab => ({
   updatedAt: row.updated_at,
 });
 
-export class NotFoundError extends Error {}
+export class NotFoundError extends Error {
+  constructor(what: string) {
+    super(`not_found: ${what}`);
+  }
+}
+
+/** A tab move that would put it under itself or one of its descendants. */
+export class InvalidMoveError extends Error {
+  constructor() {
+    super("invalid_move");
+  }
+}
+
+/** Deleting the doc's only top-level tab would leave it with nothing to show. */
+export class LastTabError extends Error {
+  constructor() {
+    super("last_tab");
+  }
+}
+
+/**
+ * Durable Object RPC rethrows errors as plain `Error`s with only the message
+ * intact, so callers of a DocRoom stub restore the class from it.
+ */
+export function reviveError(cause: unknown): unknown {
+  if (!(cause instanceof Error)) return cause;
+  if (cause.message.startsWith("not_found: ")) {
+    return new NotFoundError(cause.message.slice("not_found: ".length));
+  }
+  if (cause.message === "invalid_move") return new InvalidMoveError();
+  if (cause.message === "last_tab") return new LastTabError();
+  return cause;
+}
 
 export async function listLibrary(db: D1Database): Promise<ReadonlyArray<LibraryProject>> {
   const [projects, docs] = await db.batch<Record<string, unknown>>([
@@ -132,6 +165,18 @@ export async function getDoc(db: D1Database, docId: string): Promise<DocWithTabs
   const doc = docs?.results[0] as unknown as DocRow | undefined;
   if (!doc) throw new NotFoundError("doc");
   return { doc: toDoc(doc), tabs: ((tabs?.results ?? []) as unknown as Array<TabRow>).map(toTab) };
+}
+
+export async function setDocStatus(
+  db: D1Database,
+  input: { readonly docId: string; readonly status: DocStatus; readonly now: number },
+): Promise<DocSummary> {
+  const row = await db
+    .prepare("UPDATE docs SET status = ?, updated_at = ? WHERE id = ? RETURNING *")
+    .bind(input.status, input.now, input.docId)
+    .first<DocRow>();
+  if (!row) throw new NotFoundError("doc");
+  return toDoc(row);
 }
 
 export async function getTab(db: D1Database, tabId: string): Promise<Tab> {
@@ -231,4 +276,131 @@ export async function writeTab(
   if (!updated) return { ok: false, conflict: await getTab(db, input.tabId) };
   await touchDocStatement(db, updated.doc_id, input.now).run();
   return { ok: true, tab: toTab(updated) };
+}
+
+interface TabNode {
+  id: string;
+  parent_tab_id: string | null;
+  position: number;
+}
+
+async function loadTabNodes(db: D1Database, docId: string): Promise<Array<TabNode>> {
+  const { results } = await db
+    .prepare("SELECT id, parent_tab_id, position FROM tabs WHERE doc_id = ? ORDER BY position")
+    .bind(docId)
+    .all<TabNode>();
+  return results;
+}
+
+const siblingsOf = (nodes: ReadonlyArray<TabNode>, parentTabId: string | null) =>
+  nodes
+    .filter((node) => node.parent_tab_id === parentTabId)
+    .toSorted((a, b) => a.position - b.position);
+
+/**
+ * Moves a tab (with its subtree) under `parentTabId` (null for top level) at
+ * `position` among its new siblings. Both the old and new sibling groups are
+ * renumbered 0..n-1. Returns the placements that changed, the moved tab first.
+ * Call through the DocRoom.
+ */
+export async function moveTab(
+  db: D1Database,
+  input: {
+    readonly tabId: string;
+    readonly parentTabId: string | null;
+    readonly position: number;
+    readonly now: number;
+  },
+): Promise<ReadonlyArray<TabPlacement>> {
+  const tab = await getTab(db, input.tabId);
+  const nodes = await loadTabNodes(db, tab.docId);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (let cursor = input.parentTabId; cursor !== null;) {
+    if (cursor === tab.id) throw new InvalidMoveError();
+    const node = byId.get(cursor);
+    if (!node) throw new NotFoundError("tab");
+    cursor = node.parent_tab_id;
+  }
+
+  const placements = new Map<string, TabPlacement>();
+  const place = (group: ReadonlyArray<TabNode>, parentTabId: string | null) =>
+    group.forEach((node, position) => {
+      if (node.parent_tab_id !== parentTabId || node.position !== position) {
+        placements.set(node.id, { tabId: node.id, parentTabId, position });
+      }
+    });
+  const target = siblingsOf(nodes, input.parentTabId).filter((node) => node.id !== tab.id);
+  const index = Math.max(0, Math.min(Math.trunc(input.position), target.length));
+  const moved = byId.get(tab.id)!;
+  target.splice(index, 0, moved);
+  if (tab.parentTabId !== input.parentTabId) {
+    place(
+      siblingsOf(nodes, tab.parentTabId).filter((node) => node.id !== tab.id),
+      tab.parentTabId,
+    );
+  }
+  place(target, input.parentTabId);
+  if (placements.size === 0) return [];
+
+  await db.batch([
+    ...[...placements.values()].map((placement) =>
+      db
+        .prepare("UPDATE tabs SET parent_tab_id = ?, position = ? WHERE id = ?")
+        .bind(placement.parentTabId, placement.position, placement.tabId),
+    ),
+    touchDocStatement(db, tab.docId, input.now),
+  ]);
+  const own = placements.get(tab.id);
+  return own
+    ? [own, ...[...placements.values()].filter((p) => p !== own)]
+    : [...placements.values()];
+}
+
+/**
+ * Deletes a tab and all its descendants, then closes the gap among its
+ * siblings. Returns the deleted ids and the sibling placements that changed.
+ * Call through the DocRoom.
+ */
+export async function deleteTab(
+  db: D1Database,
+  input: { readonly tabId: string; readonly now: number },
+): Promise<{
+  readonly deletedTabIds: ReadonlyArray<string>;
+  readonly placements: ReadonlyArray<TabPlacement>;
+}> {
+  const tab = await getTab(db, input.tabId);
+  const nodes = await loadTabNodes(db, tab.docId);
+  if (tab.parentTabId === null && siblingsOf(nodes, null).length <= 1) {
+    throw new LastTabError();
+  }
+  const deleted = new Set([tab.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const node of nodes) {
+      if (node.parent_tab_id !== null && deleted.has(node.parent_tab_id) && !deleted.has(node.id)) {
+        deleted.add(node.id);
+        grew = true;
+      }
+    }
+  }
+  const placements: Array<TabPlacement> = [];
+  siblingsOf(nodes, tab.parentTabId)
+    .filter((node) => node.id !== tab.id)
+    .forEach((node, position) => {
+      if (node.position !== position) {
+        placements.push({ tabId: node.id, parentTabId: tab.parentTabId, position });
+      }
+    });
+  const ids = [...deleted];
+  await db.batch([
+    // D1 enforces foreign keys, so ON DELETE CASCADE removes the descendants.
+    db.prepare("DELETE FROM tabs WHERE id = ?").bind(tab.id),
+    ...placements.map((placement) =>
+      db
+        .prepare("UPDATE tabs SET position = ? WHERE id = ?")
+        .bind(placement.position, placement.tabId),
+    ),
+    touchDocStatement(db, tab.docId, input.now),
+  ]);
+  return { deletedTabIds: ids, placements };
 }

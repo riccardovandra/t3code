@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 
-import type { RoomMessage, Tab } from "../shared/protocol.ts";
+import type { RoomMessage, Tab, TabPlacement } from "../shared/protocol.ts";
 import * as Docs from "./docs.ts";
 import type { Env } from "./env.ts";
 
@@ -66,6 +66,39 @@ export class DocRoom extends DurableObject<Env> {
     });
   }
 
+  async moveTab(input: {
+    readonly tabId: string;
+    readonly parentTabId: string | null;
+    readonly position: number;
+    readonly origin: string | null;
+  }): Promise<ReadonlyArray<TabPlacement>> {
+    return this.serialize(async () => {
+      const { origin, ...move } = input;
+      const placements = await Docs.moveTab(this.env.DB, { ...move, now: Date.now() });
+      if (placements.length > 0) this.broadcast({ type: "tab.moved", placements, origin });
+      return placements;
+    });
+  }
+
+  async deleteTab(input: {
+    readonly tabId: string;
+    readonly origin: string | null;
+  }): Promise<ReadonlyArray<string>> {
+    return this.serialize(async () => {
+      const { deletedTabIds, placements } = await Docs.deleteTab(this.env.DB, {
+        tabId: input.tabId,
+        now: Date.now(),
+      });
+      this.broadcast({
+        type: "tab.deleted",
+        tabIds: deletedTabIds,
+        placements,
+        origin: input.origin,
+      });
+      return deletedTabIds;
+    });
+  }
+
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected WebSocket", { status: 426 });
@@ -80,7 +113,8 @@ export class DocRoom extends DurableObject<Env> {
   }
 
   override async webSocketClose(socket: WebSocket, code: number): Promise<void> {
-    socket.close(code === 1005 ? 1000 : code, "closing");
+    // 1005, 1006 and 1015 describe a close and may not be sent in one.
+    socket.close(code === 1005 || code === 1006 || code === 1015 ? 1000 : code, "closing");
   }
 }
 

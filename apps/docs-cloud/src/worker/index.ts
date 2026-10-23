@@ -1,19 +1,30 @@
 import { handleApi, type ApiDeps } from "./api.ts";
 import { parseOwnerEmails } from "./auth.ts";
 import { docRoom } from "./docRoom.ts";
+import { reviveError, type TabWriteResult } from "./docs.ts";
 import type { Env } from "./env.ts";
 import { handleMcp } from "./mcp.ts";
 import { sendLoginCode } from "./email.ts";
 
 export { DocRoom } from "./docRoom.ts";
 
+async function revive<A>(call: PromiseLike<A>): Promise<A> {
+  try {
+    return await call;
+  } catch (cause) {
+    throw reviveError(cause);
+  }
+}
+
 function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
   return {
     db: env.DB,
     owners: parseOwnerEmails(env.OWNER_EMAILS),
     rooms: {
-      createTab: (docId, input) => docRoom(env, docId).createTab({ docId, ...input }),
-      writeTab: (docId, input) => docRoom(env, docId).writeTab(input),
+      createTab: (docId, input) => revive(docRoom(env, docId).createTab({ docId, ...input })),
+      writeTab: (docId, input) => revive<TabWriteResult>(docRoom(env, docId).writeTab(input)),
+      moveTab: (docId, input) => revive(docRoom(env, docId).moveTab(input)),
+      deleteTab: (docId, input) => revive(docRoom(env, docId).deleteTab(input)),
       openSocket: (docId, request) => docRoom(env, docId).fetch(request),
     },
     sendLoginCode: (email, code) => sendLoginCode(env, email, code),
