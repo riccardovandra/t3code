@@ -42,8 +42,7 @@ const DOCS_CLOUD_SERVER_NAME = "docs-cloud";
  * A T3 project uses the Docs Cloud project with the same name, ignoring case
  * and spacing. Docs Cloud's `projectNameKey` (src/shared/embed.ts) must agree.
  */
-export const projectNameKey = (name: string): string =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
+const projectNameKey = (name: string): string => name.trim().replace(/\s+/g, " ").toLowerCase();
 
 /** The doc's title: its first `# ` heading, else the file name. */
 export const importTitle = (docPath: string, markdown: string): string => {
@@ -69,7 +68,9 @@ const DocWithTabs = Schema.Struct({
 });
 const WrittenTab = Schema.Struct({ tab: TabRef });
 const CreatedComment = Schema.Struct({ comment: Schema.Struct({ id: Schema.String }) });
-const ErrorBody = Schema.Struct({ error: Schema.optional(Schema.String) });
+const decodeErrorBody = Schema.decodeUnknownOption(
+  Schema.Struct({ error: Schema.optional(Schema.String) }),
+);
 
 interface ImportRow {
   readonly doc_path: string;
@@ -148,42 +149,41 @@ const make = Effect.gen(function* () {
     return { origin, authorization } satisfies Connection;
   });
 
-  const call = <S extends Schema.Top>(
+  const call = Effect.fn("DocsCloudImport.call")(function* <S extends Schema.Top>(
     conn: Connection,
     method: "GET" | "POST" | "PATCH",
     path: string,
     schema: S,
     body?: unknown,
-  ) =>
-    Effect.gen(function* () {
-      const request = HttpClientRequest.make(method)(`${conn.origin}${path}`).pipe(
-        HttpClientRequest.setHeader("Authorization", conn.authorization),
-        HttpClientRequest.setHeader("Accept", "application/json"),
-        body === undefined ? (r) => r : HttpClientRequest.bodyJsonUnsafe(body),
+  ) {
+    const request = HttpClientRequest.make(method)(`${conn.origin}${path}`).pipe(
+      HttpClientRequest.setHeader("Authorization", conn.authorization),
+      HttpClientRequest.setHeader("Accept", "application/json"),
+      body === undefined ? (r) => r : HttpClientRequest.bodyJsonUnsafe(body),
+    );
+    const response = yield* http.execute(request).pipe(
+      Effect.timeout("20 seconds"),
+      Effect.mapError(
+        (cause) => new DocsCloudError({ reason: "unreachable", detail: String(cause) }),
+      ),
+    );
+    const json = yield* response.json.pipe(Effect.orElseSucceed(() => ({})));
+    if (response.status === 401 || response.status === 403) {
+      return yield* new DocsCloudError({ reason: "unauthorized" });
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const code = decodeErrorBody(json).pipe(
+        Option.flatMap((value) => Option.fromNullishOr(value.error)),
+        Option.getOrElse(() => `HTTP ${response.status}`),
       );
-      const response = yield* http.execute(request).pipe(
-        Effect.timeout("20 seconds"),
-        Effect.mapError(
-          (cause) => new DocsCloudError({ reason: "unreachable", detail: String(cause) }),
-        ),
-      );
-      const json = yield* response.json.pipe(Effect.orElseSucceed(() => ({})));
-      if (response.status === 401 || response.status === 403) {
-        return yield* new DocsCloudError({ reason: "unauthorized" });
-      }
-      if (response.status < 200 || response.status >= 300) {
-        const code = Schema.decodeUnknownOption(ErrorBody)(json).pipe(
-          Option.flatMap((value) => Option.fromNullishOr(value.error)),
-          Option.getOrElse(() => `HTTP ${response.status}`),
-        );
-        return yield* new DocsCloudError({ reason: "failed", detail: code });
-      }
-      return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
-        Effect.mapError(
-          () => new DocsCloudError({ reason: "failed", detail: "unexpected response" }),
-        ),
-      );
-    });
+      return yield* new DocsCloudError({ reason: "failed", detail: code });
+    }
+    return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
+      Effect.mapError(
+        () => new DocsCloudError({ reason: "failed", detail: "unexpected response" }),
+      ),
+    );
+  });
 
   const t3Project = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -196,20 +196,22 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const resolveProject = (conn: Connection, name: string) =>
-    Effect.gen(function* () {
-      const library = yield* call(conn, "GET", "/api/library", Library);
-      const key = projectNameKey(name);
-      const existing = library.projects.find((project) => projectNameKey(project.name) === key);
-      const project =
-        existing ??
-        (yield* call(conn, "POST", "/api/projects", CreatedProject, { name: name.trim() })).project;
-      return {
-        id: project.id,
-        name: project.name,
-        url: `${conn.origin}/`,
-      } satisfies DocsCloudProject;
-    });
+  const resolveProject = Effect.fn("DocsCloudImport.resolveProject")(function* (
+    conn: Connection,
+    name: string,
+  ) {
+    const library = yield* call(conn, "GET", "/api/library", Library);
+    const key = projectNameKey(name);
+    const existing = library.projects.find((project) => projectNameKey(project.name) === key);
+    const project =
+      existing ??
+      (yield* call(conn, "POST", "/api/projects", CreatedProject, { name: name.trim() })).project;
+    return {
+      id: project.id,
+      name: project.name,
+      url: `${conn.origin}/`,
+    } satisfies DocsCloudProject;
+  });
 
   const project: DocsCloudImport["Service"]["project"] = Effect.fn("DocsCloudImport.project")(
     function* (input) {
@@ -252,42 +254,41 @@ const make = Effect.gen(function* () {
     return { docs, imports: rows.map((row) => toRecord(origin, row)) };
   });
 
-  const importComments = (conn: Connection, tabId: string, open: ReadonlyArray<DocComment>) =>
-    Effect.gen(function* () {
-      let imported = 0;
-      const skipped: Array<DocsCloudSkippedComment> = [];
-      for (const comment of open) {
-        const outcome = yield* Effect.gen(function* () {
-          const created = yield* call(conn, "POST", `/api/tabs/${tabId}/comments`, CreatedComment, {
-            quote: comment.quote,
-            prefix: comment.prefix,
-            suffix: comment.suffix,
-            body: comment.body,
-            requireAnchor: true,
+  const importComments = Effect.fn("DocsCloudImport.importComments")(function* (
+    conn: Connection,
+    tabId: string,
+    open: ReadonlyArray<DocComment>,
+  ) {
+    let imported = 0;
+    const skipped: Array<DocsCloudSkippedComment> = [];
+    for (const comment of open) {
+      const outcome = yield* Effect.gen(function* () {
+        const created = yield* call(conn, "POST", `/api/tabs/${tabId}/comments`, CreatedComment, {
+          quote: comment.quote,
+          prefix: comment.prefix,
+          suffix: comment.suffix,
+          body: comment.body,
+          requireAnchor: true,
+        });
+        for (const reply of comment.replies) {
+          if (reply.body.trim() === "") continue;
+          yield* call(conn, "POST", `/api/comments/${created.comment.id}/replies`, CreatedComment, {
+            body: reply.body,
           });
-          for (const reply of comment.replies) {
-            if (reply.body.trim() === "") continue;
-            yield* call(
-              conn,
-              "POST",
-              `/api/comments/${created.comment.id}/replies`,
-              CreatedComment,
-              { body: reply.body },
-            );
-          }
-        }).pipe(
-          Effect.as(null),
-          Effect.catch((error) =>
-            Effect.succeed<DocsCloudSkippedComment["reason"]>(
-              error.detail === "anchor_not_found" ? "text_not_found" : "failed",
-            ),
+        }
+      }).pipe(
+        Effect.as(null),
+        Effect.catch((error) =>
+          Effect.succeed<DocsCloudSkippedComment["reason"]>(
+            error.detail === "anchor_not_found" ? "text_not_found" : "failed",
           ),
-        );
-        if (outcome === null) imported += 1;
-        else skipped.push({ commentId: comment.id, quote: comment.quote, reason: outcome });
-      }
-      return { imported, skipped };
-    });
+        ),
+      );
+      if (outcome === null) imported += 1;
+      else skipped.push({ commentId: comment.id, quote: comment.quote, reason: outcome });
+    }
+    return { imported, skipped };
+  });
 
   const writeFirstTab = (
     conn: Connection,
@@ -299,7 +300,7 @@ const make = Effect.gen(function* () {
       markdown,
     });
 
-  const importOne = (input: {
+  const importOne = Effect.fn("DocsCloudImport.importOne")(function* (input: {
     readonly conn: Connection;
     readonly projectId: ProjectId;
     readonly cloudProjectId: string;
@@ -308,88 +309,90 @@ const make = Effect.gen(function* () {
     readonly existing: ImportRow | undefined;
     readonly update: boolean;
     readonly openComments: ReadonlyArray<DocComment>;
-  }): Effect.Effect<DocsCloudImportFileResult, DocsCloudError | WorkspaceDocs.WorkspaceDocsError> =>
-    Effect.gen(function* () {
-      const { conn, existing } = input;
-      const empty = { error: null, commentsImported: 0, commentsSkipped: [] };
-      if (existing && !input.update) {
-        return {
-          ...empty,
-          docPath: input.docPath,
-          status: "skipped",
-          doc: toRecord(conn.origin, existing),
-        } as const;
-      }
-      const file = yield* workspaceDocs.read({ cwd: input.cwd, docPath: input.docPath });
-      if (file.truncated) {
-        return {
-          ...empty,
-          docPath: file.docPath,
-          status: "failed",
-          doc: null,
-          error: "This doc is too large to import.",
-        } as const;
-      }
+  }): Effect.fn.Return<
+    DocsCloudImportFileResult,
+    DocsCloudError | WorkspaceDocs.WorkspaceDocsError
+  > {
+    const { conn, existing } = input;
+    const empty = { error: null, commentsImported: 0, commentsSkipped: [] };
+    if (existing && !input.update) {
+      return {
+        ...empty,
+        docPath: input.docPath,
+        status: "skipped",
+        doc: toRecord(conn.origin, existing),
+      } as const;
+    }
+    const file = yield* workspaceDocs.read({ cwd: input.cwd, docPath: input.docPath });
+    if (file.truncated) {
+      return {
+        ...empty,
+        docPath: file.docPath,
+        status: "failed",
+        doc: null,
+        error: "This doc is too large to import.",
+      } as const;
+    }
 
-      if (existing) {
-        // A doc deleted in Docs Cloud since its import is imported again below.
-        const current = yield* call(conn, "GET", `/api/docs/${existing.doc_id}`, DocWithTabs).pipe(
-          Effect.map(Option.some),
-          Effect.catchIf(
-            (error) => error.reason === "failed" && error.detail === "not_found",
-            () => Effect.succeed(Option.none()),
-          ),
-        );
-        if (Option.isSome(current)) {
-          const tab =
-            current.value.tabs.find((candidate) => candidate.id === existing.tab_id) ??
-            current.value.tabs[0];
-          if (tab) {
-            yield* writeFirstTab(conn, tab, file.markdown);
-            return {
-              ...empty,
-              docPath: file.docPath,
-              status: "updated",
-              doc: toRecord(conn.origin, existing),
-            } as const;
-          }
+    if (existing) {
+      // A doc deleted in Docs Cloud since its import is imported again below.
+      const current = yield* call(conn, "GET", `/api/docs/${existing.doc_id}`, DocWithTabs).pipe(
+        Effect.map(Option.some),
+        Effect.catchIf(
+          (error) => error.reason === "failed" && error.detail === "not_found",
+          () => Effect.succeed(Option.none()),
+        ),
+      );
+      if (Option.isSome(current)) {
+        const tab =
+          current.value.tabs.find((candidate) => candidate.id === existing.tab_id) ??
+          current.value.tabs[0];
+        if (tab) {
+          yield* writeFirstTab(conn, tab, file.markdown);
+          return {
+            ...empty,
+            docPath: file.docPath,
+            status: "updated",
+            doc: toRecord(conn.origin, existing),
+          } as const;
         }
       }
+    }
 
-      const created = yield* call(conn, "POST", "/api/docs", DocWithTabs, {
-        projectId: input.cloudProjectId,
-        title: importTitle(file.docPath, file.markdown),
-      });
-      const tab = created.tabs[0];
-      if (!tab) return yield* new DocsCloudError({ reason: "failed", detail: "doc has no tab" });
-      if (file.markdown !== "") yield* writeFirstTab(conn, tab, file.markdown);
-      const importedAt = DateTime.formatIso(yield* DateTime.now);
-      // Recorded before the comments, so a failure there can never lead to a duplicate doc.
-      yield* persistence(sql`
+    const created = yield* call(conn, "POST", "/api/docs", DocWithTabs, {
+      projectId: input.cloudProjectId,
+      title: importTitle(file.docPath, file.markdown),
+    });
+    const tab = created.tabs[0];
+    if (!tab) return yield* new DocsCloudError({ reason: "failed", detail: "doc has no tab" });
+    if (file.markdown !== "") yield* writeFirstTab(conn, tab, file.markdown);
+    const importedAt = DateTime.formatIso(yield* DateTime.now);
+    // Recorded before the comments, so a failure there can never lead to a duplicate doc.
+    yield* persistence(sql`
         INSERT INTO docs_cloud_imports (origin, project_id, doc_path, doc_id, tab_id, imported_at)
         VALUES (${conn.origin}, ${input.projectId}, ${file.docPath}, ${created.doc.id}, ${tab.id}, ${importedAt})
         ON CONFLICT (origin, project_id, doc_path)
         DO UPDATE SET doc_id = excluded.doc_id, tab_id = excluded.tab_id, imported_at = excluded.imported_at
       `);
-      const result = yield* importComments(
-        conn,
-        tab.id,
-        input.openComments.filter((comment) => comment.docPath === file.docPath),
-      );
-      return {
+    const result = yield* importComments(
+      conn,
+      tab.id,
+      input.openComments.filter((comment) => comment.docPath === file.docPath),
+    );
+    return {
+      docPath: file.docPath,
+      status: "imported",
+      doc: {
         docPath: file.docPath,
-        status: "imported",
-        doc: {
-          docPath: file.docPath,
-          docId: created.doc.id,
-          url: docUrl(conn.origin, created.doc.id),
-          importedAt,
-        },
-        error: null,
-        commentsImported: result.imported,
-        commentsSkipped: result.skipped,
-      } as const;
-    });
+        docId: created.doc.id,
+        url: docUrl(conn.origin, created.doc.id),
+        importedAt,
+      },
+      error: null,
+      commentsImported: result.imported,
+      commentsSkipped: result.skipped,
+    } as const;
+  });
 
   const importDocs: DocsCloudImport["Service"]["importDocs"] = Effect.fn(
     "DocsCloudImport.importDocs",

@@ -56,8 +56,8 @@ export function DocsCloudPanel(props: {
     frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin),
   );
   useEffect(() => {
-    postContext();
-  }, [projectName, postContext]);
+    frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin);
+  }, [origin, projectName]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
