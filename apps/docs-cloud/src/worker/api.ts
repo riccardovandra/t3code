@@ -6,12 +6,15 @@ import {
   type Tab,
   type TabPlacement,
 } from "../shared/protocol.ts";
+import { isDocRole, type DocRole } from "../shared/access.ts";
 import { locateAnchor, markdownToText } from "../shared/anchors.ts";
+import * as Access from "./access.ts";
 import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
 import * as Comments from "./comments.ts";
 import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
+import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
 import { widgetProblems } from "./widgets.ts";
 
@@ -62,7 +65,9 @@ export interface DocRooms {
     docId: string,
     input: { readonly op: DocThreads.DocThreadOp; readonly origin: string | null },
   ): Promise<ReadonlyArray<DocThreadLink>>;
-  openSocket(docId: string, request: Request): Promise<Response>;
+  /** `userId` tags the socket so removing that person from the doc can close it. */
+  openSocket(docId: string, request: Request, userId: string): Promise<Response>;
+  closeSockets(docId: string, userId: string): Promise<void>;
 }
 
 export interface ApiDeps {
@@ -76,6 +81,7 @@ export interface ApiDeps {
   readonly owners: ReadonlySet<string>;
   readonly rooms: DocRooms;
   readonly sendLoginCode: (email: string, code: string) => Promise<void>;
+  readonly sendDocInvite: (invite: DocInvite) => Promise<void>;
   readonly waitUntil: (promise: Promise<unknown>) => void;
   readonly now: () => number;
 }
@@ -128,8 +134,10 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
   if (path.startsWith("/api/auth/")) return handleAuth(request, path, deps);
 
-  const principal = await Auth.authenticate(deps.db, request, now);
+  const principal = await Auth.authenticate(deps.db, request, { owners: deps.owners, now });
   if (!principal) return error(401, "unauthorized");
+  const need = (docId: string, role: DocRole) =>
+    Access.requireDocRole(deps.db, docId, principal.userId, role);
 
   const segments = path.split("/").slice(2); // drop "", "api"
   const [resource, id, sub, subId] = segments;
@@ -143,12 +151,13 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
     if (request.headers.get("Upgrade") !== "websocket") return error(426, "expected_websocket");
     try {
-      await Docs.getDoc(deps.db, id);
+      // Sockets only receive; every role may listen, and writes are checked on REST.
+      await need(id, "viewer");
     } catch (cause) {
       if (cause instanceof Docs.NotFoundError) return error(404, "not_found");
       throw cause;
     }
-    return deps.rooms.openSocket(id, request);
+    return deps.rooms.openSocket(id, request, principal.userId);
   }
 
   if (
@@ -161,31 +170,48 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
   try {
     if (path === "/api/me" && method === "GET") {
-      return json(principal.kind === "session" ? { email: principal.email } : { token: true });
+      return json(await Access.getMe(deps.db, principal.userId, deps.owners));
+    }
+
+    if (path === "/api/me" && method === "PATCH") {
+      const body = await readJson(request);
+      const name = typeof body.name === "string" ? body.name.trim() : null;
+      if (name === null || name.length > 100) return error(400, "invalid_name");
+      await Access.setUserName(deps.db, principal.userId, name);
+      return json(await Access.getMe(deps.db, principal.userId, deps.owners));
     }
 
     if (resource === "tokens") {
       // A leaked agent token must not be able to mint or revoke tokens.
       if (principal.kind !== "session") return error(403, "session_required");
-      if (!id && method === "GET") return json({ tokens: await Auth.listApiTokens(deps.db) });
+      const userId = principal.userId;
+      if (!id && method === "GET") {
+        return json({ tokens: await Auth.listApiTokens(deps.db, userId) });
+      }
       if (!id && method === "POST") {
         const body = await readJson(request);
         const name = str(body.name, 100);
         if (!name) return error(400, "invalid_name");
-        return json(await Auth.createApiToken(deps.db, name, now), 201);
+        return json(await Auth.createApiToken(deps.db, { name, userId, now }), 201);
       }
       if (id && method === "DELETE") {
-        return (await Auth.revokeApiToken(deps.db, id, now))
+        return (await Auth.revokeApiToken(deps.db, { id, userId, now }))
           ? json({ ok: true })
           : error(404, "not_found");
       }
     }
 
     if (path === "/api/library" && method === "GET") {
-      return json({ projects: await Docs.listLibrary(deps.db) });
+      const projects = await Access.scopeLibrary(deps.db, {
+        projects: await Docs.listLibrary(deps.db),
+        userId: principal.userId,
+        owners: deps.owners,
+      });
+      return json({ projects });
     }
 
     if (path === "/api/projects" && method === "POST") {
+      if (!Access.isAdmin(principal.userId)) return error(403, "forbidden");
       const name = str((await readJson(request)).name);
       if (!name) return error(400, "invalid_name");
       return json({ project: await Docs.createProject(deps.db, name, now) }, 201);
@@ -196,14 +222,26 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       const projectId = str(body.projectId);
       const title = str(body.title);
       if (!projectId || !title) return error(400, "invalid_doc");
-      return json(await Docs.createDoc(deps.db, { projectId, title, now }), 201);
+      if (!(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
+        return error(404, "not_found");
+      }
+      const ownerId = principal.userId;
+      return json(await Docs.createDoc(deps.db, { projectId, title, ownerId, now }), 201);
     }
 
     if (resource === "docs" && id && !sub && method === "GET") {
-      return json(await Docs.getDoc(deps.db, id));
+      const role = await need(id, "viewer");
+      const owner = await Access.docOwner(deps.db, id, deps.owners);
+      return json({ ...(await Docs.getDoc(deps.db, id)), role, owner });
+    }
+
+    if (resource === "docs" && id && sub === "members") {
+      const response = await handleMembers(request, { id, subId, method, principal }, deps);
+      if (response) return response;
     }
 
     if (resource === "docs" && id && !sub && method === "PATCH") {
+      await need(id, "editor");
       const body = await readJson(request);
       const status = body.status;
       if (!DOC_STATUSES.includes(status as DocStatus)) return error(400, "invalid_status");
@@ -220,6 +258,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (resource === "docs" && id && sub === "export.md" && method === "GET") {
+      await need(id, "viewer");
       const doc = await Docs.getDoc(deps.db, id);
       return Export.markdownResponse(Export.docMarkdown(doc), doc.doc.title);
     }
@@ -233,9 +272,9 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       }
       const markdown = typeof body.markdown === "string" ? body.markdown : "";
       if (markdown.length > MAX_MARKDOWN_LENGTH) return error(413, "too_large");
+      await need(id, "editor");
       const problems = widgetProblems(markdown);
       if (problems) return widgetInvalid(problems);
-      await Docs.getDoc(deps.db, id);
       const tab = await deps.rooms.createTab(id, {
         parentTabId,
         title,
@@ -246,11 +285,14 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (resource === "tabs" && id && !sub && method === "GET") {
-      return json({ tab: await Docs.getTab(deps.db, id) });
+      const tab = await Docs.getTab(deps.db, id);
+      await need(tab.docId, "viewer");
+      return json({ tab });
     }
 
     if (resource === "tabs" && id && sub === "export.md" && method === "GET") {
       const tab = await Docs.getTab(deps.db, id);
+      await need(tab.docId, "viewer");
       return Export.markdownResponse(Export.tabMarkdown(tab), tab.title);
     }
 
@@ -268,6 +310,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       if (title === null) return error(400, "invalid_title");
       if (markdown === undefined && title === undefined) return error(400, "empty_write");
       const current = await Docs.getTab(deps.db, id);
+      await need(current.docId, "editor");
       const problems = markdown === undefined ? null : widgetProblems(markdown, current.markdown);
       if (problems) return widgetInvalid(problems);
       const result = await deps.rooms.writeTab(current.docId, {
@@ -293,6 +336,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
         return error(400, "invalid_position");
       }
       const current = await Docs.getTab(deps.db, id);
+      await need(current.docId, "editor");
       const placements = await deps.rooms.moveTab(current.docId, {
         tabId: id,
         parentTabId,
@@ -304,6 +348,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
     if (resource === "tabs" && id && !sub && method === "DELETE") {
       const current = await Docs.getTab(deps.db, id);
+      await need(current.docId, "editor");
       const tabIds = await deps.rooms.deleteTab(current.docId, {
         tabId: id,
         origin: url.searchParams.get("clientId"),
@@ -321,6 +366,10 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     return error(404, "not_found");
   } catch (cause) {
     if (cause instanceof Docs.NotFoundError) return error(404, "not_found");
+    if (cause instanceof Access.ForbiddenError) {
+      return json({ error: "forbidden", required: cause.required }, 403);
+    }
+    if (cause instanceof Access.LastOwnerError) return error(409, "last_owner");
     if (cause instanceof Docs.InvalidMoveError) return error(400, "invalid_move");
     if (cause instanceof Docs.LastTabError) return error(409, "last_tab");
     throw cause;
@@ -328,7 +377,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 }
 
 /**
- * Threads started from a doc. Only the owner's session links or unlinks them:
+ * Threads started from a doc. Only an editor's session links or unlinks them:
  * links come from T3 Code's embed of this app, and an agent token has no
  * T3 Code thread of its own to vouch for.
  */
@@ -345,11 +394,12 @@ async function handleDocThreads(
 ): Promise<Response | null> {
   const { id, subId, method } = route;
   if (!subId && method === "GET") {
-    await Docs.getDoc(deps.db, id);
+    await Access.requireDocRole(deps.db, id, route.principal.userId, "viewer");
     return json({ threads: await DocThreads.listDocThreads(deps.db, id) });
   }
   if (method !== "POST" && method !== "DELETE") return null;
   if (route.principal.kind !== "session") return error(403, "session_required");
+  await Access.requireDocRole(deps.db, id, route.principal.userId, "editor");
 
   if (!subId && method === "POST") {
     const body = await readJson(request);
@@ -358,7 +408,6 @@ async function handleDocThreads(
     // Thread titles can run long; the label only needs a recognisable start.
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
     if (!environmentId || !threadId || !title) return error(400, "invalid_thread");
-    await Docs.getDoc(deps.db, id);
     const threads = await deps.rooms.threadOp(id, {
       op: { kind: "link", environmentId, threadId, title },
       origin: str(body.clientId),
@@ -376,10 +425,22 @@ async function handleDocThreads(
   return null;
 }
 
-const commentActor = (principal: Auth.Principal): Comments.CommentActor =>
-  principal.kind === "session"
-    ? { kind: "owner", email: principal.email }
-    : { kind: "agent", name: principal.tokenName };
+async function commentActor(
+  deps: ApiDeps,
+  principal: Auth.Principal,
+  docId: string,
+  minimum: DocRole,
+): Promise<Comments.CommentActor> {
+  const docRole = await Access.requireDocRole(deps.db, docId, principal.userId, minimum);
+  return principal.kind === "session"
+    ? {
+        kind: "person",
+        email: principal.email,
+        emails: await Access.userEmails(deps.db, principal.userId, deps.owners),
+        docRole,
+      }
+    : { kind: "agent", name: principal.tokenName, docRole };
+}
 
 /** Exact text, not trimmed: anchors must match the tab character for character. */
 const anchorText = (value: unknown, max: number, required: boolean): string | null => {
@@ -402,10 +463,11 @@ async function handleComments(
   deps: ApiDeps,
 ): Promise<Response | null> {
   const { resource, id, sub, method, url } = route;
-  const actor = commentActor(route.principal);
+  const actorOn = (docId: string, minimum: DocRole) =>
+    commentActor(deps, route.principal, docId, minimum);
 
   if (resource === "docs" && id && sub === "comments" && method === "GET") {
-    await Docs.getDoc(deps.db, id);
+    await actorOn(id, "viewer");
     const tabId = url.searchParams.get("tabId") ?? undefined;
     return json({ comments: await Comments.listComments(deps.db, { docId: id, tabId }) });
   }
@@ -419,6 +481,7 @@ async function handleComments(
     const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
     if (!text) return error(400, "invalid_body");
     const tab = await Docs.getTab(deps.db, id);
+    const actor = await actorOn(tab.docId, "commenter");
     // Imports ask for this so a comment whose passage is gone is reported, not stored detached.
     if (
       body.requireAnchor === true &&
@@ -441,6 +504,7 @@ async function handleComments(
 
   if (resource !== "comments" || !id) return null;
   const existing = await Comments.getComment(deps.db, id);
+  const actor = await actorOn(existing.docId, "commenter");
 
   if (sub === "replies" && method === "POST") {
     const body = await readJson(request);
@@ -484,6 +548,86 @@ async function handleComments(
   }
 
   return null;
+}
+
+const MAX_EMAIL_LENGTH = 320;
+
+/** People on a doc. Any member sees the list; owners change it, and anyone may leave. */
+async function handleMembers(
+  request: Request,
+  route: {
+    readonly id: string;
+    readonly subId: string | undefined;
+    readonly method: string;
+    readonly principal: Auth.Principal;
+  },
+  deps: ApiDeps,
+): Promise<Response | null> {
+  const { id, subId, method, principal } = route;
+  const role = await Access.requireDocRole(deps.db, id, principal.userId, "viewer");
+  const members = () => Access.listMembers(deps.db, id, deps.owners);
+
+  if (!subId && method === "GET") return json({ members: await members() });
+
+  if (!subId && method === "POST") {
+    if (role !== "owner") throw new Access.ForbiddenError("owner");
+    const body = await readJson(request);
+    const email = str(body.email, MAX_EMAIL_LENGTH);
+    if (!email || !email.includes("@")) return error(400, "invalid_email");
+    if (!isDocRole(body.role)) return error(400, "invalid_role");
+    const { member, created } = await Access.shareDoc(deps.db, {
+      docId: id,
+      email,
+      role: body.role,
+      addedBy: principal.userId,
+      owners: deps.owners,
+      now: deps.now(),
+    });
+    if (created) deps.waitUntil(inviteByEmail(deps, { docId: id, to: member.email, principal }));
+    return json({ member, members: await members() }, created ? 201 : 200);
+  }
+
+  if (subId && method === "PATCH") {
+    if (role !== "owner") throw new Access.ForbiddenError("owner");
+    const body = await readJson(request);
+    if (!isDocRole(body.role)) return error(400, "invalid_role");
+    const member = await Access.setMemberRole(deps.db, {
+      docId: id,
+      memberId: subId,
+      role: body.role,
+      owners: deps.owners,
+    });
+    return json({ member, members: await members() });
+  }
+
+  if (subId && method === "DELETE") {
+    const { userId } = await Access.removeMember(deps.db, {
+      docId: id,
+      memberId: subId,
+      by: { userId: principal.userId, role },
+    });
+    if (userId) await deps.rooms.closeSockets(id, userId);
+    return json({ members: await members() });
+  }
+  return null;
+}
+
+/** Tells a newly added person the doc is theirs to open. Failures only log: the share stands. */
+export async function inviteByEmail(
+  deps: ApiDeps,
+  input: { readonly docId: string; readonly to: string; readonly principal: Auth.Principal },
+): Promise<void> {
+  const [inviter, { doc, tabs }] = await Promise.all([
+    Access.getUser(deps.db, input.principal.userId, deps.owners),
+    Docs.getDoc(deps.db, input.docId),
+  ]);
+  const firstTab = tabs.find((tab) => tab.parentTabId === null);
+  await deps.sendDocInvite({
+    to: input.to,
+    inviterName: inviter.name.trim() || inviter.email,
+    docTitle: doc.title,
+    url: `${deps.publicOrigin}/d/${doc.id}${firstTab ? `/${firstTab.id}` : ""}`,
+  });
 }
 
 async function handleAuth(request: Request, path: string, deps: ApiDeps): Promise<Response> {

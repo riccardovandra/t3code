@@ -22,6 +22,7 @@ Workflow:
 6. Keep findings in the doc, not the chat. End with one line and the URL.
 Re-read a tab (read_doc with tabId) before editing it if the user may have changed it.
 Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab.
+Sharing: docs are private to the people on them. share_doc gives someone access by email (owner, editor, commenter or viewer); list_members and unshare_doc manage it. You act with the role of the person whose token you use.
 
 Diagrams use Claude's widget format: a fenced block \`\`\`t3-widget id=<slug>\` whose body is ONE JS/JSX module, \`export default () => <svg viewBox='0 0 760 H' role='img' aria-label='<title words>'>…</svg>;\` (a block body with consts and lowercase helpers is fine). The id names the diagram in its tab and never changes. Writes with an invalid diagram are refused with rule names and line:col.
 - Every <text> or <tspan> whose words you type carries its own LITERAL data-claude-text-id='<slug>' (letters, digits, _ -, max 64, unique). Words are literal JSX text, written out one by one, never computed or inside .map()/helpers. Two lines = two <tspan data-claude-text-id>; no id on a <text> that holds tspans. The first <text> is the title: say the finding, not the topic.
@@ -93,7 +94,10 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
 
   // Only bearer tokens: a session cookie is ambient and SameSite=None, so a
   // cross-site text/plain POST could otherwise drive the tools.
-  const principal = await Auth.authenticate(deps.db, request, deps.now());
+  const principal = await Auth.authenticate(deps.db, request, {
+    owners: deps.owners,
+    now: deps.now(),
+  });
   if (principal?.kind !== "token") {
     return Response.json(
       { error: "unauthorized" },
@@ -151,6 +155,7 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
           deps,
           origin: deps.publicOrigin,
           agentName: clientNameFrom(request) ?? principal.tokenName,
+          principal,
         });
         return rpcResult(body.id, {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],

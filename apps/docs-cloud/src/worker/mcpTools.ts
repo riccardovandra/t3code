@@ -1,6 +1,7 @@
 // The agent tools behind `/mcp`. Reads go through `docs.ts`; every write to an
 // existing doc goes through `deps.rooms` so open editors receive it live.
 
+import { DOC_ROLES, isDocRole, type DocMember, type DocRole } from "../shared/access.ts";
 import { findQuote, markdownToText } from "../shared/anchors.ts";
 import {
   DOC_STATUSES,
@@ -14,7 +15,9 @@ import { describeWidgetProblems } from "../shared/widget/check.ts";
 import { findWidgetFences, spliceFenceSource } from "../shared/widget/fence.ts";
 import { MAX_LABEL_LENGTH, rewriteLabel } from "../shared/widget/rewrite.ts";
 import { analyzeWidget, formatDiagnostic } from "../shared/widget/validate.ts";
-import type { ApiDeps } from "./api.ts";
+import * as Access from "./access.ts";
+import { inviteByEmail, type ApiDeps } from "./api.ts";
+import type { Principal } from "./auth.ts";
 import * as Comments from "./comments.ts";
 import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
@@ -44,6 +47,8 @@ interface ToolContext {
   readonly origin: string;
   /** The MCP client's name from `initialize`, else the token's name. */
   readonly agentName: string;
+  /** The token; its user's doc roles decide what the agent may do. */
+  readonly principal: Principal;
 }
 
 type Args = Record<string, unknown>;
@@ -101,9 +106,40 @@ async function load<A>(promise: Promise<A>, what: string): Promise<A> {
     if (cause instanceof Docs.LastTabError) {
       return fail("last_tab", "A doc must keep at least one top-level tab.");
     }
+    if (cause instanceof Access.ForbiddenError) {
+      return fail("forbidden", `This needs ${cause.required} access to the doc.`);
+    }
+    if (cause instanceof Access.LastOwnerError) {
+      return fail("last_owner", "A doc must keep at least one owner.");
+    }
     throw cause;
   }
 }
+
+/** The token user's role on the doc, failing when it is below `minimum`. */
+const need = (ctx: ToolContext, docId: string, minimum: DocRole) =>
+  load(Access.requireDocRole(ctx.deps.db, docId, ctx.principal.userId, minimum), "doc");
+
+/** A tab the token user may act on with `minimum`. */
+async function tabWith(ctx: ToolContext, tabId: string, minimum: DocRole): Promise<Tab> {
+  const tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+  await need(ctx, tab.docId, minimum);
+  return tab;
+}
+
+const scopedLibrary = async (ctx: ToolContext) =>
+  Access.scopeLibrary(ctx.deps.db, {
+    projects: await Docs.listLibrary(ctx.deps.db),
+    userId: ctx.principal.userId,
+    owners: ctx.deps.owners,
+  });
+
+const memberSummary = (member: DocMember) => ({
+  email: member.email,
+  name: member.user?.name ?? "",
+  role: member.role,
+  pending: member.pending,
+});
 
 const tabUrl = (ctx: ToolContext, tab: Pick<Tab, "docId" | "id">) =>
   `${ctx.origin}/d/${tab.docId}/${tab.id}`;
@@ -176,7 +212,7 @@ async function commentWrite(
 
 /** Writes through the DocRoom, retrying a title-only change against the latest version. */
 async function renameTab(ctx: ToolContext, tabId: string, title: string): Promise<Tab> {
-  let tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+  let tab = await tabWith(ctx, tabId, "editor");
   for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt += 1) {
     const result = await ctx.deps.rooms.writeTab(tab.docId, {
       tabId,
@@ -382,6 +418,39 @@ export const TOOLS = [
     },
   },
   {
+    name: "list_members",
+    description:
+      "List the people who can open a doc and their roles (owner, editor, commenter, viewer). Pending people were invited but have not signed in yet.",
+    inputSchema: {
+      type: "object",
+      properties: { docId: { type: "string" } },
+      required: ["docId"],
+    },
+  },
+  {
+    name: "share_doc",
+    description:
+      "Give a person access to a doc by email, or change their role. Docs are private until shared. New people get an email with the link. Owner only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string" },
+        email: { type: "string" },
+        role: { type: "string", enum: DOC_ROLES },
+      },
+      required: ["docId", "email", "role"],
+    },
+  },
+  {
+    name: "unshare_doc",
+    description: "Remove a person's access to a doc. Owner only; a doc keeps at least one owner.",
+    inputSchema: {
+      type: "object",
+      properties: { docId: { type: "string" }, email: { type: "string" } },
+      required: ["docId", "email"],
+    },
+  },
+  {
     name: "read_diagram",
     description:
       "Read one ```t3-widget diagram in a tab: its module code, title, every label's text id and words (with the anchor it sits in), its anchors, and any validation diagnostics.",
@@ -412,7 +481,7 @@ type ToolName = (typeof TOOLS)[number]["name"];
 
 const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<object>> = {
   list_projects: async (_args, ctx) => {
-    const library = await Docs.listLibrary(ctx.deps.db);
+    const library = await scopedLibrary(ctx);
     return {
       projects: library.map((project) => ({
         projectId: project.id,
@@ -423,6 +492,9 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
   },
 
   create_project: async (args, ctx) => {
+    if (!Access.isAdmin(ctx.principal.userId)) {
+      fail("forbidden", "Only the workspace admin creates projects.");
+    }
     const project = await Docs.createProject(
       ctx.deps.db,
       requireString(args, "name"),
@@ -433,22 +505,36 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
 
   list_docs: async (args, ctx) => {
     const projectId = optionalString(args, "projectId");
-    const library = await Docs.listLibrary(ctx.deps.db);
+    const library = await scopedLibrary(ctx);
     const projects = projectId ? library.filter((project) => project.id === projectId) : library;
     if (projectId && projects.length === 0) fail("not_found", "No project with that id.");
     const docs = projects
       .flatMap((project) => project.docs)
       .toSorted((a, b) => b.updatedAt - a.updatedAt);
-    return { docs: docs.map((doc) => docSummary(ctx, doc, undefined)) };
+    return {
+      docs: docs.map((doc) => ({
+        ...docSummary(ctx, doc, undefined),
+        role: doc.role,
+        owner: doc.owner?.email ?? null,
+      })),
+    };
   },
 
   create_doc: async (args, ctx) => {
     const projectId = requireString(args, "projectId");
     const title = requireString(args, "title");
     const markdown = markdownArg(args, "markdown", false);
+    if (!(await Access.canSeeProject(ctx.deps.db, projectId, ctx.principal.userId))) {
+      fail("not_found", "No project with that id.");
+    }
     if (markdown) assertWidgets(markdown);
     const created = await load(
-      Docs.createDoc(ctx.deps.db, { projectId, title, now: ctx.deps.now() }),
+      Docs.createDoc(ctx.deps.db, {
+        projectId,
+        title,
+        ownerId: ctx.principal.userId,
+        now: ctx.deps.now(),
+      }),
       "project",
     );
     let tab = created.tabs[0]!;
@@ -467,19 +553,20 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
   read_doc: async (args, ctx) => {
     const docId = requireString(args, "docId");
     const tabId = optionalString(args, "tabId");
+    const role = await need(ctx, docId, "viewer");
     const { doc, tabs } = await load(Docs.getDoc(ctx.deps.db, docId), "doc");
     const ordered = readingOrder(tabs);
     if (tabId) {
       const tab = tabs.find((candidate) => candidate.id === tabId);
       if (!tab) fail("not_found", "No tab with that id in this doc.");
       return {
-        doc: docSummary(ctx, doc, ordered[0]?.tab.id),
+        doc: { ...docSummary(ctx, doc, ordered[0]?.tab.id), role },
         tab: { ...tabSummary(ctx, tab), markdown: tab.markdown },
       };
     }
     const threads = await DocThreads.listDocThreads(ctx.deps.db, docId);
     return {
-      doc: docSummary(ctx, doc, ordered[0]?.tab.id),
+      doc: { ...docSummary(ctx, doc, ordered[0]?.tab.id), role },
       // T3 Code threads started from this doc ("Start work").
       startedThreads: threads.map(({ environmentId, threadId, title }) => ({
         environmentId,
@@ -499,8 +586,8 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const title = requireString(args, "title");
     const parentTabId = optionalString(args, "parentTabId") ?? null;
     const markdown = markdownArg(args, "markdown", false) ?? "";
+    await need(ctx, docId, "editor");
     assertWidgets(markdown);
-    await load(Docs.getDoc(ctx.deps.db, docId), "doc");
     if (parentTabId !== null) {
       const parent = await load(Docs.getTab(ctx.deps.db, parentTabId), "parent tab");
       if (parent.docId !== docId) fail("not_found", "The parent tab is in another doc.");
@@ -519,7 +606,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const find = markdownArg(args, "find", true)!;
     const replace = markdownArg(args, "replace", true)!;
     if (find.length === 0) fail("invalid_argument", '"find" must not be empty.');
-    let tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    let tab = await tabWith(ctx, tabId, "editor");
     for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt += 1) {
       const matches = countOccurrences(tab.markdown, find);
       if (matches === 0) {
@@ -558,7 +645,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const tabId = requireString(args, "tabId");
     const markdown = markdownArg(args, "markdown", true)!;
     const baseVersion = requireVersion(args, "baseVersion");
-    const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const current = await tabWith(ctx, tabId, "editor");
     assertWidgets(markdown, current.markdown);
     const result = await ctx.deps.rooms.writeTab(current.docId, {
       tabId,
@@ -586,7 +673,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     if (typeof position !== "number" || !Number.isInteger(position) || position < 0) {
       fail("invalid_argument", '"position" must be a non-negative integer.');
     }
-    const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const current = await tabWith(ctx, tabId, "editor");
     await load(
       ctx.deps.rooms.moveTab(current.docId, { tabId, parentTabId, position, origin: null }),
       "parent tab in this doc",
@@ -596,7 +683,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
 
   delete_tab: async (args, ctx) => {
     const tabId = requireString(args, "tabId");
-    const current = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const current = await tabWith(ctx, tabId, "editor");
     const deletedTabIds = await load(
       ctx.deps.rooms.deleteTab(current.docId, { tabId, origin: null }),
       "tab",
@@ -610,6 +697,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     if (!DOC_STATUSES.includes(status as DocStatus)) {
       fail("invalid_argument", `"status" must be one of ${DOC_STATUSES.join(", ")}.`);
     }
+    await need(ctx, docId, "editor");
     const doc = await load(
       ctx.deps.rooms.setDocStatus(docId, { status: status as DocStatus, origin: null }),
       "doc",
@@ -621,6 +709,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const docId = requireString(args, "docId");
     const tabId = optionalString(args, "tabId");
     const includeResolved = args.includeResolved === true;
+    await need(ctx, docId, "viewer");
     const { tabs } = await load(Docs.getDoc(ctx.deps.db, docId), "doc");
     if (tabId && !tabs.some((tab) => tab.id === tabId)) {
       fail("not_found", "No tab with that id in this doc.");
@@ -657,7 +746,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const quote = markdownArg(args, "quote", true)!;
     if (quote.length > Comments.MAX_QUOTE_LENGTH) fail("too_large", '"quote" is too long.');
     const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
-    const tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const tab = await tabWith(ctx, tabId, "commenter");
     const match = findQuote(markdownToText(tab.markdown), quote);
     if (match.kind === "missing") {
       fail("quote_not_found", '"quote" does not appear in the tab. Re-read it with read_doc.', {
@@ -685,6 +774,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const commentId = requireString(args, "commentId");
     const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
     const target = await load(Comments.getComment(ctx.deps.db, commentId), "comment");
+    await need(ctx, target.docId, "commenter");
     const reply = await commentWrite(ctx, target.docId, {
       kind: "reply",
       commentId,
@@ -697,6 +787,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
   resolve_comment: async (args, ctx) => {
     const commentId = requireString(args, "commentId");
     const target = await load(Comments.getComment(ctx.deps.db, commentId), "comment");
+    await need(ctx, target.docId, "commenter");
     const root = await commentWrite(ctx, target.docId, {
       kind: "resolve",
       commentId,
@@ -705,8 +796,65 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     return { threadId: root.id, resolved: true };
   },
 
+  list_members: async (args, ctx) => {
+    const docId = requireString(args, "docId");
+    await need(ctx, docId, "viewer");
+    const members = await Access.listMembers(ctx.deps.db, docId, ctx.deps.owners);
+    return { members: members.map(memberSummary) };
+  },
+
+  share_doc: async (args, ctx) => {
+    const docId = requireString(args, "docId");
+    const email = requireString(args, "email", 320);
+    if (!email.includes("@")) fail("invalid_argument", '"email" must be an email address.');
+    const role = args.role;
+    if (!isDocRole(role))
+      fail("invalid_argument", `"role" must be one of ${DOC_ROLES.join(", ")}.`);
+    await need(ctx, docId, "owner");
+    const { member, created } = await load(
+      Access.shareDoc(ctx.deps.db, {
+        docId,
+        email,
+        role,
+        addedBy: ctx.principal.userId,
+        owners: ctx.deps.owners,
+        now: ctx.deps.now(),
+      }),
+      "doc",
+    );
+    if (created) {
+      ctx.deps.waitUntil(
+        inviteByEmail(ctx.deps, { docId, to: member.email, principal: ctx.principal }),
+      );
+    }
+    return { member: memberSummary(member), added: created };
+  },
+
+  unshare_doc: async (args, ctx) => {
+    const docId = requireString(args, "docId");
+    const email = requireString(args, "email", 320);
+    const role = await need(ctx, docId, "viewer");
+    const memberId = await Access.findMemberId(ctx.deps.db, {
+      docId,
+      email,
+      owners: ctx.deps.owners,
+    });
+    if (!memberId) fail("not_found", "That email has no access to this doc.");
+    const { userId } = await load(
+      Access.removeMember(ctx.deps.db, {
+        docId,
+        memberId,
+        by: { userId: ctx.principal.userId, role },
+      }),
+      "doc",
+    );
+    if (userId) await ctx.deps.rooms.closeSockets(docId, userId);
+    const members = await Access.listMembers(ctx.deps.db, docId, ctx.deps.owners);
+    return { members: members.map(memberSummary) };
+  },
+
   read_diagram: async (args, ctx) => {
-    const tab = await load(Docs.getTab(ctx.deps.db, requireString(args, "tabId")), "tab");
+    const tab = await tabWith(ctx, requireString(args, "tabId"), "viewer");
     const fence = findDiagram(ctx, tab, requireString(args, "diagramId"));
     const analysis = analyzeWidget(fence.source);
     return {
@@ -732,7 +880,7 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
     const diagramId = requireString(args, "diagramId");
     const textId = requireString(args, "textId", 64);
     const value = requireString(args, "value", MAX_LABEL_LENGTH);
-    let tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    let tab = await tabWith(ctx, tabId, "editor");
     for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt += 1) {
       const fence = findDiagram(ctx, tab, diagramId);
       const rewrite = rewriteLabel(fence.source, textId, value);

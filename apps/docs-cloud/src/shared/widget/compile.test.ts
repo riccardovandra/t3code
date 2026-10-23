@@ -13,7 +13,6 @@ interface VNode {
 function draw(source: string): VNode {
   const compiled = compileWidget(source);
   if (!compiled.ok) throw new Error(compiled.message);
-  // oxlint-disable-next-line no-new-func -- the test stands in for the sandbox's script tag
   const factory = new Function(
     WIDGET_H,
     WIDGET_FRAGMENT,
