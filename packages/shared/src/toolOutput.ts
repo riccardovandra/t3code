@@ -68,15 +68,25 @@ export interface DocsCloudReference {
 
 const DOCS_CLOUD_TAB_URL = /^https?:\/\/[^/?#\s]+\/d\/([\w-]{1,128})\/([\w-]{1,128})$/;
 
+/**
+ * Reads a raw `{ doc, tab }` result, or the `docsCloud` reference the server
+ * already compacted it to: clients compact the wire's output again, so the
+ * compacted shape has to survive a second pass.
+ */
 function readDocsCloudReference(
   data: Record<PropertyKey, unknown>,
 ): DocsCloudReference | undefined {
-  const { tab, doc } = data;
+  const compacted = Predicate.isObject(data.docsCloud) ? data.docsCloud : undefined;
+  const tab = compacted
+    ? { url: compacted.url, tabId: compacted.tabId, title: compacted.tabTitle }
+    : data.tab;
+  const doc = compacted ? { docId: compacted.docId, title: compacted.docTitle } : data.doc;
   if (!Predicate.isObject(tab)) return undefined;
   const { url, tabId, title } = tab;
   if (typeof url !== "string" || url.length > 1024 || typeof title !== "string") return undefined;
   const match = DOCS_CLOUD_TAB_URL.exec(url);
   if (!match || match[2] !== tabId || title.length > 512) return undefined;
+  if (compacted && compacted.docId !== match[1]) return undefined;
   const docTitle =
     Predicate.isObject(doc) &&
     doc.docId === match[1] &&

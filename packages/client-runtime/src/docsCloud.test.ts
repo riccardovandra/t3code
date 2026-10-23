@@ -1,4 +1,5 @@
 import type { McpServerEntry, McpServerId } from "@t3tools/contracts";
+import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -117,6 +118,33 @@ describe("docsCloudToolEvent", () => {
       path: "/d/doc-1/tab-2",
       ref: { url: tab.url, docId: "doc-1", tabId: "tab-2", tabTitle: "Risks" },
     });
+  });
+
+  it("reads results the server already compacted for the wire", () => {
+    const wire = compactDynamicToolOutput(created);
+    for (const toolName of ["docs-cloud.create_doc", "mcp__docs-cloud__create_doc"]) {
+      expect(docsCloudToolEvent({ toolName, status: "completed", output: wire }, BASE)).toEqual({
+        kind: "doc-created",
+        path: "/d/doc-1/tab-2",
+        ref: {
+          url: tab.url,
+          docId: "doc-1",
+          tabId: "tab-2",
+          tabTitle: "Risks",
+          docTitle: "Launch plan",
+        },
+      });
+    }
+    expect(
+      docsCloudToolEvent(
+        {
+          toolName: "mcp__docs-cloud__create_tab",
+          status: "completed",
+          output: compactDynamicToolOutput(mcpResult({ tab })),
+        },
+        BASE,
+      ),
+    ).toMatchObject({ kind: "tab-added", path: "/d/doc-1/tab-2" });
   });
 
   it("ignores other servers, other origins, failures and unfinished calls", () => {

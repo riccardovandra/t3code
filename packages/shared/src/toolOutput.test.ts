@@ -168,6 +168,19 @@ describe("compactDynamicToolOutput Docs Cloud", () => {
     });
   });
 
+  it("reads its own compacted output again", () => {
+    const once = compactDynamicToolOutput({
+      doc: { docId: "doc-1", title: "Launch plan" },
+      tab,
+    });
+    expect(compactDynamicToolOutput(once)).toEqual(once);
+    const lone = compactDynamicToolOutput({ tab });
+    expect(compactDynamicToolOutput(lone)).toEqual(lone);
+    expect(
+      compactDynamicToolOutput({ docsCloud: { ...once?.docsCloud, docId: "other" } }),
+    ).toBeUndefined();
+  });
+
   it("keeps a lone tab and rejects a url that does not name it", () => {
     expect(compactDynamicToolOutput(JSON.stringify({ tab }))?.docsCloud).toEqual({
       url: tab.url,

@@ -23,7 +23,11 @@ import {
   projectDomainEventForWire,
 } from "./WireProjection.ts";
 import { threadShellFromProjection } from "./ProjectionStore.ts";
-import { MAX_TOOL_OUTPUT_IMAGES, toolOutputImages } from "@t3tools/shared/toolOutput";
+import {
+  compactDynamicToolOutput,
+  MAX_TOOL_OUTPUT_IMAGES,
+  toolOutputImages,
+} from "@t3tools/shared/toolOutput";
 
 const decodeTurnItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem);
 const encodeTurnItemJson = Schema.encodeSync(OrchestrationV2TurnItemJson);
@@ -92,6 +96,31 @@ describe("orchestration V2 wire projection", () => {
     expect(decoded).toMatchObject({ viewedImagePath: "/workspace/reference.png" });
     expect(decoded).not.toHaveProperty("output");
     expect(item.output.data).toBe("private-image-data");
+  });
+
+  it("keeps a Docs Cloud result readable after the wire compacts it", () => {
+    const url = "https://docs.example.com/d/doc-1/tab-1";
+    const result = {
+      doc: { docId: "doc-1", title: "Launch plan", url },
+      tab: { tabId: "tab-1", title: "Overview", url },
+    };
+    const item = {
+      ...base,
+      toolName: "docs-cloud.create_doc",
+      output: [{ type: "text", text: JSON.stringify(result) }],
+    } satisfies OrchestrationV2TurnItem;
+    const decoded = decodeTurnItem(
+      decodeTurnItemJson(encodeTurnItemJson(decodeTurnItem(projectTurnItemForWire(item)))),
+    );
+    // Clients run the same compaction again on what they receive.
+    const output = decoded.type === "dynamic_tool" ? decoded.output : null;
+    expect(compactDynamicToolOutput(output)?.docsCloud).toEqual({
+      url,
+      docId: "doc-1",
+      tabId: "tab-1",
+      tabTitle: "Overview",
+      docTitle: "Launch plan",
+    });
   });
 
   it("keeps transcript bodies out of shell rows", () => {
