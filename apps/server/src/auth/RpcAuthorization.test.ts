@@ -13,6 +13,7 @@ import {
   AuthSourceControlWriteScope,
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
+  CLIENT_GUARDED_RPC_SCOPES,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -80,6 +81,14 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.docsCloudImport)).toBe(
       AuthOrchestrationOperateScope,
     );
+  });
+
+  it("lets file readers see the skill trash but requires provider management to change it", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.skillsTrashList)).toBe(AuthFilesystemReadScope);
+    for (const method of [WS_METHODS.skillsTrashRestore, WS_METHODS.skillsTrashDelete]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthProvidersManageScope);
+      expect(CLIENT_GUARDED_RPC_SCOPES[method]).toBe(AuthProvidersManageScope);
+    }
   });
 
   it("keeps webhook delivery logs, which hold request bodies, behind operate scope", () => {
@@ -174,6 +183,58 @@ describe("RPC scope middleware", () => {
         requiredPermission: missing,
       });
       expect(handled).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("skill trash authorization", () => {
+  const tested = [
+    WS_METHODS.skillsTrashList,
+    WS_METHODS.skillsTrashRestore,
+    WS_METHODS.skillsTrashDelete,
+  ] as const;
+  const group = WsRpcGroup.omit(
+    ...[...WsRpcGroup.requests.keys()].filter(
+      (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+        !(tested as ReadonlyArray<string>).includes(tag),
+    ),
+  );
+
+  it.effect("lists for a file reader, but restores and deletes only with provider management", () =>
+    Effect.gen(function* () {
+      const handled: Array<string> = [];
+      const handlers = Layer.mergeAll(
+        group.toLayerHandler(WS_METHODS.skillsTrashList, () => Effect.succeed({ entries: [] })),
+        group.toLayerHandler(WS_METHODS.skillsTrashRestore, () =>
+          Effect.sync(() => handled.push("restore")).pipe(Effect.as({})),
+        ),
+        group.toLayerHandler(WS_METHODS.skillsTrashDelete, () =>
+          Effect.sync(() => handled.push("delete")).pipe(Effect.as({})),
+        ),
+      );
+      const reader = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(Layer.merge(handlers, RpcAuthorization.layer([AuthFilesystemReadScope]))),
+      );
+      expect(yield* reader[WS_METHODS.skillsTrashList]({})).toEqual({ entries: [] });
+      for (const method of [WS_METHODS.skillsTrashRestore, WS_METHODS.skillsTrashDelete]) {
+        expect(yield* reader[method]({ id: "entry" }).pipe(Effect.flip)).toMatchObject({
+          _tag: "EnvironmentAuthorizationError",
+          requiredPermission: AuthProvidersManageScope,
+        });
+      }
+      expect(handled).toEqual([]);
+
+      const owner = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(
+            handlers,
+            RpcAuthorization.layer([AuthFilesystemReadScope, AuthProvidersManageScope]),
+          ),
+        ),
+      );
+      yield* owner[WS_METHODS.skillsTrashRestore]({ id: "entry" });
+      yield* owner[WS_METHODS.skillsTrashDelete]({ id: "entry" });
+      expect(handled).toEqual(["restore", "delete"]);
     }).pipe(Effect.scoped),
   );
 });

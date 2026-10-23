@@ -1256,6 +1256,23 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsRemove,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    // Fork: Remove moves skills into the environment's trash.
+    listSkillTrash: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:trash",
+      tag: WS_METHODS.skillsTrashList,
+      staleTimeMs: 30_000,
+      idleTtlMs: 5 * 60_000,
+    }),
+    restoreSkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:restore",
+      tag: WS_METHODS.skillsTrashRestore,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    deleteSkillFromTrash: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:delete-from-trash",
+      tag: WS_METHODS.skillsTrashDelete,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     exportSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:export",
       tag: WS_METHODS.skillsExport,

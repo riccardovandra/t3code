@@ -14,6 +14,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 
+import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -135,6 +136,7 @@ const withLibrary = <A, E>(
           Layer.provide(ProcessRunner.layer),
           Layer.provide(Layer.succeed(ProviderRegistry.ProviderRegistry, registry)),
           Layer.provide(Layer.succeed(ProjectService.ProjectService, projects)),
+          Layer.provide(ServerConfig.ServerConfig.layerTest(base, path.join(base, "t3"))),
         ),
       ),
       Effect.provideService(HostProcess.Environment, {
@@ -319,6 +321,21 @@ it.effect(
         );
         // The plugin's copy isn't the user's to remove.
         assert.isTrue(yield* fileSystem.exists(path.join(plugin, "SKILL.md")));
+
+        // It went to the trash, not away, and comes back as it was.
+        const realOwn = path.join(yield* fileSystem.realPath(path.dirname(own)), "handmade");
+        const { entries } = yield* library.listTrash;
+        assert.deepEqual(
+          entries.map((entry) => [entry.name, entry.target, entry.paths, entry.source]),
+          [["handmade", { kind: "environment" }, [realOwn, link], undefined]],
+        );
+        yield* library.restoreFromTrash({ id: entries[0]?.id ?? "" });
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(own, "SKILL.md")),
+          SKILL("handmade", "Mine."),
+        );
+        assert.equal(yield* fileSystem.readLink(link), own);
+        assert.deepEqual((yield* library.listTrash).entries, []);
       }).pipe(Effect.provide(NodeServices.layer)),
     ),
   60_000,
@@ -409,7 +426,7 @@ it.effect(
 );
 
 it.effect(
-  "fails a removal the CLI couldn't finish, which it reports with a zero exit",
+  "fails a removal it can't finish, and puts back what it had moved",
   () =>
     withLibrary(({ library, project, source }) =>
       Effect.gen(function* () {
@@ -424,6 +441,9 @@ it.effect(
           .pipe(Effect.flip, Effect.ensuring(fileSystem.chmod(folder, 0o755).pipe(Effect.ignore)));
         assert.equal(failure.reason, "cliFailed");
         assert.isTrue(yield* fileSystem.exists(path.join(folder, "notes")));
+        // Claude's link went first, so it is put back too, and nothing is left in the trash.
+        assert.isTrue(yield* fileSystem.exists(path.join(project, ".claude", "skills", "notes")));
+        assert.deepEqual((yield* library.listTrash).entries, []);
       }).pipe(Effect.provide(NodeServices.layer)),
     ),
   120_000,
@@ -535,6 +555,49 @@ it.effect(
       }).pipe(Effect.provide(NodeServices.layer)),
     ),
   180_000,
+);
+
+it.effect("moves an installed skill to the trash with its lock entry, and restores all of it", () =>
+  withLibrary(({ library, home, source }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const target = { kind: "environment" } as const;
+      yield* library.install({ source, skills: ["review"], target });
+      const folder = path.join(home, ".agents", "skills", "review");
+      const link = path.join(home, ".claude", "skills", "review");
+      const lockedSkills = fileSystem
+        .readFileString(path.join(home, ".agents", ".skill-lock.json"))
+        .pipe(
+          Effect.map((text) => (JSON.parse(text) as { skills: Record<string, unknown> }).skills),
+        );
+      const lockEntry = (yield* lockedSkills).review as { readonly source: string };
+      const linkTarget = yield* fileSystem.readLink(link);
+
+      yield* library.remove({ name: "review", target });
+      assert.isFalse(yield* fileSystem.exists(folder));
+      assert.isFalse(yield* fileSystem.exists(link));
+      assert.notProperty(yield* lockedSkills, "review");
+      const { entries } = yield* library.listTrash;
+      assert.deepEqual(
+        entries.map((entry) => [entry.name, entry.target, entry.paths, entry.source]),
+        [["review", target, [folder, link], lockEntry.source]],
+      );
+      const id = entries[0]?.id ?? "";
+      const trashed = path.join(path.dirname(home), "t3", "userdata", "skill-trash", id);
+      assert.isTrue(yield* fileSystem.exists(path.join(trashed, "items", "0", "bin", "run")));
+
+      yield* library.restoreFromTrash({ id });
+      assert.equal(
+        yield* fileSystem.readFileString(path.join(folder, "SKILL.md")),
+        SKILL("review", "Review a change."),
+      );
+      assert.equal(yield* fileSystem.readLink(link), linkTarget);
+      assert.deepEqual((yield* lockedSkills).review, lockEntry);
+      assert.isFalse(yield* fileSystem.exists(trashed));
+      assert.deepEqual((yield* library.listTrash).entries, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  ),
 );
 
 describe("lockedInstallSource", () => {

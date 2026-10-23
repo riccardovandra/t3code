@@ -46,6 +46,15 @@ from plugins and the ones agents ship with can only be switched off. Installing 
 [`skills`](https://github.com/vercel-labs/skills) installer built into T3 Code, with its telemetry
 off. Installing, updating and removing skills needs permission to manage providers.
 
+### Trash
+
+**Remove** moves a skill to its environment's trash instead of deleting it: its folder, every
+agent's link to it, and the installer's record of where it came from. Right after removing, use
+**Restore** beside the message, or find the skill later under **Trash** at the bottom of the Skills
+tab. Restore puts everything back where it was; if something else now sits in one of those places,
+move it away first, since T3 Code never overwrites it. **Delete permanently** removes a skill from
+the trash for good.
+
 ## MCP servers
 
 MCP servers are managed in **Settings → MCP Servers**; the **MCP servers** tab here opens that

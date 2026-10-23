@@ -584,6 +584,9 @@ const FORK_RPC_METHODS = [
   WS_METHODS.docsDeleteComment,
   WS_METHODS.docsCloudListImports,
   WS_METHODS.docsCloudImport,
+  WS_METHODS.skillsTrashList,
+  WS_METHODS.skillsTrashRestore,
+  WS_METHODS.skillsTrashDelete,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1288,6 +1291,21 @@ const layerMcpServersRpc = (
       mcpServerOAuth.signOut(input),
     ),
   );
+
+const layerSkillTrashRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const skillLibrary = yield* SkillLibrary.SkillLibrary;
+    return Layer.mergeAll(
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashList, () => skillLibrary.listTrash),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashRestore, (input) =>
+        skillLibrary.restoreFromTrash(input).pipe(Effect.as({})),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashDelete, (input) =>
+        skillLibrary.deleteFromTrash(input).pipe(Effect.as({})),
+      ),
+    );
+  }),
+);
 
 const layerAiPmDocsRpc = Layer.unwrap(
   Effect.gen(function* () {
@@ -3416,6 +3434,7 @@ export const layer = Layer.unwrap(
                 ),
               ),
               Layer.merge(layerAiPmDocsRpc),
+              Layer.merge(layerSkillTrashRpc),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
