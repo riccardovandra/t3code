@@ -93,6 +93,7 @@ import {
 import { threadRouteIsHydrating } from "./thread-route-hydration";
 import { useThreadPromptLink } from "../prompt-links/useThreadPromptLink";
 import { ThreadHeader } from "./ThreadHeader";
+import { useDocsCloudBaseUrl } from "../docs-cloud/useDocsCloudBaseUrl";
 import {
   useAndroidWorkspaceBack,
   useWorkspaceBackNavigation,
@@ -421,6 +422,7 @@ function ThreadRouteContent(
     };
   });
   const routeEnvironmentRuntime = useRemoteEnvironmentRuntime(environmentId);
+  const docsCloudBaseUrl = useDocsCloudBaseUrl(environmentId);
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeConnectionError = routeEnvironmentRuntime?.connectionError ?? null;
@@ -740,6 +742,10 @@ function ThreadRouteContent(
     onOpenTerminal: handleOpenTerminal,
     onOpenNewTerminal: handleOpenNewTerminal,
     onRunProjectScript: handleRunProjectScript,
+    onOpenDocsCloud:
+      docsCloudBaseUrl !== null && environmentIdRaw
+        ? () => navigation.navigate("DocsCloud", { environmentId: environmentIdRaw })
+        : undefined,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
