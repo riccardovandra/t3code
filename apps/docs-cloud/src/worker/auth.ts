@@ -11,7 +11,7 @@ const API_TOKEN_PREFIX = "dct_";
 
 export type Principal =
   | { readonly kind: "session"; readonly email: string }
-  | { readonly kind: "token"; readonly tokenId: string };
+  | { readonly kind: "token"; readonly tokenId: string; readonly tokenName: string };
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -155,16 +155,16 @@ export async function apiTokenId(
   db: D1Database,
   token: string,
   now: number,
-): Promise<string | null> {
+): Promise<{ readonly id: string; readonly name: string } | null> {
   if (!token.startsWith(API_TOKEN_PREFIX)) return null;
   const row = await db
     .prepare(
       `UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ? AND revoked_at IS NULL
-       RETURNING id`,
+       RETURNING id, name`,
     )
     .bind(now, await sha256Hex(token))
-    .first<{ id: string }>();
-  return row?.id ?? null;
+    .first<{ id: string; name: string }>();
+  return row ?? null;
 }
 
 export function readCookie(request: Request, name: string): string | null {
@@ -187,8 +187,8 @@ export async function authenticate(
 ): Promise<Principal | null> {
   const authorization = request.headers.get("Authorization");
   if (authorization?.startsWith("Bearer ")) {
-    const tokenId = await apiTokenId(db, authorization.slice("Bearer ".length).trim(), now);
-    return tokenId ? { kind: "token", tokenId } : null;
+    const token = await apiTokenId(db, authorization.slice("Bearer ".length).trim(), now);
+    return token ? { kind: "token", tokenId: token.id, tokenName: token.name } : null;
   }
   const cookie = readCookie(request, SESSION_COOKIE);
   if (!cookie) return null;

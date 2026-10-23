@@ -640,6 +640,225 @@ span.tab-row-toggle {
   background: var(--code-bg);
 }
 
+/* Comments: a margin column beside the editor, cards placed at their passages. */
+
+.doc-main:has(.doc-body) {
+  max-width: 66rem;
+}
+
+.doc-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 2rem;
+}
+
+.comment-margin {
+  position: relative;
+  font-size: 0.85rem;
+}
+
+.comment-mark {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  cursor: pointer;
+}
+
+.comment-mark-active {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-bottom-color: var(--accent);
+}
+
+.comment-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.comment-card.active {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.08);
+  z-index: 2;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.comment-author {
+  font-weight: 600;
+}
+
+.comment-author.agent {
+  color: var(--accent);
+}
+
+.comment-entry-delete {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
+.comment-body {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-detached {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.comment-detached q {
+  text-decoration: line-through;
+}
+
+.comment-reply-count {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.comment-composer textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  resize: vertical;
+}
+
+.comment-composer textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.button.small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.comment-add {
+  position: absolute;
+  left: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  z-index: 3;
+}
+
+.comment-add:hover {
+  border-color: var(--accent);
+}
+
+.comment-marker {
+  position: absolute;
+  left: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  font: inherit;
+  font-size: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.comment-marker.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.resolved-list {
+  min-width: 20rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.resolved-item {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.resolved-item + .resolved-item {
+  border-top: 1px solid var(--border);
+}
+
+.resolved-item p {
+  margin: 0 0 0.3rem;
+}
+
+.resolved-where {
+  font-size: 0.8rem;
+}
+
+.resolved-list .comment-actions button {
+  display: inline;
+  width: auto;
+  padding: 0;
+  color: var(--muted);
+}
+
+.resolved-list .comment-actions button:hover {
+  background: none;
+  color: var(--text);
+}
+
+/* Narrow: the margin shrinks to markers; the open card overlays the editor. */
+@media (max-width: 1279px) {
+  .doc-main:has(.doc-body) {
+    max-width: 50rem;
+  }
+
+  .doc-body {
+    grid-template-columns: minmax(0, 1fr) 1.5rem;
+    gap: 0.75rem;
+  }
+
+  .comment-margin.narrow .comment-card {
+    left: auto;
+    right: 0;
+    width: min(20rem, calc(100vw - 3rem));
+  }
+
+  .comment-margin.narrow .comment-add {
+    left: auto;
+    right: 0;
+  }
+}
+
 /* Print the open tab only, in light colours, with nothing but its content. */
 @media print {
   :root {
@@ -655,6 +874,8 @@ span.tab-row-toggle {
   .app-header,
   .doc-rail,
   .export-menu-wrap,
+  .comment-margin,
+  .resolved-comments,
   .notice {
     display: none !important;
   }
@@ -664,9 +885,19 @@ span.tab-row-toggle {
     min-height: 0;
   }
 
-  .doc-main {
+  .doc-main,
+  .doc-main:has(.doc-body) {
     max-width: none;
     padding: 0;
+  }
+
+  .doc-body {
+    display: block;
+  }
+
+  .comment-mark {
+    background: none;
+    border-bottom: none;
   }
 
   .tab-editor .ProseMirror {

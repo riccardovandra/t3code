@@ -20,7 +20,8 @@ Workflow:
 4. Use tabs (create_tab) for distinct parts such as research, plan and decisions; nest with parentTabId.
 5. Draw diagrams as \`\`\`mermaid code blocks.
 6. Keep findings in the doc, not the chat. End with one line and the URL.
-Re-read a tab (read_doc with tabId) before editing it if the user may have changed it.`;
+Re-read a tab (read_doc with tabId) before editing it if the user may have changed it.
+Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab.`;
 
 interface JsonRpcRequest {
   readonly jsonrpc: "2.0";
@@ -29,8 +30,36 @@ interface JsonRpcRequest {
   readonly params?: Record<string, unknown>;
 }
 
-const rpcResult = (id: JsonRpcRequest["id"], result: unknown) =>
-  Response.json({ jsonrpc: "2.0", id, result }, { headers: { "Cache-Control": "no-store" } });
+const rpcResult = (id: JsonRpcRequest["id"], result: unknown, headers: HeadersInit = {}) =>
+  Response.json(
+    { jsonrpc: "2.0", id, result },
+    { headers: { "Cache-Control": "no-store", ...headers } },
+  );
+
+/**
+ * The endpoint keeps no sessions, so the client's name from `initialize` rides
+ * in the session id the client echoes on every later request. It only names
+ * the author of agent comments; the bearer token is still the credential.
+ */
+const SESSION_HEADER = "Mcp-Session-Id";
+const SESSION_PREFIX = "c.";
+
+function sessionIdFor(clientName: string): string {
+  const bytes = new TextEncoder().encode(clientName.slice(0, 60));
+  return SESSION_PREFIX + btoa(String.fromCharCode(...bytes)).replace(/=+$/, "");
+}
+
+function clientNameFrom(request: Request): string | null {
+  const sessionId = request.headers.get(SESSION_HEADER);
+  if (!sessionId?.startsWith(SESSION_PREFIX)) return null;
+  try {
+    const binary = atob(sessionId.slice(SESSION_PREFIX.length));
+    const name = new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+    return name.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 const rpcError = (id: JsonRpcRequest["id"] | null, code: number, message: string, status = 200) =>
   Response.json(
@@ -78,15 +107,21 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
   switch (body.method) {
     case "initialize": {
       const requested = params.protocolVersion;
-      return rpcResult(body.id, {
-        protocolVersion:
-          typeof requested === "string" && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
-            ? requested
-            : SUPPORTED_PROTOCOL_VERSIONS[0],
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "docs-cloud", title: "Docs Cloud", version: "0.1.0" },
-        instructions: MCP_INSTRUCTIONS,
-      });
+      const clientInfo = params.clientInfo as { name?: unknown } | undefined;
+      const clientName = typeof clientInfo?.name === "string" ? clientInfo.name.trim() : "";
+      return rpcResult(
+        body.id,
+        {
+          protocolVersion:
+            typeof requested === "string" && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+              ? requested
+              : SUPPORTED_PROTOCOL_VERSIONS[0],
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: "docs-cloud", title: "Docs Cloud", version: "0.1.0" },
+          instructions: MCP_INSTRUCTIONS,
+        },
+        clientName ? { [SESSION_HEADER]: sessionIdFor(clientName) } : {},
+      );
     }
     case "ping":
       return rpcResult(body.id, {});
@@ -100,7 +135,11 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
           ? (params.arguments as Record<string, unknown>)
           : {};
       try {
-        const result = await callTool(name, args, { deps, origin: url.origin });
+        const result = await callTool(name, args, {
+          deps,
+          origin: url.origin,
+          agentName: clientNameFrom(request) ?? principal.tokenName,
+        });
         return rpcResult(body.id, {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         });

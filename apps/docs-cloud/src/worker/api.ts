@@ -1,5 +1,6 @@
-import type { Tab, TabPlacement } from "../shared/protocol.ts";
+import type { DocStatus, DocSummary, Tab, TabPlacement } from "../shared/protocol.ts";
 import * as Auth from "./auth.ts";
+import * as Comments from "./comments.ts";
 import * as Docs from "./docs.ts";
 import * as Export from "./export.ts";
 
@@ -38,6 +39,14 @@ export interface DocRooms {
     docId: string,
     input: { readonly tabId: string; readonly origin: string | null },
   ): Promise<ReadonlyArray<string>>;
+  setDocStatus(
+    docId: string,
+    input: { readonly status: DocStatus; readonly origin: string | null },
+  ): Promise<DocSummary>;
+  commentOp(
+    docId: string,
+    input: { readonly op: Comments.CommentOp; readonly origin: string | null },
+  ): Promise<Comments.CommentOpResult>;
   openSocket(docId: string, request: Request): Promise<Response>;
 }
 
@@ -252,6 +261,13 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       return json({ tabIds });
     }
 
+    const response = await handleComments(
+      request,
+      { resource, id, sub, method, url, principal },
+      deps,
+    );
+    if (response) return response;
+
     return error(404, "not_found");
   } catch (cause) {
     if (cause instanceof Docs.NotFoundError) return error(404, "not_found");
@@ -259,6 +275,109 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     if (cause instanceof Docs.LastTabError) return error(409, "last_tab");
     throw cause;
   }
+}
+
+const commentActor = (principal: Auth.Principal): Comments.CommentActor =>
+  principal.kind === "session"
+    ? { kind: "owner", email: principal.email }
+    : { kind: "agent", name: principal.tokenName };
+
+/** Exact text, not trimmed: anchors must match the tab character for character. */
+const anchorText = (value: unknown, max: number, required: boolean): string | null => {
+  if (value === undefined && !required) return "";
+  if (typeof value !== "string" || value.length > max) return null;
+  return required && value.trim().length === 0 ? null : value;
+};
+
+/** Comment routes; returns null when the path is not one of them. */
+async function handleComments(
+  request: Request,
+  route: {
+    readonly resource: string | undefined;
+    readonly id: string | undefined;
+    readonly sub: string | undefined;
+    readonly method: string;
+    readonly url: URL;
+    readonly principal: Auth.Principal;
+  },
+  deps: ApiDeps,
+): Promise<Response | null> {
+  const { resource, id, sub, method, url } = route;
+  const actor = commentActor(route.principal);
+
+  if (resource === "docs" && id && sub === "comments" && method === "GET") {
+    await Docs.getDoc(deps.db, id);
+    const tabId = url.searchParams.get("tabId") ?? undefined;
+    return json({ comments: await Comments.listComments(deps.db, { docId: id, tabId }) });
+  }
+
+  if (resource === "tabs" && id && sub === "comments" && method === "POST") {
+    const body = await readJson(request);
+    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, true);
+    const prefix = anchorText(body.prefix, Comments.MAX_CONTEXT_LENGTH, false);
+    const suffix = anchorText(body.suffix, Comments.MAX_CONTEXT_LENGTH, false);
+    if (quote === null || prefix === null || suffix === null) return error(400, "invalid_anchor");
+    const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
+    if (!text) return error(400, "invalid_body");
+    const tab = await Docs.getTab(deps.db, id);
+    const result = await deps.rooms.commentOp(tab.docId, {
+      op: {
+        kind: "create",
+        tabId: id,
+        anchor: { quote, prefix, suffix },
+        body: text,
+        author: Comments.actorAuthor(actor),
+      },
+      origin: str(body.clientId),
+    });
+    return json(result, 201);
+  }
+
+  if (resource !== "comments" || !id) return null;
+  const existing = await Comments.getComment(deps.db, id);
+
+  if (sub === "replies" && method === "POST") {
+    const body = await readJson(request);
+    const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
+    if (!text) return error(400, "invalid_body");
+    const result = await deps.rooms.commentOp(existing.docId, {
+      op: { kind: "reply", commentId: id, body: text, author: Comments.actorAuthor(actor) },
+      origin: str(body.clientId),
+    });
+    return json(result, 201);
+  }
+
+  if (!sub && method === "PATCH") {
+    if (!Comments.canEditComment(actor, existing)) return error(403, "forbidden");
+    const body = await readJson(request);
+    const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
+    if (!text) return error(400, "invalid_body");
+    const result = await deps.rooms.commentOp(existing.docId, {
+      op: { kind: "edit", commentId: id, body: text },
+      origin: str(body.clientId),
+    });
+    return json(result);
+  }
+
+  if ((sub === "resolve" || sub === "reopen") && method === "POST") {
+    const body = await readJson(request);
+    const result = await deps.rooms.commentOp(existing.docId, {
+      op: { kind: "resolve", commentId: id, resolved: sub === "resolve" },
+      origin: str(body.clientId),
+    });
+    return json(result);
+  }
+
+  if (!sub && method === "DELETE") {
+    if (!Comments.canDeleteComment(actor, existing)) return error(403, "forbidden");
+    const result = await deps.rooms.commentOp(existing.docId, {
+      op: { kind: "delete", commentId: id },
+      origin: url.searchParams.get("clientId"),
+    });
+    return json(result);
+  }
+
+  return null;
 }
 
 async function handleAuth(request: Request, path: string, deps: ApiDeps): Promise<Response> {

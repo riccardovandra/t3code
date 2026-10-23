@@ -1,6 +1,7 @@
 import type { RoomMessage } from "../../shared/protocol.ts";
 import { handleApi, type ApiDeps } from "../api.ts";
 import { parseOwnerEmails } from "../auth.ts";
+import * as Comments from "../comments.ts";
 import * as Docs from "../docs.ts";
 import { makeTestD1 } from "./sqliteD1.ts";
 
@@ -36,6 +37,16 @@ export function makeApiHarness() {
         const { deletedTabIds, placements } = await Docs.deleteTab(db, { tabId, now: clock.now });
         broadcasts.push({ type: "tab.deleted", tabIds: deletedTabIds, placements, origin });
         return deletedTabIds;
+      },
+      setDocStatus: async (docId, { origin, status }) => {
+        const doc = await Docs.setDocStatus(db, { docId, status, now: clock.now });
+        broadcasts.push({ type: "doc.updated", doc, origin });
+        return doc;
+      },
+      commentOp: async (_docId, { origin, op }) => {
+        const result = await Comments.applyCommentOp(db, op, clock.now);
+        broadcasts.push(Comments.commentMessage(result, origin));
+        return result;
       },
       openSocket: async () => new Response(null, { status: 204 }),
     },

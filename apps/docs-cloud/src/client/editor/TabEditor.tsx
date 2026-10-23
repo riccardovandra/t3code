@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { createEditorExtensions } from "./extensions.ts";
 
-const EXTERNAL_CONTENT_META = "docsCloudExternalContent";
+export const EXTERNAL_CONTENT_META = "docsCloudExternalContent";
 
 /**
  * A TipTap editor over one tab's markdown. Mount it keyed by tab id. The

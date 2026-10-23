@@ -5,9 +5,10 @@ import * as NodeSqlite from "node:sqlite";
 export function makeTestD1(): D1Database {
   const sqlite = new NodeSqlite.DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
-  sqlite.exec(
-    NodeFS.readFileSync(new URL("../../../migrations/0001_init.sql", import.meta.url), "utf8"),
-  );
+  const migrations = new URL("../../../migrations/", import.meta.url);
+  for (const file of NodeFS.readdirSync(migrations).toSorted()) {
+    if (file.endsWith(".sql")) sqlite.exec(NodeFS.readFileSync(new URL(file, migrations), "utf8"));
+  }
 
   const statement = (sql: string, params: Array<NodeSqlite.SQLInputValue> = []) => ({
     bind: (...values: Array<unknown>) => statement(sql, values as Array<NodeSqlite.SQLInputValue>),

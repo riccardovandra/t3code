@@ -1,8 +1,28 @@
 import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
+import type { DocAnchor } from "../../shared/anchors.ts";
 import type { DocSummary, RoomMessage, Tab } from "../../shared/protocol.ts";
+import { groupThreads, type CommentThread } from "../../shared/threads.ts";
 import { api, ApiError, clientId } from "../api.ts";
+import { CommentMargin, DRAFT_COMMENT_ID } from "../comments/CommentMargin.tsx";
+import { ResolvedComments } from "../comments/ResolvedComments.tsx";
+import {
+  hasSendToAgentHandler,
+  sendThreadToAgent,
+  subscribeSendToAgent,
+} from "../comments/sendToAgent.ts";
+import { isCommentMessage, useComments } from "../comments/useComments.ts";
+import { selectionAnchor, useEditorComments } from "../comments/useEditorComments.ts";
+import { useMediaQuery } from "../comments/useMediaQuery.ts";
 import { ExportMenu } from "../doc/ExportMenu.tsx";
 import { OutlineRail } from "../doc/OutlineRail.tsx";
 import { TabRail } from "../doc/TabRail.tsx";
@@ -29,11 +49,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     });
   }, []);
 
+  const comments = useComments(props.docId);
+  const loadComments = comments.load;
   const load = useCallback(async () => {
-    const loaded = await api.doc(props.docId);
+    const [loaded] = await Promise.all([api.doc(props.docId), loadComments()]);
     setDoc(loaded.doc);
     setTabs(new Map(loaded.tabs.map((tab) => [tab.id, tab])));
-  }, [props.docId]);
+  }, [props.docId, loadComments]);
 
   useEffect(() => {
     void load();
@@ -85,6 +107,14 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
 
   useDocRoom(props.docId, {
     onMessage: (message: RoomMessage) => {
+      if (isCommentMessage(message)) {
+        comments.apply(message);
+        return;
+      }
+      if (message.type === "doc.updated") {
+        setDoc(message.doc);
+        return;
+      }
       if (message.type === "tab.created") {
         upsertTab(message.tab);
         return;
@@ -156,6 +186,79 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     setTabs((current) => removeTabs(current, tabIds));
   };
 
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ tabId: string; anchor: DocAnchor } | null>(null);
+  const [docBody, setDocBody] = useState<HTMLDivElement | null>(null);
+  const narrow = useMediaQuery("(max-width: 1279px)");
+  const canSendToAgent = useSyncExternalStore(subscribeSendToAgent, hasSendToAgentHandler);
+
+  const threads = useMemo(() => groupThreads(comments.comments.values()), [comments.comments]);
+  const openThreads = useMemo(
+    () =>
+      threads.filter(
+        (thread) => thread.root.tabId === activeTabId && thread.root.resolvedAt === null,
+      ),
+    [threads, activeTabId],
+  );
+  const resolvedThreads = threads.filter(
+    (thread) => thread.root.resolvedAt !== null && tabs.has(thread.root.tabId),
+  );
+  const draftAnchor = draft && draft.tabId === activeTabId ? draft.anchor : null;
+  const anchors = useMemo(
+    () => [
+      ...openThreads.map(({ root }) => ({
+        id: root.id,
+        quote: root.quote,
+        prefix: root.prefix,
+        suffix: root.suffix,
+      })),
+      ...(draftAnchor ? [{ id: DRAFT_COMMENT_ID, ...draftAnchor }] : []),
+    ],
+    [openThreads, draftAnchor],
+  );
+
+  const startComment = () => {
+    const anchor = editor ? selectionAnchor(editor) : null;
+    if (!anchor || !activeTabId) return;
+    setDraft({ tabId: activeTabId, anchor });
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
+  const { tops, selectionTop } = useEditorComments(editor, {
+    anchors,
+    activeId: activeCommentId,
+    container: docBody,
+    onClick: setActiveCommentId,
+    onShortcut: startComment,
+  });
+
+  const commentFailed = (cause: unknown) => {
+    setNotice("Could not update the comment. Reload and try again.");
+    throw cause;
+  };
+  const quietly = (promise: Promise<unknown>) => void promise.catch(() => undefined);
+
+  const handlersFor = (thread: CommentThread) => ({
+    onReply: (body: string) => comments.actions.reply(thread.root.id, body).catch(commentFailed),
+    onResolve: () => {
+      setActiveCommentId(null);
+      quietly(comments.actions.setResolved(thread.root.id, true).catch(commentFailed));
+    },
+    onDelete: (commentId: string) =>
+      quietly(comments.actions.delete(commentId).catch(commentFailed)),
+    ...(canSendToAgent
+      ? {
+          onSendToAgent: () =>
+            sendThreadToAgent({
+              docId: props.docId,
+              tabId: thread.root.tabId,
+              thread,
+              url: `${window.location.origin}${docPath(props.docId, thread.root.tabId)}`,
+            }),
+        }
+      : {}),
+  });
+
   if (!doc) return null;
 
   return (
@@ -176,6 +279,16 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       <main className="doc-main">
         <div className="doc-header">
           <p className="doc-title">{doc.title}</p>
+          <ResolvedComments
+            threads={resolvedThreads}
+            tabs={tabs}
+            onReopen={(commentId) =>
+              quietly(comments.actions.setResolved(commentId, false).catch(commentFailed))
+            }
+            onDelete={(commentId) =>
+              quietly(comments.actions.delete(commentId).catch(commentFailed))
+            }
+          />
           <ExportMenu
             docId={props.docId}
             tabId={activeTabId}
@@ -191,13 +304,38 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           </div>
         ) : null}
         {activeTab ? (
-          <TabEditor
-            key={activeTab.id}
-            markdown={activeTab.markdown}
-            revision={revision}
-            onChange={(markdown) => saver.current?.schedule(markdown)}
-            onEditor={setEditor}
-          />
+          <div className="doc-body" ref={setDocBody}>
+            <TabEditor
+              key={activeTab.id}
+              markdown={activeTab.markdown}
+              revision={revision}
+              onChange={(markdown) => saver.current?.schedule(markdown)}
+              onEditor={setEditor}
+            />
+            <CommentMargin
+              threads={openThreads}
+              tops={tops}
+              activeId={activeCommentId}
+              narrow={narrow}
+              selectionTop={selectionTop}
+              draftOpen={draftAnchor !== null}
+              onStartComment={startComment}
+              onSubmitDraft={async (body) => {
+                if (!draft) return;
+                const comment = await comments.actions
+                  .create(draft.tabId, draft.anchor, body)
+                  .catch(commentFailed);
+                setDraft(null);
+                setActiveCommentId(comment.id);
+              }}
+              onCancelDraft={() => {
+                setDraft(null);
+                setActiveCommentId(null);
+              }}
+              onActivate={setActiveCommentId}
+              handlersFor={handlersFor}
+            />
+          </div>
         ) : null}
       </main>
       <aside className="doc-rail doc-rail-right">
