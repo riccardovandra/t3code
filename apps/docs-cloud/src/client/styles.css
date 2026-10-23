@@ -466,3 +466,130 @@ input:focus {
   background: var(--code-bg);
   font-weight: 600;
 }
+
+/* Export menu and print. */
+
+.doc-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.doc-header .doc-title {
+  margin: 0;
+}
+
+.export-menu-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.export-menu {
+  position: relative;
+}
+
+.export-menu summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.export-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.export-menu summary:hover,
+.export-menu[open] summary {
+  color: var(--text);
+}
+
+.export-menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 10;
+  min-width: 13rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.08);
+}
+
+.export-menu-items button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.export-menu-items button:hover {
+  background: var(--code-bg);
+}
+
+/* Print the open tab only, in light colours, with nothing but its content. */
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --text: #000000;
+    --muted: #555555;
+    --border: #cccccc;
+    --code-bg: #f3f3f3;
+  }
+
+  .app-header,
+  .doc-rail,
+  .export-menu-wrap,
+  .notice {
+    display: none !important;
+  }
+
+  .doc-layout {
+    display: block;
+    min-height: 0;
+  }
+
+  .doc-main {
+    max-width: none;
+    padding: 0;
+  }
+
+  .tab-editor .ProseMirror {
+    min-height: 0;
+    font-size: 12pt;
+  }
+
+  .tab-editor .ProseMirror pre {
+    overflow: visible;
+    white-space: pre-wrap;
+  }
+
+  .tab-editor .ProseMirror .tableWrapper {
+    overflow: visible;
+  }
+
+  .tab-editor .ProseMirror :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+
+  .tab-editor .ProseMirror :is(pre, table, blockquote, svg, img, tr) {
+    break-inside: avoid;
+  }
+
+  .tab-editor .ProseMirror :is(svg, img) {
+    max-width: 100%;
+    height: auto;
+  }
+}
