@@ -288,7 +288,15 @@ export function ShareDialog(props: {
       </div>
 
       {view === "export" ? (
-        <ShareExportTab docId={docId} tabId={props.tabId} flush={props.flush} />
+        <ShareExportTab
+          docId={docId}
+          tabId={props.tabId}
+          flush={props.flush}
+          title={props.title}
+          onInvite={() => switchView("share")}
+          onCopyLink={() => void copyLink()}
+          copied={copied}
+        />
       ) : (
         <>
           {canInvite ? (
@@ -391,12 +399,15 @@ export function ShareDialog(props: {
         </>
       )}
 
-      <div className="share-foot">
-        <span className="muted">Only people with access can open this link</span>
-        <button type="button" className="button secondary small" onClick={() => void copyLink()}>
-          {copied ? "Copied" : "Copy link"}
-        </button>
-      </div>
+      {/* The Export segment carries its own Copy link card. */}
+      {view === "share" ? (
+        <div className="share-foot">
+          <span className="muted">Only people with access can open this link</span>
+          <button type="button" className="button secondary small" onClick={() => void copyLink()}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

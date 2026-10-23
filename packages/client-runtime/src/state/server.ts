@@ -1455,6 +1455,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:docs-cloud:import",
       tag: WS_METHODS.docsCloudImport,
     }),
+    sendDocsCloudTo: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs-cloud:send-to",
+      tag: WS_METHODS.docsCloudSendTo,
+    }),
     upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:scheduled-task:upsert",
       tag: WS_METHODS.scheduledTasksUpsert,

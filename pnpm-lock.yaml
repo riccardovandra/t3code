@@ -516,6 +516,9 @@ importers:
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
+      marked:
+        specifier: 17.0.6
+        version: 17.0.6
       pele:
         specifier: ^1.8.0
         version: 1.8.0

@@ -186,6 +186,23 @@ describe("parseDocsCloudFrameRequest", () => {
     entries: [{ id: "comment-1", author: "user", body: "Split this" }],
   };
 
+  it("accepts a send-to request for the doc's own page and refuses others", () => {
+    const sendTo = {
+      type: "t3-docs:send-to",
+      requestId: "8b0c4f3e-1d2a-4c5b-9e6f-7a8b9c0d1e2f",
+      target: "notion",
+      docId: "doc-1",
+      title: "Importer plan",
+      url: `${BASE}/d/doc-1`,
+    };
+    expect(parseDocsCloudFrameRequest(sendTo, BASE)).toEqual(sendTo);
+    expect(parseDocsCloudFrameRequest({ ...sendTo, target: "gmail" }, BASE)).toBeNull();
+    expect(
+      parseDocsCloudFrameRequest({ ...sendTo, url: "https://evil.test/d/doc-1" }, BASE),
+    ).toBeNull();
+    expect(parseDocsCloudFrameRequest({ ...sendTo, requestId: "a b" }, BASE)).toBeNull();
+  });
+
   it("accepts well-formed requests", () => {
     expect(parseDocsCloudFrameRequest(startWork, BASE)).toEqual(startWork);
     expect(

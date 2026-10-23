@@ -124,6 +124,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.docsDeleteComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsCloudListImports]: AuthOrchestrationReadScope,
   [WS_METHODS.docsCloudImport]: AuthOrchestrationOperateScope,
+  [WS_METHODS.docsCloudSendTo]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksList]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.secretsAnswerRequest]: AuthOrchestrationOperateScope,

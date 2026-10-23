@@ -4,6 +4,8 @@ import * as McpServerRegistry from "./mcpHub/McpServerRegistry.ts";
 import * as DocCommentDelivery from "./docs/DocCommentDelivery.ts";
 import * as DocCommentsService from "./docs/DocCommentsService.ts";
 import * as DocsCloudImport from "./docs/DocsCloudImport.ts";
+import * as DocsCloudSendTo from "./docs/DocsCloudSendTo.ts";
+import * as McpUpstreamClients from "./mcpHub/McpUpstreamClients.ts";
 import * as WorkspaceDocs from "./workspace/WorkspaceDocs.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
@@ -585,6 +587,7 @@ const FORK_RPC_METHODS = [
   WS_METHODS.docsDeleteComment,
   WS_METHODS.docsCloudListImports,
   WS_METHODS.docsCloudImport,
+  WS_METHODS.docsCloudSendTo,
   WS_METHODS.skillsTrashList,
   WS_METHODS.skillsTrashRestore,
   WS_METHODS.skillsTrashDelete,
@@ -1336,6 +1339,7 @@ const layerAiPmDocsRpc = Layer.unwrap(
     const docComments = yield* DocCommentsService.DocCommentsService;
     const docCommentDelivery = yield* DocCommentDelivery.DocCommentDelivery;
     const docsCloudImport = yield* DocsCloudImport.DocsCloudImport;
+    const docsCloudSendTo = yield* DocsCloudSendTo.DocsCloudSendTo;
     return Layer.mergeAll(
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmList, () => aiPm.list()),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.aiPmBrief, (input) => aiPm.brief(input)),
@@ -1369,6 +1373,9 @@ const layerAiPmDocsRpc = Layer.unwrap(
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudImport, (input) =>
         docsCloudImport.importDocs(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsCloudSendTo, (input) =>
+        docsCloudSendTo.sendTo(input),
       ),
     );
   }),
@@ -3367,6 +3374,7 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
+    const upstreamClients = yield* McpUpstreamClients.McpUpstreamClients;
     const mcpServers = yield* McpServerRegistry.McpServerRegistry;
     const mcpServerOAuth = yield* McpServerOAuth.McpServerOAuth;
     const secretRequests = yield* SecretRequests.SecretRequests;
@@ -3463,6 +3471,13 @@ export const layer = Layer.unwrap(
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
               Layer.provide(DefectReporter.layer),
+              Layer.provide(
+                DocsCloudSendTo.layer.pipe(
+                  Layer.provide(
+                    Layer.succeed(McpUpstreamClients.McpUpstreamClients, upstreamClients),
+                  ),
+                ),
+              ),
               Layer.provide(
                 DocsCloudImport.layer.pipe(
                   Layer.provideMerge(

@@ -235,6 +235,45 @@ export const DocsCloudImportResult = Schema.Struct({
 });
 export type DocsCloudImportResult = typeof DocsCloudImportResult.Type;
 
+// Send to: a copy of a Docs Cloud doc as a page in another app, through the
+// matching MCP server in this environment's hub.
+export const DocsCloudSendTarget = Schema.Literals(["notion"]);
+export type DocsCloudSendTarget = typeof DocsCloudSendTarget.Type;
+
+export const DocsCloudSendToInput = Schema.Struct({
+  docId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  target: DocsCloudSendTarget,
+});
+export type DocsCloudSendToInput = typeof DocsCloudSendToInput.Type;
+
+export const DocsCloudSendToResult = Schema.Struct({
+  title: Schema.String,
+  // The new page, when the target's reply names it.
+  url: Schema.NullOr(Schema.String),
+});
+export type DocsCloudSendToResult = typeof DocsCloudSendToResult.Type;
+
+export class DocsCloudSendToError extends Schema.TaggedError<DocsCloudSendToError>()(
+  "DocsCloudSendToError",
+  {
+    reason: Schema.Literals(["not_connected", "needs_sign_in", "unsupported", "failed"]),
+    detail: Schema.optional(Schema.String),
+  },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "not_connected":
+        return "Connect Notion in Settings → MCP Servers.";
+      case "needs_sign_in":
+        return "Sign in to Notion in Settings → MCP Servers.";
+      case "unsupported":
+        return "The connected Notion MCP server cannot create pages.";
+      case "failed":
+        return `Notion returned an error${this.detail ? ` (${this.detail})` : ""}.`;
+    }
+  }
+}
+
 export class DocsCloudError extends Schema.TaggedError<DocsCloudError>()("DocsCloudError", {
   reason: Schema.Literals([
     "not_configured",

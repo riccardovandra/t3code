@@ -7,19 +7,23 @@
  * thread started from a doc), `threads` (which linked threads it can open, with
  * their current titles), `comment-sent` (how a sent comment went), `context`
  * (the T3 Code project the panel belongs to, by key and name, after hello and
- * on change) and `theme` (T3 Code's appearance and resolved palette, after
- * hello and on change; the mobile app sends the same message to the top-level
- * page).
+ * on change), `theme` (T3 Code's appearance and resolved palette, after hello
+ * and on change; the mobile app sends the same message to the top-level page)
+ * and `sent-to` (how a `send-to` went, with the new page's URL).
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
- * stored) and `send-comment`. Frame actions are only offered once a parent has
+ * stored), `send-comment` and `send-to` (copy the doc into Notion through
+ * T3 Code's MCP hub). Frame actions are only offered once a parent has
  * said hello. Every message is additive: an older peer ignores unknown types.
  */
 import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
-export type EmbedFeature = "start-work" | "send-to-agent";
+export type EmbedFeature = "start-work" | "send-to-agent" | "send-to";
+
+/** Apps T3 Code can copy a doc into. */
+export type EmbedSendTarget = "notion";
 
 /** T3 Code's resolved palette, by its theme colour roles. */
 export type EmbedThemeColors = Readonly<Partial<Record<ThemeColorRole, string>>>;
@@ -64,6 +68,14 @@ export type EmbedParentMessage =
       /** Its Docs Cloud project key (see `normalizeProjectKey`); absent from older peers. */
       readonly projectKey: string | null;
     }
+  | {
+      readonly type: "t3-docs:sent-to";
+      readonly requestId: string;
+      /** The new page, when T3 Code learned it. */
+      readonly url: string | null;
+      /** Null when it worked, else a message for the user. */
+      readonly error: string | null;
+    }
   | EmbedThemeMessage;
 
 export {
@@ -106,6 +118,15 @@ export type EmbedFrameMessage =
       readonly title: string;
       readonly url: string;
     }
+  | {
+      readonly type: "t3-docs:send-to";
+      readonly requestId: string;
+      readonly target: EmbedSendTarget;
+      readonly docId: string;
+      readonly title: string;
+      /** The doc's URL on the origin T3 Code framed. */
+      readonly url: string;
+    }
   | { readonly type: "t3-docs:resolve-threads"; readonly threads: ReadonlyArray<EmbedThreadRef> }
   | ({ readonly type: "t3-docs:open-thread" } & EmbedThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & EmbedThreadRef)
@@ -121,7 +142,7 @@ export type EmbedFrameMessage =
       readonly entries: ReadonlyArray<EmbedCommentEntry>;
     };
 
-const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "send-to-agent"];
+const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "send-to-agent", "send-to"];
 
 type Fields = Record<string, unknown>;
 const isObject = (value: unknown): value is Fields =>
@@ -214,6 +235,13 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
         projectKey,
       };
     }
+    case "t3-docs:sent-to":
+      // The URL becomes a link the user opens, so only https pages pass.
+      return isText(data.requestId) &&
+        (data.url === null || (isText(data.url, 2_000) && /^https:\/\//i.test(data.url))) &&
+        (data.error === null || isText(data.error, 1_000))
+        ? { type: data.type, requestId: data.requestId, url: data.url, error: data.error }
+        : null;
     case "t3-docs:theme":
       return parseThemeMessage(data);
     default:

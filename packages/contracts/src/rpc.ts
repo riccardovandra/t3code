@@ -32,6 +32,9 @@ import {
   DocsCloudImportResult,
   DocsCloudImportsInput,
   DocsCloudImportsResult,
+  DocsCloudSendToError,
+  DocsCloudSendToInput,
+  DocsCloudSendToResult,
   DocsError,
 } from "./docs.ts";
 import {
@@ -592,6 +595,7 @@ export const WS_METHODS = {
   docsDeleteComment: "docs.deleteComment",
   docsCloudListImports: "docsCloud.listImports",
   docsCloudImport: "docsCloud.import",
+  docsCloudSendTo: "docsCloud.sendTo",
   skillsTrashList: "skillsTrash.list",
   skillsTrashRestore: "skillsTrash.restore",
   skillsTrashDelete: "skillsTrash.delete",
@@ -2012,6 +2016,11 @@ const WsDocsCloudImportRpc = Rpc.make(WS_METHODS.docsCloudImport, {
   error: Schema.Union([DocsCloudError, EnvironmentAuthorizationError]),
 });
 
+const WsDocsCloudSendToRpc = Rpc.make(WS_METHODS.docsCloudSendTo, {
+  payload: DocsCloudSendToInput,
+  success: DocsCloudSendToResult,
+  error: Schema.Union([DocsCloudError, DocsCloudSendToError, EnvironmentAuthorizationError]),
+});
 const WsSkillSourcesListRpc = Rpc.make(WS_METHODS.skillSourcesList, {
   payload: Schema.Struct({}),
   success: SkillSourcesListResult,
@@ -2180,6 +2189,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsDocsDeleteCommentRpc,
   WsDocsCloudListImportsRpc,
   WsDocsCloudImportRpc,
+  WsDocsCloudSendToRpc,
   WsSkillsTrashListRpc,
   WsSkillsTrashRestoreRpc,
   WsSkillsTrashDeleteRpc,

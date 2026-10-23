@@ -84,6 +84,15 @@ export function exportActions(props: {
       },
     },
     {
+      id: "download-doc-docx",
+      label: "Download doc as Word",
+      run: async () => {
+        await flush();
+        download(`/api/docs/${docId}/export.docx`);
+        return null;
+      },
+    },
+    {
       id: "print",
       label: "Print / Save as PDF",
       run: async () => {

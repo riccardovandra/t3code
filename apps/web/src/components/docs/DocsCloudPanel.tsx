@@ -1,4 +1,5 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
@@ -88,6 +89,11 @@ export function DocsCloudPanel(props: {
     serverEnvironment.sendDocsCloudComment,
     "send Docs Cloud comment to agent",
   );
+  // Failures go back to the frame, which shows them beside the button.
+  const sendTo = useAtomCommand(serverEnvironment.sendDocsCloudTo, {
+    label: "send Docs Cloud doc to another app",
+    reportFailure: false,
+  });
   const shell = useThreadShell(threadRef);
 
   const postToFrame = (message: Record<string, unknown>) =>
@@ -128,6 +134,26 @@ export function DocsCloudPanel(props: {
                 ? null
                 : "The comment could not be sent to the agent. Try again.",
           }),
+        );
+        return;
+      }
+      case "t3-docs:send-to": {
+        const { requestId, docId, target } = request;
+        void sendTo({ environmentId: threadRef.environmentId, input: { docId, target } }).then(
+          (result) => {
+            const failure = result._tag === "Success" ? null : squashAtomCommandFailure(result);
+            postToFrame({
+              type: "t3-docs:sent-to",
+              requestId,
+              url: result._tag === "Success" ? result.value.url : null,
+              error:
+                failure === null
+                  ? null
+                  : failure instanceof Error && failure.message
+                    ? failure.message
+                    : "The doc could not be sent. Try again.",
+            });
+          },
         );
         return;
       }
@@ -213,7 +239,9 @@ export function DocsCloudPanel(props: {
           frame.current?.contentWindow?.postMessage(
             {
               type: "t3-docs:hello",
-              features: startWork ? ["start-work", "send-to-agent"] : ["send-to-agent"],
+              features: startWork
+                ? ["start-work", "send-to-agent", "send-to"]
+                : ["send-to-agent", "send-to"],
             },
             origin,
           );
