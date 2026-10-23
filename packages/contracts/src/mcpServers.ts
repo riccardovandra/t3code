@@ -18,7 +18,7 @@ export const RESERVED_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
   "t3code",
 ]);
 
-export const McpServerName = Schema.String.check(
+export const McpHubServerName = Schema.String.check(
   Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,63}$/),
 ).annotate({
   description:
@@ -31,7 +31,7 @@ const HttpUrl = TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\/\S+$/i
   description: "The server's Streamable HTTP endpoint.",
 });
 
-export const McpServerTransport = Schema.Union([
+export const McpHubServerTransport = Schema.Union([
   Schema.Struct({ type: Schema.Literal("http"), url: HttpUrl }),
   Schema.Struct({
     type: Schema.Literal("stdio"),
@@ -43,7 +43,7 @@ export const McpServerTransport = Schema.Union([
     }),
   }),
 ]);
-export type McpServerTransport = typeof McpServerTransport.Type;
+export type McpHubServerTransport = typeof McpHubServerTransport.Type;
 
 /** The only path that receives sign-in redirects, so a registered redirect must point at it. */
 export const MCP_CLIENT_OAUTH_CALLBACK_PATH = "/oauth/mcp-client/callback";
@@ -75,16 +75,16 @@ export const McpServerAuth = Schema.Union([
 export type McpServerAuth = typeof McpServerAuth.Type;
 
 /** What clients see. Secret values stay on the server. */
-export const McpServerConfig = Schema.Struct({
+export const McpHubServerConfig = Schema.Struct({
   id: McpServerId,
-  name: McpServerName,
+  name: McpHubServerName,
   enabled: Schema.Boolean,
-  transport: McpServerTransport,
+  transport: McpHubServerTransport,
   auth: McpServerAuth,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
-export type McpServerConfig = typeof McpServerConfig.Type;
+export type McpHubServerConfig = typeof McpHubServerConfig.Type;
 
 export const McpServerStatus = Schema.Union([
   Schema.Struct({ state: Schema.Literal("idle") }),
@@ -96,7 +96,7 @@ export const McpServerStatus = Schema.Union([
 export type McpServerStatus = typeof McpServerStatus.Type;
 
 export const McpServerEntry = Schema.Struct({
-  ...McpServerConfig.fields,
+  ...McpHubServerConfig.fields,
   status: McpServerStatus,
 });
 export type McpServerEntry = typeof McpServerEntry.Type;
@@ -117,7 +117,7 @@ export const McpServerUpsertInput = Schema.Struct({
   id: Schema.optional(McpServerId).annotate({
     description: "The server to update. Omit to add a new server.",
   }),
-  name: McpServerName,
+  name: McpHubServerName,
   enabled: Schema.optional(Schema.Boolean).annotate({ description: "Defaults to true." }),
   transport: Schema.Union([
     Schema.Struct({ type: Schema.Literal("http"), url: HttpUrl }),

@@ -27,6 +27,8 @@ import {
   type ProviderRequestKind,
   type ProviderThreadId,
   type ProviderUserInputAnswers,
+  mcpServerVariableRecord,
+  type ResolvedMcpServer,
   type RuntimeRequestId,
   type ThreadTokenUsageSnapshot,
   type ThreadId,
@@ -35,6 +37,8 @@ import { AgentScope, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import { HTML_RENDER_TOOL_NAME } from "@t3tools/shared/htmlRender";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { type SelfInvocation, selfInvocationArgs } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput, htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
@@ -607,6 +611,39 @@ interface AcpMcpContext {
   readonly authorization?: string;
 }
 
+/**
+ * The user's servers from Settings → Tools, passed through as plain ACP
+ * entries. ACP wants an absolute command, so a bare name such as `npx` is
+ * looked up on the PATH the agent inherits; one that cannot be found is sent
+ * as typed. Http entries are dropped later for agents that do not advertise
+ * http support.
+ */
+function acpUserMcpServers(
+  servers: ReadonlyArray<ResolvedMcpServer>,
+  resolveCommand: (command: string) => string,
+): ReadonlyArray<EffectAcpSchema.McpServer> {
+  return servers.map((server) =>
+    server.transport.type === "stdio"
+      ? {
+          // Untyped like T3's own entry: the shape every ACP version accepts.
+          name: server.name,
+          command: resolveCommand(server.transport.command),
+          args: [...server.transport.args],
+          env: Object.entries(mcpServerVariableRecord(server.transport.env)).map(
+            ([name, value]) => ({ name, value }),
+          ),
+        }
+      : {
+          type: "http" as const,
+          name: server.name,
+          url: server.transport.url,
+          headers: Object.entries(mcpServerVariableRecord(server.transport.headers)).map(
+            ([name, value]) => ({ name, value }),
+          ),
+        },
+  );
+}
+
 function acpMcpBridgeServer(
   self: SelfInvocation,
   name: string,
@@ -629,26 +666,36 @@ export function acpMcpContext(
   session: McpProviderSession.McpProviderSessionConfig | undefined,
   self: SelfInvocation,
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+  resolveCommand: (command: string) => string = (command) => command,
 ): AcpMcpContext {
   if (session === undefined) {
     return { servers: [], acpServers: [] };
   }
-  // The MCP-over-ACP bridge reaches only T3's own endpoint, so configured
-  // servers use the stdio bridge in both lists; stdio is the transport every
-  // ACP agent must support.
+  // The MCP-over-ACP bridge reaches only T3's own endpoint, so hub servers
+  // use the stdio bridge in both lists; stdio is the transport every ACP agent
+  // must support.
   const upstreamServers = McpProviderSession.upstreamServersFor(session, runtimePolicy).map(
     (server) => acpMcpBridgeServer(self, server.name, server.endpoint, session.authorizationHeader),
   );
+  // Both lists carry them: an agent that takes T3's server over ACP gets
+  // only `acpServers`, so the user's servers would otherwise be lost.
+  const userServers = acpUserMcpServers(session.tools?.servers ?? [], resolveCommand);
   // Agents that advertise optional http support still routinely fail to wire
   // injected http servers through to their backend (codex-acp 1.2.0 and pi-acp
   // both drop them), so every ACP session gets the `t3 acp-mcp-bridge` stdio
-  // server, which forwards JSON-RPC to T3's authenticated MCP endpoint.
+  // server, which forwards JSON-RPC to T3's authenticated MCP endpoint. The
+  // credential travels via environment variables, never the command line.
   return {
     servers: [
       acpMcpBridgeServer(self, "t3-code", session.endpoint, session.authorizationHeader),
       ...upstreamServers,
+      ...userServers,
     ],
-    acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }, ...upstreamServers],
+    acpServers: [
+      { type: "acp", name: "t3-code", serverId: "t3-code" },
+      ...upstreamServers,
+      ...userServers,
+    ],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
     processEnvironment: {
@@ -1391,6 +1438,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
+  const resolveExecutable = yield* SpawnExecutableResolution;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const resolveCommand = (command: string) =>
+    resolveExecutable(command, hostPlatform, hostEnvironment) ?? command;
   const readThreadMcpContext = (
     threadId: ThreadId | null,
     runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
@@ -1399,7 +1451,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
       ? Effect.succeed(acpMcpContext(undefined, self, runtimePolicy))
       : mcpSessions
           .read(threadId)
-          .pipe(Effect.map((session) => acpMcpContext(session, self, runtimePolicy)));
+          .pipe(
+            Effect.map((session) => acpMcpContext(session, self, runtimePolicy, resolveCommand)),
+          );
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
   const postSettleContinuationEnabled =
