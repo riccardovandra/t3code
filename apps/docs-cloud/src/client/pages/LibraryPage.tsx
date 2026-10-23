@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
-import { projectNameKey } from "../../shared/embed.ts";
+import { titleProjectKey } from "../../shared/embed.ts";
 import {
   DOC_STATUS_LABEL,
   DOC_STATUSES,
   type DocStatus,
   type DocSummary,
-  type LibraryProject,
+  type Library,
 } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
-import { useEmbedProjectName } from "../embedContext.ts";
+import { useEmbedProject } from "../embedContext.ts";
 import { docPath, navigate } from "../router.ts";
 
 export function LibraryPage() {
-  const [projects, setProjects] = useState<ReadonlyArray<LibraryProject> | null>(null);
+  const [library, setLibrary] = useState<Library | null>(null);
   const [projectName, setProjectName] = useState("");
   const [statusFilter, setStatusFilter] = useState<DocStatus | null>(null);
-  const embedProject = useEmbedProjectName();
+  const embedProject = useEmbedProject();
   const [showAll, setShowAll] = useState(false);
 
   const reload = useCallback(async () => {
-    setProjects((await api.library()).projects);
+    setLibrary(await api.library());
   }, []);
 
   useEffect(() => {
@@ -35,7 +35,8 @@ export function LibraryPage() {
     await reload();
   };
 
-  if (!projects) return null;
+  if (!library) return null;
+  const { projects, noProjectDocs } = library;
 
   const statusButtons = (
     <div className="status-filter" role="group" aria-label="Filter by status">
@@ -52,16 +53,16 @@ export function LibraryPage() {
     </div>
   );
 
-  // Inside a T3 Code project the library opens on that project's docs. Its
-  // Docs Cloud project is created with the first doc, not on every visit.
+  // Inside a T3 Code project the library opens on that project's docs. The T3
+  // server syncs its projects, so a miss is a project it has not synced yet:
+  // that one is created with the first doc, not on every visit.
   if (embedProject !== null && !showAll) {
-    const match = projects.find(
-      (project) => projectNameKey(project.name) === projectNameKey(embedProject),
-    );
+    const key = embedProject.key ?? titleProjectKey(embedProject.name);
+    const match = projects.find((project) => project.key === key);
     return (
       <main className="page">
         <div className="page-heading">
-          <h1>{match?.name ?? embedProject}</h1>
+          <h1>{match?.name ?? embedProject.name}</h1>
           <button type="button" className="link-button" onClick={() => setShowAll(true)}>
             All projects
           </button>
@@ -72,7 +73,9 @@ export function LibraryPage() {
           name={null}
           docs={match?.docs ?? []}
           statusFilter={statusFilter}
-          projectId={async () => match?.id ?? (await api.createProject(embedProject)).project.id}
+          projectId={async () =>
+            match?.id ?? (await api.createProject(embedProject.name, key)).project.id
+          }
         />
       </main>
     );
@@ -84,7 +87,7 @@ export function LibraryPage() {
         <h1>Library</h1>
         {embedProject !== null ? (
           <button type="button" className="link-button" onClick={() => setShowAll(false)}>
-            Only {embedProject}
+            Only {embedProject.name}
           </button>
         ) : null}
       </div>
@@ -98,8 +101,11 @@ export function LibraryPage() {
           Create project
         </button>
       </form>
-      {projects.length === 0 ? <p className="muted">No projects yet.</p> : null}
-      {projects.length > 0 ? statusButtons : null}
+      {projects.length === 0 && noProjectDocs.length === 0 ? (
+        <p className="muted">No projects yet.</p>
+      ) : (
+        statusButtons
+      )}
       {projects.map((project) => (
         <ProjectSection
           key={project.id}
@@ -109,6 +115,12 @@ export function LibraryPage() {
           projectId={async () => project.id}
         />
       ))}
+      <ProjectSection
+        name="No project"
+        docs={noProjectDocs}
+        statusFilter={statusFilter}
+        projectId={async () => null}
+      />
     </main>
   );
 }
@@ -118,7 +130,8 @@ function ProjectSection(props: {
   readonly name: string | null;
   readonly docs: ReadonlyArray<DocSummary>;
   readonly statusFilter: DocStatus | null;
-  readonly projectId: () => Promise<string>;
+  /** Null files the doc in no project. */
+  readonly projectId: () => Promise<string | null>;
 }) {
   const [title, setTitle] = useState("");
   const { statusFilter } = props;

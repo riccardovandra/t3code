@@ -11,15 +11,18 @@ export const DOC_STATUS_LABEL: Readonly<Record<DocStatus, string>> = {
   done: "Done",
 };
 
+/** A T3 Code project's docs; `key` is how T3 Code finds it (see `normalizeProjectKey`). */
 export interface Project {
   readonly id: string;
+  readonly key: string;
   readonly name: string;
   readonly createdAt: number;
 }
 
 export interface DocSummary {
   readonly id: string;
-  readonly projectId: string;
+  /** Null for a doc in no project. */
+  readonly projectId: string | null;
   readonly title: string;
   readonly status: DocStatus;
   readonly createdAt: number;
@@ -39,6 +42,12 @@ export interface Tab {
 
 export interface LibraryProject extends Project {
   readonly docs: ReadonlyArray<DocSummary>;
+}
+
+/** `GET /api/library`: projects by name, and the docs in no project. */
+export interface Library {
+  readonly projects: ReadonlyArray<LibraryProject>;
+  readonly noProjectDocs: ReadonlyArray<DocSummary>;
 }
 
 export interface DocWithTabs {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseParentMessage, projectNameKey } from "./embed.ts";
+import {
+  normalizeProjectKey,
+  parseParentMessage,
+  projectNameFromKey,
+  projectNameKey,
+} from "./embed.ts";
 
 describe("parseParentMessage", () => {
   it("keeps only the features this app knows from hello", () => {
@@ -22,17 +27,41 @@ describe("parseParentMessage", () => {
     expect(parseParentMessage({ type: "t3-docs:navigate", path: "https://evil.test" })).toBeNull();
   });
 
-  it("takes the project context as a trimmed name or null", () => {
+  it("takes the project context as a trimmed name and a normalised key", () => {
+    expect(
+      parseParentMessage({
+        type: "t3-docs:context",
+        projectName: " Site ",
+        projectKey: " github.com/uplifted/site ",
+      }),
+    ).toEqual({
+      type: "t3-docs:context",
+      projectName: "Site",
+      projectKey: "github.com/uplifted/site",
+    });
+    // An older T3 Code sends only the name.
     expect(parseParentMessage({ type: "t3-docs:context", projectName: " Site " })).toEqual({
       type: "t3-docs:context",
       projectName: "Site",
+      projectKey: null,
     });
     expect(parseParentMessage({ type: "t3-docs:context", projectName: "   " })).toEqual({
       type: "t3-docs:context",
       projectName: null,
+      projectKey: null,
     });
     expect(parseParentMessage({ type: "t3-docs:context", projectName: 3 })).toBeNull();
     expect(projectNameKey("  Uplifted   SITE ")).toBe(projectNameKey("uplifted site"));
+  });
+
+  it("normalises title keys and refuses empty ones", () => {
+    expect(normalizeProjectKey("Title:  Herbox   Netherlands ")).toBe("title:herbox netherlands");
+    expect(normalizeProjectKey("github.com/Owner/Repo")).toBe("github.com/Owner/Repo");
+    expect(normalizeProjectKey("title:  ")).toBeNull();
+    expect(normalizeProjectKey(" ")).toBeNull();
+    expect(normalizeProjectKey("x".repeat(301))).toBeNull();
+    expect(projectNameFromKey("github.com/riccardovandra/t3code")).toBe("t3code");
+    expect(projectNameFromKey("title:upwork-digest")).toBe("upwork-digest");
   });
 
   it("validates thread links and drops malformed thread entries", () => {

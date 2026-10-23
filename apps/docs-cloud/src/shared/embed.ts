@@ -6,7 +6,8 @@
  * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
  * thread started from a doc), `threads` (which linked threads it can open, with
  * their current titles), `comment-sent` (how a sent comment went) and `context`
- * (the T3 Code project the panel belongs to, after hello and on change).
+ * (the T3 Code project the panel belongs to, by key and name, after hello and
+ * on change).
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
@@ -41,14 +42,48 @@ export type EmbedParentMessage =
       /** Null when it reached the agent, else a message for the user. */
       readonly error: string | null;
     }
-  | { readonly type: "t3-docs:context"; readonly projectName: string | null };
+  | {
+      readonly type: "t3-docs:context";
+      /** The T3 Code project's title, for display and for peers that predate keys. */
+      readonly projectName: string | null;
+      /** Its Docs Cloud project key (see `normalizeProjectKey`); absent from older peers. */
+      readonly projectKey: string | null;
+    };
 
-/**
- * A T3 Code project uses the Docs Cloud project with the same name, ignoring
- * case and spacing. The T3 server's DocsCloudImport matches names the same way.
- */
+/** Titles compare ignoring case and spacing. */
 export const projectNameKey = (name: string): string =>
   name.trim().replace(/\s+/g, " ").toLowerCase();
+
+const TITLE_KEY_PREFIX = "title:";
+export const MAX_PROJECT_KEY_LENGTH = 300;
+
+/**
+ * Docs Cloud projects are T3 Code projects, identified by a key the T3 server
+ * derives (DocsCloudImport's `docsCloudProjectKey` mirrors this): the git
+ * remote's canonical key such as `github.com/owner/repo`, so every checkout of
+ * a repository on every machine shares one project, else `title:` and the
+ * normalised title.
+ */
+export const titleProjectKey = (name: string): string => TITLE_KEY_PREFIX + projectNameKey(name);
+
+/** A key in its stored form (title keys normalised), or null when it is not a usable key. */
+export function normalizeProjectKey(key: string): string | null {
+  const trimmed = key.trim();
+  const normalized = trimmed.toLowerCase().startsWith(TITLE_KEY_PREFIX)
+    ? titleProjectKey(trimmed.slice(TITLE_KEY_PREFIX.length))
+    : trimmed;
+  return normalized.length > 0 &&
+    normalized !== TITLE_KEY_PREFIX &&
+    normalized.length <= MAX_PROJECT_KEY_LENGTH
+    ? normalized
+    : null;
+}
+
+/** A display name for a key nobody named: the repository or the title. */
+export const projectNameFromKey = (key: string): string =>
+  key.startsWith(TITLE_KEY_PREFIX)
+    ? key.slice(TITLE_KEY_PREFIX.length)
+    : (key.split("/").findLast((part) => part.length > 0) ?? key);
 
 export interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -156,13 +191,16 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
       return isText(data.requestId) && (data.error === null || isText(data.error, 1_000))
         ? { type: data.type, requestId: data.requestId, error: data.error }
         : null;
-    case "t3-docs:context":
-      return data.projectName === null || isText(data.projectName, 1_000)
-        ? {
-            type: data.type,
-            projectName: data.projectName === null ? null : data.projectName.trim() || null,
-          }
-        : null;
+    case "t3-docs:context": {
+      if (data.projectName !== null && !isText(data.projectName, 1_000)) return null;
+      const projectKey =
+        typeof data.projectKey === "string" ? normalizeProjectKey(data.projectKey) : null;
+      return {
+        type: data.type,
+        projectName: data.projectName === null ? null : data.projectName.trim() || null,
+        projectKey,
+      };
+    }
     default:
       return null;
   }
