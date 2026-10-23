@@ -2,12 +2,21 @@
  * T3 Code embeds Docs Cloud in an iframe and talks to it over postMessage.
  *
  * Parent -> frame: `hello` (sent on every iframe load; the frame answers with
- * `location`) and `navigate` (an app path such as `/d/:docId/:tabId`).
+ * `location`), `navigate` (an app path such as `/d/:docId/:tabId`) and
+ * `context` (the T3 Code project the panel belongs to, after hello and on change).
  * Frame -> parent: `location` after hello and on every route change.
  */
 export type EmbedParentMessage =
   | { readonly type: "t3-docs:hello" }
-  | { readonly type: "t3-docs:navigate"; readonly path: string };
+  | { readonly type: "t3-docs:navigate"; readonly path: string }
+  | { readonly type: "t3-docs:context"; readonly projectName: string | null };
+
+/**
+ * A T3 Code project uses the Docs Cloud project with the same name, ignoring
+ * case and spacing. The T3 server's DocsCloudImport matches names the same way.
+ */
+export const projectNameKey = (name: string): string =>
+  name.trim().replace(/\s+/g, " ").toLowerCase();
 
 export interface EmbedLocationMessage {
   readonly type: "t3-docs:location";

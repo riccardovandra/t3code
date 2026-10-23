@@ -4,6 +4,7 @@ import {
   type EmbedLocationMessage,
   type EmbedParentMessage,
 } from "../shared/embed.ts";
+import { setEmbedProjectName } from "./embedContext.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 
 /**
@@ -46,6 +47,9 @@ export function startEmbedBridge(): void {
       !message.path.startsWith("//")
     ) {
       navigate(message.path);
+    } else if (message?.type === "t3-docs:context") {
+      const name = typeof message.projectName === "string" ? message.projectName.trim() : "";
+      setEmbedProjectName(name === "" ? null : name);
     }
   });
   subscribePathname(postLocation);

@@ -71,6 +71,15 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("lets readers see Docs Cloud imports but requires operate access to import", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.docsCloudListImports)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.docsCloudImport)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("keeps webhook delivery logs, which hold request bodies, behind operate scope", () => {
     for (const method of [
       WS_METHODS.scheduledTasksListWebhookDeliveries,

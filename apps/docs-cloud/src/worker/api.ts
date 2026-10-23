@@ -1,4 +1,5 @@
 import type { DocStatus, DocSummary, Tab, TabPlacement } from "../shared/protocol.ts";
+import { locateAnchor, markdownToText } from "../shared/anchors.ts";
 import * as Auth from "./auth.ts";
 import * as Comments from "./comments.ts";
 import * as Docs from "./docs.ts";
@@ -320,6 +321,13 @@ async function handleComments(
     const text = str(body.body, Comments.MAX_COMMENT_LENGTH);
     if (!text) return error(400, "invalid_body");
     const tab = await Docs.getTab(deps.db, id);
+    // Imports ask for this so a comment whose passage is gone is reported, not stored detached.
+    if (
+      body.requireAnchor === true &&
+      !locateAnchor(markdownToText(tab.markdown), { quote, prefix, suffix })
+    ) {
+      return error(409, "anchor_not_found");
+    }
     const result = await deps.rooms.commentOp(tab.docId, {
       op: {
         kind: "create",

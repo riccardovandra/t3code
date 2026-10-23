@@ -195,6 +195,13 @@ input:focus {
   margin: 0 0 1rem;
 }
 
+.page-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .login {
   max-width: 22rem;
   margin: 18vh auto 0;

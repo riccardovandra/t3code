@@ -139,6 +139,23 @@ describe("comment routes", () => {
     expect(reply.status).toBe(404);
   });
 
+  it("refuse a comment whose passage is missing when the caller requires an anchor", async () => {
+    const { api, owner, tab } = await setup();
+    await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: { baseVersion: tab.version, markdown: "The beta ships **Friday**." },
+      headers: owner,
+    });
+    const create = (quote: string) =>
+      api.call("POST", `/api/tabs/${tab.id}/comments`, {
+        body: { quote, prefix: "ships ", suffix: ".", body: "Imported", requireAnchor: true },
+        headers: owner,
+      });
+    expect((await create("Friday")).status).toBe(201);
+    const missing = await create("Monday");
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toEqual({ error: "anchor_not_found" });
+  });
+
   it("are removed with their tab", async () => {
     const { api, owner, doc, comment } = await setup();
     const second = await api.call("POST", `/api/docs/${doc.doc.id}/tabs`, {
