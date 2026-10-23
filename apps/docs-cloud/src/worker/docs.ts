@@ -134,6 +134,18 @@ export async function getDoc(db: D1Database, docId: string): Promise<DocWithTabs
   return { doc: toDoc(doc), tabs: ((tabs?.results ?? []) as unknown as Array<TabRow>).map(toTab) };
 }
 
+export async function setDocStatus(
+  db: D1Database,
+  input: { readonly docId: string; readonly status: DocStatus; readonly now: number },
+): Promise<DocSummary> {
+  const row = await db
+    .prepare("UPDATE docs SET status = ?, updated_at = ? WHERE id = ? RETURNING *")
+    .bind(input.status, input.now, input.docId)
+    .first<DocRow>();
+  if (!row) throw new NotFoundError("doc");
+  return toDoc(row);
+}
+
 export async function getTab(db: D1Database, tabId: string): Promise<Tab> {
   const row = await db.prepare("SELECT * FROM tabs WHERE id = ?").bind(tabId).first<TabRow>();
   if (!row) throw new NotFoundError("tab");
