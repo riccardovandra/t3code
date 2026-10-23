@@ -1,6 +1,7 @@
 import type { Tab } from "../shared/protocol.ts";
 import * as Auth from "./auth.ts";
 import * as Docs from "./docs.ts";
+import * as Export from "./export.ts";
 
 /** The ordered write path for a doc; production routes it to the doc's DocRoom. */
 export interface DocRooms {
@@ -149,6 +150,11 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       return json(await Docs.getDoc(deps.db, id));
     }
 
+    if (resource === "docs" && id && sub === "export.md" && method === "GET") {
+      const doc = await Docs.getDoc(deps.db, id);
+      return Export.markdownResponse(Export.docMarkdown(doc), doc.doc.title);
+    }
+
     if (resource === "docs" && id && sub === "tabs" && method === "POST") {
       const body = await readJson(request);
       const title = str(body.title) ?? "Untitled";
@@ -170,6 +176,11 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
     if (resource === "tabs" && id && !sub && method === "GET") {
       return json({ tab: await Docs.getTab(deps.db, id) });
+    }
+
+    if (resource === "tabs" && id && sub === "export.md" && method === "GET") {
+      const tab = await Docs.getTab(deps.db, id);
+      return Export.markdownResponse(Export.tabMarkdown(tab), tab.title);
     }
 
     if (resource === "tabs" && id && !sub && method === "PATCH") {
