@@ -262,7 +262,7 @@ describe("DocsCloudImport", () => {
       assert.strictEqual(docsCloud.state.docs.size, 2);
 
       const cloud = yield* DocsCloudImport.DocsCloudImport;
-      const { imports } = yield* cloud.listImports({ projectId });
+      const { imports } = yield* cloud.listImports({ projectId, cwd: "/checkout" });
       assert.deepStrictEqual(imports.map((record) => record.docPath).toSorted(), [
         "docs/notes.md",
         "docs/plan.md",
@@ -360,9 +360,10 @@ describe("DocsCloudImport", () => {
         );
         assert.strictEqual(missing.reason, "not_configured");
         const listed = yield* Effect.flatMap(DocsCloudImport.DocsCloudImport, (cloud) =>
-          cloud.listImports({ projectId }),
+          cloud.listImports({ projectId, cwd: "/checkout" }),
         ).pipe(Effect.provide(makeLayer(makeDocsCloud(), { configured: false })));
         assert.deepStrictEqual(listed.imports, []);
+        assert.strictEqual(listed.docs.length, 2);
       }),
   );
 });

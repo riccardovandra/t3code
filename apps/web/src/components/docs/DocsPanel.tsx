@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
+  CloudIcon,
   DownloadIcon,
   FileTextIcon,
   FolderIcon,
@@ -42,6 +43,12 @@ import type { DocAnchor } from "./docAnchors";
 import { DocCommentComposerCard, DocCommentThreadCard } from "./DocCommentCard";
 import { COMMENT_CARD_GAP, layoutCommentCards } from "./docCommentLayout";
 import { DocEditor } from "./DocEditor";
+import {
+  DocsCloudDocActions,
+  DocsCloudImportAll,
+  type DocsCloudTarget,
+  useDocsCloudImports,
+} from "./DocsCloudImport";
 import { DOCS_ROOT, docTitleFromPath, isMarkdownPath, nextDocPath } from "@t3tools/shared/docPaths";
 import { unsupportedMarkdownReason } from "./docPaths";
 
@@ -56,6 +63,7 @@ interface DocsPanelProps {
   readonly threadRef: ScopedThreadRef;
   readonly docPath: string | undefined;
   readonly onSelectDoc: (docPath: string | undefined) => void;
+  readonly docsCloud: DocsCloudTarget | null;
 }
 
 export function DocsPanel(props: DocsPanelProps) {
@@ -96,7 +104,14 @@ function RefreshOnRunCompletion(props: {
   return null;
 }
 
-function DocsList({ environmentId, cwd, threadRef, onSelectDoc }: DocsPanelProps) {
+function DocsList({
+  environmentId,
+  projectId,
+  cwd,
+  threadRef,
+  onSelectDoc,
+  docsCloud,
+}: DocsPanelProps) {
   const [folder, setFolder] = useState(DOCS_ROOT);
   const [filter, setFilter] = useState("");
   const [title, setTitle] = useState("");
@@ -105,6 +120,7 @@ function DocsList({ environmentId, cwd, threadRef, onSelectDoc }: DocsPanelProps
   useRefreshOnRunCompletion(threadRef, entries.refresh);
   const canWrite = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile, "create doc");
+  const { imports } = useDocsCloudImports({ environmentId, projectId, cwd }, docsCloud !== null);
 
   const visible = (entries.data?.entries ?? [])
     .filter((entry) => !entry.ignored && (entry.kind === "directory" || isMarkdownPath(entry.path)))
@@ -176,6 +192,7 @@ function DocsList({ environmentId, cwd, threadRef, onSelectDoc }: DocsPanelProps
           Create
         </Button>
       </form>
+      {docsCloud ? <DocsCloudImportAll scope={{ environmentId, projectId, cwd }} /> : null}
       <div className="px-3 pt-2">
         <Input
           size="sm"
@@ -202,6 +219,9 @@ function DocsList({ environmentId, cwd, threadRef, onSelectDoc }: DocsPanelProps
                   ? entry.path.slice(entry.path.lastIndexOf("/") + 1)
                   : docTitleFromPath(entry.path)}
               </span>
+              {imports.has(entry.path) ? (
+                <CloudIcon aria-label="Imported to Docs Cloud" className="ml-auto opacity-60" />
+              ) : null}
             </Button>
           </li>
         ))}
@@ -224,6 +244,7 @@ function DocView({
   threadRef,
   docPath,
   onSelectDoc,
+  docsCloud,
 }: DocsPanelProps & { readonly docPath: string }) {
   const file = useProjectFileQuery(environmentId, cwd, docPath);
   const commentsQuery = useEnvironmentQuery(
@@ -355,6 +376,13 @@ function DocView({
         <span className="text-xs text-muted-foreground" aria-live="polite">
           {saving ? "Saving…" : null}
         </span>
+        {docsCloud ? (
+          <DocsCloudDocActions
+            scope={{ environmentId, projectId, cwd }}
+            docPath={docPath}
+            target={docsCloud}
+          />
+        ) : null}
         {resolvedComments.length > 0 ? (
           <Button
             size="xs"

@@ -68,6 +68,9 @@ export function DocsSurfaceContent(props: {
           threadRef={threadRef}
           docPath={surface.docPath}
           onSelectDoc={(docPath) => panels().selectDoc(threadRef, docPath)}
+          docsCloud={
+            baseUrl !== null ? { open: (path) => panels().selectDocsCloud(threadRef, path) } : null
+          }
         />
       </Suspense>
     </div>

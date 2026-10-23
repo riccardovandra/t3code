@@ -150,10 +150,15 @@ export const DocsCloudImportRecord = Schema.Struct({
 });
 export type DocsCloudImportRecord = typeof DocsCloudImportRecord.Type;
 
-export const DocsCloudImportsInput = Schema.Struct({ projectId: ProjectId });
+export const DocsCloudImportsInput = Schema.Struct({
+  projectId: ProjectId,
+  cwd: TrimmedNonEmptyString,
+});
 export type DocsCloudImportsInput = typeof DocsCloudImportsInput.Type;
 
 export const DocsCloudImportsResult = Schema.Struct({
+  // Every doc under docs/ in the checkout, so a client can import them one by one.
+  docs: Schema.Array(Schema.Struct({ docPath: DocPath, title: Schema.String })),
   imports: Schema.Array(DocsCloudImportRecord),
 });
 export type DocsCloudImportsResult = typeof DocsCloudImportsResult.Type;

@@ -13,6 +13,7 @@ import {
   type DocsCloudImportInput,
   type DocsCloudImportRecord,
   type DocsCloudImportResult,
+  type DocsCloudImportsInput,
   type DocsCloudImportsResult,
   type DocsCloudProject,
   type DocsCloudSkippedComment,
@@ -84,10 +85,10 @@ export class DocsCloudImport extends Context.Service<
     readonly project: (input: {
       readonly projectId: ProjectId;
     }) => Effect.Effect<DocsCloudProject, DocsCloudError>;
-    /** Files already imported into the configured Docs Cloud; empty when it is not set up. */
-    readonly listImports: (input: {
-      readonly projectId: ProjectId;
-    }) => Effect.Effect<DocsCloudImportsResult, DocsCloudError>;
+    /** The checkout's docs, and those already imported into the configured Docs Cloud. */
+    readonly listImports: (
+      input: DocsCloudImportsInput,
+    ) => Effect.Effect<DocsCloudImportsResult, DocsCloudError>;
     /**
      * Imports each doc into its own Docs Cloud doc. A file that fails is
      * reported in its result; only a failure before any file (Docs Cloud not
@@ -234,14 +235,21 @@ const make = Effect.gen(function* () {
       `,
     );
 
+  const listDocPaths = (cwd: string) =>
+    workspaceDocs.list({ cwd, folder: DOCS_ROOT }).pipe(
+      Effect.map((listed) => listed.docs),
+      Effect.mapError((error) => new DocsCloudError({ reason: "failed", detail: error.message })),
+    );
+
   const listImports: DocsCloudImport["Service"]["listImports"] = Effect.fn(
     "DocsCloudImport.listImports",
   )(function* (input) {
+    const docs = yield* listDocPaths(input.cwd);
     const server = yield* entry;
     const origin = server ? originOf(server.transport.url) : null;
-    if (origin === null) return { imports: [] };
+    if (origin === null) return { docs, imports: [] };
     const rows = yield* readImports(origin, input.projectId);
-    return { imports: rows.map((row) => toRecord(origin, row)) };
+    return { docs, imports: rows.map((row) => toRecord(origin, row)) };
   });
 
   const importComments = (conn: Connection, tabId: string, open: ReadonlyArray<DocComment>) =>
@@ -389,12 +397,7 @@ const make = Effect.gen(function* () {
     const t3 = yield* t3Project(input.projectId);
     const conn = yield* connection;
     const cloudProject = yield* resolveProject(conn, t3.title);
-    const docPaths =
-      input.docPaths ??
-      (yield* workspaceDocs.list({ cwd: input.cwd, folder: DOCS_ROOT }).pipe(
-        Effect.map((listed) => listed.docs.map((doc) => doc.docPath)),
-        Effect.mapError((error) => new DocsCloudError({ reason: "failed", detail: error.message })),
-      ));
+    const docPaths = input.docPaths ?? (yield* listDocPaths(input.cwd)).map((doc) => doc.docPath);
     const existing = new Map(
       (yield* readImports(conn.origin, input.projectId)).map((row) => [row.doc_path, row]),
     );

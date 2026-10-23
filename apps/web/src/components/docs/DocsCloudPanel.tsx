@@ -3,6 +3,9 @@ import { ExternalLinkIcon, FolderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useRightPanelStore } from "~/rightPanelStore";
+import { useProject } from "~/state/entities";
+
+import { useStableCallback } from "~/hooks/useStableCallback";
 
 import { Button } from "../ui/button";
 import { type CopyToClaudeDocRequest, parseCopyToClaudeDocMessage } from "./copyToClaudeDoc";
@@ -42,6 +45,19 @@ export function DocsCloudPanel(props: {
   const [src] = useState(() => `${origin}${path ?? "/"}`);
   const reported = useRef<string | null>(null);
   const [copyRequest, setCopyRequest] = useState<CopyToClaudeDocRequest | null>(null);
+  // The library opens on the Docs Cloud project named after this T3 project.
+  const projectName =
+    useProject(
+      props.projectId === null
+        ? null
+        : { environmentId: threadRef.environmentId, projectId: props.projectId },
+    )?.title ?? null;
+  const postContext = useStableCallback(() =>
+    frame.current?.contentWindow?.postMessage({ type: "t3-docs:context", projectName }, origin),
+  );
+  useEffect(() => {
+    postContext();
+  }, [projectName, postContext]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -98,6 +114,7 @@ export function DocsCloudPanel(props: {
         onLoad={() => {
           reported.current = null;
           frame.current?.contentWindow?.postMessage({ type: "t3-docs:hello" }, origin);
+          postContext();
         }}
       />
       {copyRequest ? (

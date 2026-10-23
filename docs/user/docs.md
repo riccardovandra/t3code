@@ -20,4 +20,8 @@ Docs Cloud is a hosted doc editor with nested tabs that every agent can write to
 
 Once connected, the Docs panel shows Docs Cloud beside the chat, and **Project files** switches back to the markdown files above. Sign in to Docs Cloud inside the panel the first time. Agents in threads started afterwards get the Docs Cloud tools and use them for docs you ask for. A doc an agent creates opens in the panel with a card in the conversation, and a tab it adds shows a notice with **Open**.
 
+Each T3 Code project has its own Docs Cloud project with the same name (ignoring case and spacing). The panel opens on that project's docs; **All projects** shows the rest. The project is created with its first doc, by you or an agent.
+
+To move existing file docs into Docs Cloud, open **Project files**: **Import all** moves every doc under `docs/`, and **Move to Docs Cloud** in a doc's header moves just that one. Each file becomes its own Docs Cloud doc, and open comments come along when their quoted text is still in the doc; comments whose text is gone are skipped and counted. Files and their comments stay where they are. An imported doc shows **Imported to Docs Cloud**, which opens it, and **Update**, which replaces the Docs Cloud copy with the file's current text. You can also ask an agent to import the docs.
+
 The panel loads Docs Cloud directly in your browser, so it works the same over remote connections. Browsers that block cookies inside embedded pages, such as Safari, may not keep you signed in there; use **Open in browser** in the panel header instead.
