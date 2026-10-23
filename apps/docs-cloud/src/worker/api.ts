@@ -10,12 +10,14 @@ import { isDocRole, type DocRole } from "../shared/access.ts";
 import { locateAnchor, markdownToText } from "../shared/anchors.ts";
 import { normalizeProjectKey } from "../shared/embed.ts";
 import * as Access from "./access.ts";
+import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
 import * as Comments from "./comments.ts";
 import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
+import { widgetProblems } from "./widgets.ts";
 
 /** The ordered write path for a doc; production routes it to the doc's DocRoom. */
 export interface DocRooms {
@@ -93,6 +95,8 @@ const json = (body: unknown, status = 200, headers: HeadersInit = {}) =>
   Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 
 const error = (status: number, code: string) => json({ error: code }, status);
+const widgetInvalid = (problems: ReadonlyArray<WidgetProblem>) =>
+  json({ error: "widget_invalid", problems }, 422);
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
@@ -330,6 +334,8 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       const markdown = typeof body.markdown === "string" ? body.markdown : "";
       if (markdown.length > MAX_MARKDOWN_LENGTH) return error(413, "too_large");
       await need(id, "editor");
+      const problems = widgetProblems(markdown);
+      if (problems) return widgetInvalid(problems);
       const tab = await deps.rooms.createTab(id, {
         parentTabId,
         title,
@@ -366,6 +372,8 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       if (markdown === undefined && title === undefined) return error(400, "empty_write");
       const current = await Docs.getTab(deps.db, id);
       await need(current.docId, "editor");
+      const problems = markdown === undefined ? null : widgetProblems(markdown, current.markdown);
+      if (problems) return widgetInvalid(problems);
       const result = await deps.rooms.writeTab(current.docId, {
         tabId: id,
         baseVersion,

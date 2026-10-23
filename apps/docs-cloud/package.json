@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json"
   },
   "dependencies": {
+    "@babel/parser": "7.29.8",
     "@t3tools/shared": "workspace:*",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-code-block": "^3.31.3",

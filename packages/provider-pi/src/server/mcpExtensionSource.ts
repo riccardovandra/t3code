@@ -2,7 +2,10 @@
  * Do not import t3code modules from the string body. The Pi process resolves
  * `@earendil-works/pi-coding-agent` and `typebox` from the user's pi install.
  */
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  DOCS_CLOUD_MCP_SERVER_NAME,
+  t3CodeOrchestrationInstructions,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -30,7 +33,9 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const UPSTREAM_SERVERS_ENV = ${JSON.stringify(T3_MCP_UPSTREAM_SERVERS_ENV)};
-const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const DOCS_CLOUD_SERVER_NAME = ${JSON.stringify(DOCS_CLOUD_MCP_SERVER_NAME)};
+const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(t3CodeOrchestrationInstructions(false).trim())};
+const DOCS_CLOUD_ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(t3CodeOrchestrationInstructions(true).trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -383,6 +388,9 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     catalog: [] as ReadonlyArray<McpTool>,
     started: undefined as Promise<void> | undefined,
   }));
+  const orchestrationInstructions = upstreams.some((server) => server.name === DOCS_CLOUD_SERVER_NAME)
+    ? DOCS_CLOUD_ORCHESTRATION_INSTRUCTIONS
+    : ORCHESTRATION_INSTRUCTIONS;
 
   const toolResult = (server: string, name: string, result: JsonValue | undefined) => {
     const content = mcpModelContent(result);
@@ -538,10 +546,10 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
-      sections.t3_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      sections.t3_code_orchestration = orchestrationInstructions;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + orchestrationInstructions };
   });
 }
 `;

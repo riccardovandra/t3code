@@ -16,6 +16,9 @@ import {
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadShell,
+  McpServerId,
+  McpServerName,
+  type McpServerEntry,
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
@@ -23,6 +26,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { McpAttachmentInput } from "./attachment/input.ts";
 import { McpSchema, McpServer } from "effect/ai";
 import { FetchHttpClient } from "effect/http";
@@ -296,6 +300,62 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
   ),
 );
 
+const hubServer = (name: string, enabled: boolean): McpServerEntry => ({
+  id: McpServerId.make(`server-${name}`),
+  name: McpServerName.make(name),
+  enabled,
+  // Port 1 refuses at once, so a Docs Cloud tool that does get called fails locally.
+  transport: { type: "http", url: "http://127.0.0.1:1/mcp" },
+  auth: { type: "none" },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  status: enabled ? { state: "idle" } : { state: "disabled" },
+});
+
+const docsToolkitLayer = (servers: ReadonlyArray<McpServerEntry>) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-docs-" });
+      return McpHttpServer.layerDocsToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(
+          WorkspaceFileSystem.layer.pipe(
+            Layer.provide(
+              Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+                assertContains: () => Effect.void,
+              }),
+            ),
+            Layer.provideMerge(WorkspaceEntries.layer),
+            Layer.provideMerge(WorkspacePaths.layer),
+          ),
+        ),
+        Layer.provide(Layer.mock(DocCommentsService.DocCommentsService)({})),
+        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+        Layer.provide(Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({})),
+        Layer.provide(
+          Layer.mock(McpServerRegistry.McpServerRegistry)({
+            list: Effect.succeed({ servers }),
+            subscribeList: Stream.make({ servers }),
+          }),
+        ),
+        Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) =>
+              Effect.succeed({
+                ...McpToolAccessTestkit.liveThreadShell(id),
+                worktreePath: checkout,
+              }),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-docs-" })),
+        Layer.provide(NodeServices.layer),
+      );
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+
 it.effect("returns a created doc that Codex and Claude tool rows both carry", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -312,47 +372,52 @@ it.effect("returns a created doc that Codex and Claude tool rows both carry", ()
     ] as const) {
       expect(docOpenFromToolItem({ toolName, status: "completed", output })).toEqual(doc);
     }
-  }).pipe(
-    Effect.provide(
-      Layer.unwrap(
-        Effect.gen(function* () {
-          const fileSystem = yield* FileSystem.FileSystem;
-          const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-docs-" });
-          return McpHttpServer.layerDocsToolkit.pipe(
-            Layer.provideMerge(McpServer.McpServer.layer),
-            Layer.provide(
-              WorkspaceFileSystem.layer.pipe(
-                Layer.provide(
-                  Layer.mock(KnownWorkspaces.KnownWorkspaces)({
-                    assertContains: () => Effect.void,
-                  }),
-                ),
-                Layer.provideMerge(WorkspaceEntries.layer),
-                Layer.provideMerge(WorkspacePaths.layer),
-              ),
-            ),
-            Layer.provide(Layer.mock(DocCommentsService.DocCommentsService)({})),
-            Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
-            Layer.provide(Layer.mock(McpServerRegistry.McpServerRegistry)({})),
-            Layer.provide(Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({})),
-            Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
-            Layer.provide(FetchHttpClient.layer),
-            Layer.provide(
-              Layer.mock(ThreadManagement.ThreadManagementService)({
-                getThreadShell: (id) =>
-                  Effect.succeed({
-                    ...McpToolAccessTestkit.liveThreadShell(id),
-                    worktreePath: checkout,
-                  }),
-              }),
-            ),
-            Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-docs-" })),
-            Layer.provide(NodeServices.layer),
-          );
-        }),
-      ).pipe(Layer.provide(NodeServices.layer)),
-    ),
-  ),
+  }).pipe(Effect.provide(docsToolkitLayer([]))),
+);
+
+const LOCAL_DOCS_TOOLS = [
+  "docs_list",
+  "docs_read",
+  "docs_create",
+  "docs_open",
+  "docs_list_comments",
+  "docs_comment_create",
+  "docs_comment_reply",
+  "docs_comment_resolve",
+];
+
+const callDocsTool = (name: string) =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    return yield* server.callTool({ name, arguments: {} }).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+      Effect.provideService(McpSchema.McpServerClient, client),
+      Effect.flip,
+      Effect.map((error) => error.message),
+      Effect.orElseSucceed(() => "succeeded"),
+    );
+  });
+
+it.effect("hides the local docs tools while Docs Cloud is connected", () =>
+  Effect.gen(function* () {
+    for (const name of LOCAL_DOCS_TOOLS) {
+      expect(yield* callDocsTool(name)).toBe(`Tool '${name}' not found`);
+    }
+    for (const name of ["docs_cloud_project", "docs_cloud_import"]) {
+      expect(yield* callDocsTool(name)).not.toMatch(/not found/);
+    }
+  }).pipe(Effect.provide(docsToolkitLayer([hubServer("docs-cloud", true)]))),
+);
+
+it.effect.each([
+  ["no Docs Cloud entry", [hubServer("linear", true)]],
+  ["a disabled Docs Cloud entry", [hubServer("docs-cloud", false)]],
+] as const)("keeps the local docs tools with %s", ([, servers]) =>
+  Effect.gen(function* () {
+    for (const name of LOCAL_DOCS_TOOLS) {
+      expect(yield* callDocsTool(name)).not.toMatch(/not found/);
+    }
+  }).pipe(Effect.provide(docsToolkitLayer(servers))),
 );
 
 it.effect("keeps unexpected handler defects private through the production registration", () =>

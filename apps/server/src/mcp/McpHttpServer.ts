@@ -43,7 +43,9 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
+import { ToolsToolkit } from "./toolkits/tools/tools.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
+import * as ToolsHandlers from "./toolkits/tools/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
@@ -72,8 +74,10 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import * as DocsCloudConnection from "../docs/DocsCloudConnection.ts";
 import * as DocsCloudImport from "../docs/DocsCloudImport.ts";
 import * as DocsHandlers from "./toolkits/docs/handlers.ts";
+import { hideLocalDocsToolsWhen } from "./toolkits/docs/visibility.ts";
 import { DocsToolkit } from "./toolkits/docs/tools.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
 import * as AiPmService from "../aiPm/AiPmService.ts";
@@ -1002,9 +1006,34 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 
-export const layerDocsToolkit = toolkitRegistration(DocsToolkit, DocsHandlers.layer).pipe(
+// Agents read the tool list once per session, so tell them when it changes.
+const layerDocsToolsListChanged = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const connection = yield* DocsCloudConnection.DocsCloudConnection;
+    yield* connection.changes.pipe(
+      Stream.runForEach(() =>
+        server.notifications["notifications/tools/list_changed"]({}).pipe(Effect.ignore),
+      ),
+      Effect.forkScoped,
+    );
+  }),
+).pipe(Layer.provide(McpServer.McpServer.layer));
+
+export const layerDocsToolkit = Layer.unwrap(
+  DocsCloudConnection.DocsCloudConnection.useSync((connection) =>
+    Layer.merge(
+      toolkitRegistration(
+        hideLocalDocsToolsWhen(DocsToolkit, connection.isConnected),
+        DocsHandlers.layer,
+      ),
+      layerDocsToolsListChanged,
+    ),
+  ),
+).pipe(
   Layer.provide(DocsCloudImport.layer),
   Layer.provide(WorkspaceDocs.layer),
+  Layer.provide(DocsCloudConnection.layer),
 );
 
 export const layerAipmToolkit = toolkitRegistration(AipmToolkit, AipmHandlers.layer).pipe(
@@ -1054,6 +1083,10 @@ const layerEnvironmentToolkit = toolkitRegistration(
 ).pipe(Layer.provide(ThreadCommandExecutor.layer));
 
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
+
+const layerToolsRegistration = toolkitRegistration(ToolsToolkit, ToolsHandlers.layer).pipe(
+  Layer.provide(ThreadCommandExecutor.layer),
+);
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
@@ -1148,6 +1181,31 @@ export const layerMcpTransport = McpServer.layerHttp({
   allowSessionTermination: true,
 }).pipe(Layer.provide(layerMcpAuthMiddleware));
 
+/**
+ * Every tool `layer` registers, for describing `t3-code` without a session
+ * (Settings → Tools). Add a toolkit here when you register one below.
+ */
+export const T3_MCP_TOOLKITS: ReadonlyArray<Toolkit.Any> = [
+  PreviewStandardToolkit,
+  PreviewSnapshotToolkit,
+  OrchestratorToolkit,
+  ThreadToolkit,
+  AttachmentToolkit,
+  ProjectToolkit,
+  EnvironmentToolkit,
+  ToolsToolkit,
+  PreviewControlsToolkit,
+  WorktreeToolkit,
+  PullRequestsToolkit,
+  DeviceStandardToolkit,
+  DeviceScreenshotToolkit,
+  HtmlRenderToolkit,
+  HtmlPreviewToolkit,
+  DocsToolkit,
+  AipmToolkit,
+  McpServersToolkit,
+];
+
 export const layer = Layer.mergeAll(
   layerPreviewToolkit,
   layerOrchestratorToolkit,
@@ -1155,6 +1213,7 @@ export const layer = Layer.mergeAll(
   layerAttachmentToolkit,
   layerProjectRegistration,
   layerEnvironmentToolkit,
+  layerToolsRegistration,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
   layerPullRequestsToolkit,

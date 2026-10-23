@@ -36,6 +36,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
+import * as DocsCloudConnection from "./DocsCloudConnection.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
@@ -483,16 +484,16 @@ const SYNC_DEBOUNCE = Duration.seconds(2);
 
 /**
  * Syncs this environment's projects into Docs Cloud once the server is ready,
- * then whenever a project is created or renamed or the MCP hub's servers
- * change (Docs Cloud being set up). Best effort: a failure is logged and the
- * next trigger tries again; nothing waits on it.
+ * then whenever a project is created or renamed or Docs Cloud is connected.
+ * Best effort: a failure is logged and the next trigger tries again; nothing
+ * waits on it.
  */
 export const layerProjectSync = Layer.effectDiscard(
   Effect.gen(function* () {
     const cloud = yield* DocsCloudImport;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
     const events = yield* OrchestrationEventStore.OrchestrationEventStore;
-    const registry = yield* McpServerRegistry.McpServerRegistry;
+    const connection = yield* DocsCloudConnection.DocsCloudConnection;
 
     const sync = cloud.syncProjects.pipe(
       Effect.tap((synced) =>
@@ -522,7 +523,8 @@ export const layerProjectSync = Layer.effectDiscard(
               event.type !== "project.deleted",
           ),
         );
-      yield* Stream.merge(projectChanges, registry.changes).pipe(
+      const connected = connection.changes.pipe(Stream.filter((isConnected) => isConnected));
+      yield* Stream.merge(projectChanges, connected).pipe(
         Stream.debounce(SYNC_DEBOUNCE),
         Stream.runForEach(() => sync),
       );
