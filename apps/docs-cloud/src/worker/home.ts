@@ -12,6 +12,7 @@ import {
   type HomeLibrary,
   type SearchHit,
 } from "../shared/home.ts";
+import { richBlockText, visibleText } from "../shared/visibleText.ts";
 
 interface CardRow {
   doc_id: string;
@@ -48,7 +49,7 @@ export async function homeLibrary(
       const card = cards.get(doc.id);
       return {
         ...doc,
-        preview: card?.head ? docPreview(card.head, doc.title) : "",
+        preview: card?.head ? docPreview(card.head, doc.title, richBlockText) : "",
         memberCount: card?.members ?? 1,
         openedAt: card?.opened_at ?? null,
       };
@@ -73,23 +74,25 @@ export async function recordOpen(
     .run();
 }
 
-const SNIPPET_WINDOW_BEFORE = 300;
-const SNIPPET_WINDOW = 800;
-
 const likePattern = (query: string) => `%${query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+
+/**
+ * More LIKE matches than hits are read, since a match only in a table's JSON
+ * or a diagram's code is dropped.
+ */
+const SEARCH_CANDIDATES = SEARCH_LIMIT * 2;
 
 interface SearchRow {
   doc_id: string;
   tab_id: string;
   tab_title: string;
-  window_start: number;
-  window_text: string;
-  total: number;
+  markdown: string;
 }
 
 /**
- * Tabs whose Markdown contains `query` (ASCII case-insensitive, like SQLite's
- * LIKE), in docs the user is on, most recently edited first.
+ * Tabs whose visible text contains `query` (ASCII case-insensitive, like
+ * SQLite's LIKE), in docs the user is on, most recently edited first. LIKE on
+ * the Markdown narrows the tabs; the snippet comes from what a reader sees.
  */
 export async function searchTabs(
   db: D1Database,
@@ -97,32 +100,21 @@ export async function searchTabs(
 ): Promise<ReadonlyArray<SearchHit>> {
   const { results } = await db
     .prepare(
-      `SELECT t.doc_id, t.id AS tab_id, t.title AS tab_title,
-         max(1, instr(lower(t.markdown), lower(?1)) - ?2) AS window_start,
-         substr(t.markdown, max(1, instr(lower(t.markdown), lower(?1)) - ?2), ?3) AS window_text,
-         length(t.markdown) AS total
+      `SELECT t.doc_id, t.id AS tab_id, t.title AS tab_title, t.markdown
        FROM tabs t
-       JOIN doc_members me ON me.doc_id = t.doc_id AND me.user_id = ?4
-       WHERE t.markdown LIKE ?5 ESCAPE '\\'
+       JOIN doc_members me ON me.doc_id = t.doc_id AND me.user_id = ?1
+       WHERE t.markdown LIKE ?2 ESCAPE '\\'
        ORDER BY t.updated_at DESC, t.id
-       LIMIT ?6`,
+       LIMIT ?3`,
     )
-    .bind(
-      input.query,
-      SNIPPET_WINDOW_BEFORE,
-      SNIPPET_WINDOW,
-      input.userId,
-      likePattern(input.query),
-      SEARCH_LIMIT,
-    )
+    .bind(input.userId, likePattern(input.query), SEARCH_CANDIDATES)
     .all<SearchRow>();
-  return results.map((row) => ({
-    docId: row.doc_id,
-    tabId: row.tab_id,
-    tabTitle: row.tab_title,
-    snippet: searchSnippet(row.window_text, input.query, {
-      cutBefore: row.window_start > 1,
-      cutAfter: row.window_start - 1 + row.window_text.length < row.total,
-    }),
-  }));
+  const hits: Array<SearchHit> = [];
+  for (const row of results) {
+    const snippet = searchSnippet(visibleText(row.markdown), input.query);
+    if (snippet === null) continue;
+    hits.push({ docId: row.doc_id, tabId: row.tab_id, tabTitle: row.tab_title, snippet });
+    if (hits.length === SEARCH_LIMIT) break;
+  }
+  return hits;
 }

@@ -45,7 +45,7 @@ export interface SearchHit {
   readonly snippet: string;
 }
 
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/;
 const TABLE_ROW = /^\s*\|/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const HEADING = /^\s*#{1,6}\s+/;
@@ -54,9 +54,15 @@ const IMAGE_ONLY = /^\s*!\[[^\]]*\]\([^)]*\)\s*$/;
 
 /**
  * The preview a card shows for a doc: its first tab's prose, skipping code,
- * diagrams, tables, images and a leading heading that repeats the title.
+ * GFM tables, images and a leading heading that repeats the title. Rich
+ * tables and diagrams show what `blockText` gives for them (the Worker passes
+ * their cells and labels), and nothing when the head ends inside one.
  */
-export function docPreview(markdown: string, title: string): string {
+export function docPreview(
+  markdown: string,
+  title: string,
+  blockText: (language: string, body: string) => ReadonlyArray<string> | null = () => null,
+): string {
   const blocks: Array<{ heading: boolean; text: string }> = [];
   let paragraph: Array<string> = [];
   const flush = () => {
@@ -64,16 +70,23 @@ export function docPreview(markdown: string, title: string): string {
     if (text) blocks.push({ heading: false, text });
     paragraph = [];
   };
-  let fence: string | null = null;
+  let fence: { marker: string; language: string; body: Array<string> } | null = null;
   for (const line of markdown.replace(/\r\n?/g, "\n").split("\n")) {
     if (fence !== null) {
-      if (line.trim().startsWith(fence)) fence = null;
+      if (line.trim().startsWith(fence.marker)) {
+        for (const text of blockText(fence.language, fence.body.join("\n")) ?? []) {
+          blocks.push({ heading: false, text: text.replace(/\s+/g, " ").trim() });
+        }
+        fence = null;
+      } else {
+        fence.body.push(line);
+      }
       continue;
     }
     const opening = FENCE.exec(line);
     if (opening) {
       flush();
-      fence = opening[1]!;
+      fence = { marker: opening[1]!, language: opening[2] ?? "", body: [] };
       continue;
     }
     if (line.trim() === "" || TABLE_ROW.test(line) || RULE.test(line) || IMAGE_ONLY.test(line)) {
@@ -114,25 +127,18 @@ const SNIPPET_BEFORE = 60;
 const SNIPPET_AFTER = 120;
 
 /**
- * Text around the first case-insensitive match of `query` in a window of a
- * tab's Markdown. `window` may start and end mid-block; `cutBefore` and
- * `cutAfter` say whether the tab continues past it.
+ * Text around the first case-insensitive match of `query` in a tab's visible
+ * text, or null when the reader would not see the match anywhere.
  */
-export function searchSnippet(
-  window: string,
-  query: string,
-  edges: { readonly cutBefore: boolean; readonly cutAfter: boolean },
-): string {
-  const text = markdownToText(window).replace(/\s+/g, " ").trim();
+export function searchSnippet(visible: string, query: string): string | null {
+  const text = visible.replace(/\s+/g, " ").trim();
   const at = text.toLowerCase().indexOf(query.toLowerCase());
-  if (at === -1) return cutAtWord(text, SNIPPET_BEFORE + SNIPPET_AFTER);
+  if (at === -1) return null;
   const start = Math.max(0, at - SNIPPET_BEFORE);
   const end = Math.min(text.length, at + query.length + SNIPPET_AFTER);
   let snippet = text.slice(start, end);
   // Trim partial words at the cut edges.
   if (start > 0) snippet = snippet.replace(/^\S*\s/, "");
   if (end < text.length) snippet = snippet.replace(/\s\S*$/, "");
-  const before = start > 0 || edges.cutBefore ? "…" : "";
-  const after = end < text.length || edges.cutAfter ? "…" : "";
-  return `${before}${snippet.trim()}${after}`;
+  return `${start > 0 ? "…" : ""}${snippet.trim()}${end < text.length ? "…" : ""}`;
 }

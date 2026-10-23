@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { SEARCH_LIMIT, type HomeLibrary, type SearchHit } from "../shared/home.ts";
 import type { DocWithTabs } from "../shared/protocol.ts";
+import { formatTable } from "../shared/table.ts";
+import { FLOW_EXAMPLE } from "../shared/widget/testing/examples.ts";
 import { makeApiHarness } from "./testing/apiHarness.ts";
 
 async function body<A>(response: Response): Promise<A> {
@@ -121,6 +123,28 @@ describe("GET /api/search", () => {
 
     const ownerHits = await body<{ hits: Array<SearchHit> }>(await search(owner, "budget"));
     expect(ownerHits.hits).toHaveLength(2);
+  });
+
+  it("snippets a table's cells and drops a match only in table JSON or diagram code", async () => {
+    const { owner, createDoc, search } = await setup();
+    const table = formatTable({
+      id: "t1",
+      columns: [{ id: "req", name: "Request", type: "text" }],
+      rows: [{ id: "r1", cells: { req: "Fix Bing MCP issues" } }],
+    });
+    const docId = await createDoc(
+      "Backlog",
+      `Open work.\n\n\`\`\`t3-table\n${table}\n\`\`\`\n\n\`\`\`t3-widget id=flow\n${FLOW_EXAMPLE}\n\`\`\``,
+    );
+    const hits = async (q: string) =>
+      (await body<{ hits: Array<SearchHit> }>(await search(owner, q))).hits;
+    expect(await hits("bing")).toEqual([
+      expect.objectContaining({ docId, snippet: expect.stringContaining("Fix Bing MCP issues") }),
+    ]);
+    expect((await hits("bing"))[0]!.snippet).not.toContain('"cells"');
+    expect((await hits("Ship to production"))[0]!.snippet).toContain("Ship to production");
+    expect(await hits("rows")).toEqual([]);
+    expect(await hits("strokeWidth")).toEqual([]);
   });
 
   it("treats LIKE wildcards literally", async () => {
