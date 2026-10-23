@@ -24,9 +24,7 @@ export function DocThreads(props: {
           return (
             <div key={thread.id} className="doc-thread-item">
               {liveTitle === undefined ? (
-                <span className="doc-thread-label" title="Not in this T3 Code">
-                  {thread.title}
-                </span>
+                <span className="doc-thread-label">{thread.title}</span>
               ) : (
                 <button type="button" onClick={() => props.onOpen(thread)}>
                   {liveTitle}

@@ -355,12 +355,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
               ))}
             </select>
             {embedFeatures?.includes("start-work") ? (
-              <button
-                type="button"
-                className="button small"
-                title="Open a new T3 Code thread with this doc as its plan"
-                onClick={() => void startWork()}
-              >
+              <button type="button" className="button small" onClick={() => void startWork()}>
                 Start work
               </button>
             ) : null}
