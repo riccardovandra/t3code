@@ -66,6 +66,7 @@ import { ThreadBackgroundWorkSheet } from "./features/threads/ThreadBackgroundWo
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
+import { DocsCloudScreen } from "./features/docs-cloud/DocsCloudScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
@@ -848,6 +849,13 @@ const RootStackConfig = createWorkspaceStackNavigator({
         presentation: "fullScreenModal",
         headerShown: false,
         gestureEnabled: false,
+      },
+    }),
+    DocsCloud: createNativeStackScreen({
+      screen: DocsCloudScreen,
+      options: {
+        presentation: "fullScreenModal",
+        headerShown: false,
       },
     }),
     ThreadAttachment: createNativeStackScreen({

@@ -21,3 +21,5 @@ Docs Cloud is a hosted doc editor with nested tabs that every agent can write to
 Once connected, the Docs panel shows Docs Cloud beside the chat, and **Project files** switches back to the markdown files above. Sign in to Docs Cloud inside the panel the first time. Agents in threads started afterwards get the Docs Cloud tools and use them for docs you ask for. A doc an agent creates opens in the panel with a card in the conversation, and a tab it adds shows a notice with **Open**.
 
 The panel loads Docs Cloud directly in your browser, so it works the same over remote connections. Browsers that block cookies inside embedded pages, such as Safari, may not keep you signed in there; use **Open in browser** in the panel header instead.
+
+On mobile, the cloud button in a thread's header opens your Docs Cloud library, and tapping a doc card in the conversation opens that doc. Sign in inside that screen the first time. Links to other sites open in your browser.
