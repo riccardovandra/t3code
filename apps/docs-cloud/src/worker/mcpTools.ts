@@ -1,8 +1,11 @@
 // The agent tools behind `/mcp`. Reads go through `docs.ts`; every write to an
 // existing doc goes through `deps.rooms` so open editors receive it live.
 
-import type { DocStatus, DocSummary, Tab } from "../shared/protocol.ts";
+import { findQuote, markdownToText } from "../shared/anchors.ts";
+import type { Comment, DocStatus, DocSummary, Tab } from "../shared/protocol.ts";
+import { groupThreads } from "../shared/threads.ts";
 import type { ApiDeps } from "./api.ts";
+import * as Comments from "./comments.ts";
 import * as Docs from "./docs.ts";
 
 const MAX_MARKDOWN_LENGTH = 1_000_000;
@@ -28,6 +31,8 @@ function fail(error: string, message: string, extra: Record<string, unknown> = {
 interface ToolContext {
   readonly deps: ApiDeps;
   readonly origin: string;
+  /** The MCP client's name from `initialize`, else the token's name. */
+  readonly agentName: string;
 }
 
 type Args = Record<string, unknown>;
@@ -125,6 +130,26 @@ function countOccurrences(haystack: string, needle: string): number {
     count += 1;
   }
   return count;
+}
+
+const commentAuthor = (ctx: ToolContext) =>
+  Comments.actorAuthor({ kind: "agent", name: ctx.agentName });
+
+const commentSummary = (comment: Comment) => ({
+  commentId: comment.id,
+  author: comment.author,
+  body: comment.body,
+  createdAt: new Date(comment.createdAt).toISOString(),
+});
+
+async function commentWrite(
+  ctx: ToolContext,
+  docId: string,
+  op: Comments.CommentOp,
+): Promise<Comment> {
+  const result = await load(ctx.deps.rooms.commentOp(docId, { op, origin: null }), "comment");
+  if (result.kind === "deleted") throw new Error("unexpected comment delete");
+  return result.comment;
 }
 
 /** Writes through the DocRoom, retrying a title-only change against the latest version. */
@@ -271,6 +296,52 @@ export const TOOLS = [
       type: "object",
       properties: { docId: { type: "string" }, status: { type: "string", enum: DOC_STATUSES } },
       required: ["docId", "status"],
+    },
+  },
+  {
+    name: "list_comments",
+    description:
+      'List comment threads on a doc (optionally one tab): the quoted passage, whether it is still in the tab ("anchored" or "text_removed"), and every reply. Resolved threads are left out unless includeResolved is true.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string" },
+        tabId: { type: "string" },
+        includeResolved: { type: "boolean" },
+      },
+      required: ["docId"],
+    },
+  },
+  {
+    name: "create_comment",
+    description:
+      "Start a comment thread on a passage. `quote` is exact text from the tab (markdown syntax is ignored) and must appear exactly once; include more surrounding words if it repeats.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId: { type: "string" },
+        quote: { type: "string" },
+        body: { type: "string", description: "The comment, in markdown." },
+      },
+      required: ["tabId", "quote", "body"],
+    },
+  },
+  {
+    name: "reply_comment",
+    description: "Reply in a comment thread.",
+    inputSchema: {
+      type: "object",
+      properties: { commentId: { type: "string" }, body: { type: "string" } },
+      required: ["commentId", "body"],
+    },
+  },
+  {
+    name: "resolve_comment",
+    description: "Resolve a comment thread once it has been addressed.",
+    inputSchema: {
+      type: "object",
+      properties: { commentId: { type: "string" } },
+      required: ["commentId"],
     },
   },
 ] as const;
@@ -467,14 +538,98 @@ const handlers: Record<ToolName, (args: Args, ctx: ToolContext) => Promise<objec
       fail("invalid_argument", `"status" must be one of ${DOC_STATUSES.join(", ")}.`);
     }
     const doc = await load(
-      Docs.setDocStatus(ctx.deps.db, {
-        docId,
-        status: status as DocStatus,
-        now: ctx.deps.now(),
-      }),
+      ctx.deps.rooms.setDocStatus(docId, { status: status as DocStatus, origin: null }),
       "doc",
     );
     return { doc: docSummary(ctx, doc, undefined) };
+  },
+
+  list_comments: async (args, ctx) => {
+    const docId = requireString(args, "docId");
+    const tabId = optionalString(args, "tabId");
+    const includeResolved = args.includeResolved === true;
+    const { tabs } = await load(Docs.getDoc(ctx.deps.db, docId), "doc");
+    if (tabId && !tabs.some((tab) => tab.id === tabId)) {
+      fail("not_found", "No tab with that id in this doc.");
+    }
+    const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
+    const texts = new Map<string, string>();
+    const textOf = (tab: Tab) => {
+      const cached = texts.get(tab.id) ?? markdownToText(tab.markdown);
+      texts.set(tab.id, cached);
+      return cached;
+    };
+    const comments = await Comments.listComments(ctx.deps.db, { docId, tabId });
+    const threads = groupThreads(comments).filter(
+      (thread) => includeResolved || thread.root.resolvedAt === null,
+    );
+    return {
+      threads: threads.map(({ root, replies }) => {
+        const tab = tabsById.get(root.tabId)!;
+        return {
+          ...commentSummary(root),
+          tabId: root.tabId,
+          tabUrl: tabUrl(ctx, tab),
+          quote: root.quote,
+          anchor: Comments.anchorStatus(root, textOf(tab)),
+          resolved: root.resolvedAt !== null,
+          replies: replies.map(commentSummary),
+        };
+      }),
+    };
+  },
+
+  create_comment: async (args, ctx) => {
+    const tabId = requireString(args, "tabId");
+    const quote = markdownArg(args, "quote", true)!;
+    if (quote.length > Comments.MAX_QUOTE_LENGTH) fail("too_large", '"quote" is too long.');
+    const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
+    const tab = await load(Docs.getTab(ctx.deps.db, tabId), "tab");
+    const match = findQuote(markdownToText(tab.markdown), quote);
+    if (match.kind === "missing") {
+      fail("quote_not_found", '"quote" does not appear in the tab. Re-read it with read_doc.', {
+        url: tabUrl(ctx, tab),
+      });
+    }
+    if (match.kind === "ambiguous") {
+      fail(
+        "ambiguous_quote",
+        `"quote" appears ${match.count} times. Include more surrounding text so it matches once.`,
+        { url: tabUrl(ctx, tab) },
+      );
+    }
+    const comment = await commentWrite(ctx, tab.docId, {
+      kind: "create",
+      tabId,
+      anchor: match.anchor,
+      body,
+      author: commentAuthor(ctx),
+    });
+    return { comment: { ...commentSummary(comment), quote: comment.quote, url: tabUrl(ctx, tab) } };
+  },
+
+  reply_comment: async (args, ctx) => {
+    const commentId = requireString(args, "commentId");
+    const body = requireString(args, "body", Comments.MAX_COMMENT_LENGTH);
+    const target = await load(Comments.getComment(ctx.deps.db, commentId), "comment");
+    const reply = await commentWrite(ctx, target.docId, {
+      kind: "reply",
+      commentId,
+      body,
+      author: commentAuthor(ctx),
+    });
+    return { reply: { ...commentSummary(reply), threadId: reply.parentId } };
+  },
+
+  resolve_comment: async (args, ctx) => {
+    const commentId = requireString(args, "commentId");
+    const target = await load(Comments.getComment(ctx.deps.db, commentId), "comment");
+    const root = await commentWrite(ctx, target.docId, {
+      kind: "resolve",
+      commentId,
+      resolved: true,
+    });
+    return { threadId: root.id, resolved: true };
   },
 };
 

@@ -52,6 +52,26 @@ export interface TabPlacement {
 }
 
 /**
+ * A comment on a tab. A thread is a root (`parentId` null) carrying the anchor
+ * and resolve state, plus its replies in creation order. `author` is an owner
+ * email or `agent:<name>`.
+ */
+export interface Comment {
+  readonly id: string;
+  readonly docId: string;
+  readonly tabId: string;
+  readonly parentId: string | null;
+  readonly quote: string;
+  readonly prefix: string;
+  readonly suffix: string;
+  readonly body: string;
+  readonly author: string;
+  readonly resolvedAt: number | null;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/**
  * DocRoom -> editor messages over `GET /api/docs/:docId/ws`. Clients never send
  * writes over the socket; they go through the REST API so agents and editors
  * share one path. `origin` is the `clientId` the writer passed, so an editor can
@@ -69,5 +89,14 @@ export type RoomMessage =
       readonly type: "tab.deleted";
       readonly tabIds: ReadonlyArray<string>;
       readonly placements: ReadonlyArray<TabPlacement>;
+      readonly origin: string | null;
+    }
+  | { readonly type: "doc.updated"; readonly doc: DocSummary; readonly origin: string | null }
+  | { readonly type: "comment.created"; readonly comment: Comment; readonly origin: string | null }
+  | { readonly type: "comment.updated"; readonly comment: Comment; readonly origin: string | null }
+  | {
+      readonly type: "comment.deleted";
+      /** The comment and, for a thread root, its replies. */
+      readonly commentIds: ReadonlyArray<string>;
       readonly origin: string | null;
     };
