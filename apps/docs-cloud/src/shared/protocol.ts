@@ -44,6 +44,13 @@ export interface ApiTokenSummary {
   readonly lastUsedAt: number | null;
 }
 
+/** Where a tab sits in its doc's tree. */
+export interface TabPlacement {
+  readonly tabId: string;
+  readonly parentTabId: string | null;
+  readonly position: number;
+}
+
 /**
  * DocRoom -> editor messages over `GET /api/docs/:docId/ws`. Clients never send
  * writes over the socket; they go through the REST API so agents and editors
@@ -52,4 +59,15 @@ export interface ApiTokenSummary {
  */
 export type RoomMessage =
   | { readonly type: "tab.created"; readonly tab: Tab; readonly origin: string | null }
-  | { readonly type: "tab.updated"; readonly tab: Tab; readonly origin: string | null };
+  | { readonly type: "tab.updated"; readonly tab: Tab; readonly origin: string | null }
+  | {
+      readonly type: "tab.moved";
+      readonly placements: ReadonlyArray<TabPlacement>;
+      readonly origin: string | null;
+    }
+  | {
+      readonly type: "tab.deleted";
+      readonly tabIds: ReadonlyArray<string>;
+      readonly placements: ReadonlyArray<TabPlacement>;
+      readonly origin: string | null;
+    };
