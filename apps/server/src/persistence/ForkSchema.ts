@@ -66,4 +66,17 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       PRIMARY KEY (parent_thread_id, doc_path)
     ) WITHOUT ROWID
   `;
+  // Which file docs went to which Docs Cloud doc. Keyed by the Docs Cloud
+  // origin too, so a local Docs Cloud never hides imports into the hosted one.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS docs_cloud_imports (
+      origin TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      doc_path TEXT NOT NULL,
+      doc_id TEXT NOT NULL,
+      tab_id TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      PRIMARY KEY (origin, project_id, doc_path)
+    ) WITHOUT ROWID
+  `;
 });

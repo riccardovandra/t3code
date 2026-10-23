@@ -22,6 +22,7 @@ describe("ForkSchema", () => {
       assert.deepStrictEqual(yield* history, migrationManifest);
       yield* sql`SELECT comment_id FROM doc_comments`;
       yield* sql`SELECT thread_id FROM doc_agent_threads`;
+      yield* sql`SELECT doc_id FROM docs_cloud_imports`;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

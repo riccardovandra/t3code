@@ -115,11 +115,15 @@ describe("command permissions", () => {
     ),
   );
 
-  it.effect("requires the operate grant to write AI PM ideas", () =>
+  it.effect("requires the operate grant to write AI PM ideas and import into Docs Cloud", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        for (const tag of [WS_METHODS.aiPmSaveIdea, WS_METHODS.aiPmSetIdeaStatus]) {
+        for (const tag of [
+          WS_METHODS.aiPmSaveIdea,
+          WS_METHODS.aiPmSetIdeaStatus,
+          WS_METHODS.docsCloudImport,
+        ]) {
           const write = createCommandPermissions(runtime, tag);
           registry.set(sessions(env), AsyncResult.success(grant(false)));
           expect(registry.get(write.permissionAtom(env))).toBe(false);
