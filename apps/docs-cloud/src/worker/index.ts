@@ -1,9 +1,11 @@
 import { handleApi, type ApiDeps } from "./api.ts";
 import { parseOwnerEmails } from "./auth.ts";
+import { parseEmbedOrigins } from "../shared/embed.ts";
 import type { CommentOpResult } from "./comments.ts";
 import { docRoom } from "./docRoom.ts";
 import { reviveError, type TabWriteResult } from "./docs.ts";
 import type { Env } from "./env.ts";
+import { withEmbedPolicy } from "./embed.ts";
 import { handleMcp } from "./mcp.ts";
 import { sendLoginCode } from "./email.ts";
 
@@ -45,6 +47,6 @@ export default {
     if (pathname === "/mcp" || pathname.startsWith("/mcp/")) {
       return handleMcp(request, apiDeps(env, ctx));
     }
-    return env.ASSETS.fetch(request);
+    return withEmbedPolicy(await env.ASSETS.fetch(request), parseEmbedOrigins(env.FRAME_ANCESTORS));
   },
 } satisfies ExportedHandler<Env>;

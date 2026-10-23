@@ -1351,7 +1351,7 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:open-docs",
-      searchTerms: ["docs", "documents", "notes", "write", "comment", "markdown"],
+      searchTerms: ["docs", "documents", "notes", "write", "comment", "markdown", "cloud"],
       title: "Open Docs",
       icon: <NotebookPenIcon className={ITEM_ICON_CLASS} />,
       run: async () => {

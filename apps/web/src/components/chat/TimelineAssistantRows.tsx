@@ -9,7 +9,7 @@ import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
-import { DocTimelineCard } from "../docs/DocTimelineCard";
+import { DocsCloudTimelineCard, DocTimelineCard } from "../docs/DocTimelineCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThreadShell } from "../../state/entities";
@@ -370,7 +370,11 @@ export function DocTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "doc
   const ctx = use(TimelineRowCtx);
   return (
     <div className="min-w-0 px-1">
-      <DocTimelineCard threadRef={ctx.threadRef} doc={row.doc} />
+      {"url" in row.doc ? (
+        <DocsCloudTimelineCard threadRef={ctx.threadRef} doc={row.doc} />
+      ) : (
+        <DocTimelineCard threadRef={ctx.threadRef} doc={row.doc} />
+      )}
     </div>
   );
 }

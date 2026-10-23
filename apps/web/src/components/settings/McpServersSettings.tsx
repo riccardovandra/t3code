@@ -17,6 +17,11 @@ import {
   type McpServerStatusTone,
 } from "@t3tools/client-runtime/mcp-servers";
 import {
+  DEFAULT_DOCS_CLOUD_URL,
+  docsCloudConfig,
+  docsCloudUpsertInput,
+} from "@t3tools/client-runtime/docs-cloud";
+import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -145,6 +150,7 @@ export function McpServersSettings({
 
   return (
     <SettingsPageContainer>
+      {supported ? <DocsCloudSettings environmentId={environmentId} canWrite={canWrite} /> : null}
       <SettingsSection
         title="MCP servers"
         headerAction={
@@ -186,6 +192,135 @@ export function McpServersSettings({
         />
       ) : null}
     </SettingsPageContainer>
+  );
+}
+
+/**
+ * Docs Cloud is the `docs-cloud` hub entry: saving registers its MCP endpoint
+ * with the token as a bearer header secret, so every provider gets its tools,
+ * and the Docs panel embeds the same origin.
+ */
+function DocsCloudSettings({
+  environmentId,
+  canWrite,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly canWrite: boolean;
+}) {
+  const servers = useEnvironmentQuery(
+    serverEnvironment.mcpServersLive({ environmentId, input: {} }),
+  );
+  const config = servers.data ? docsCloudConfig(servers.data.servers) : null;
+  const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const upsert = useAtomCommand(serverEnvironment.upsertMcpServer, {
+    label: "docs cloud upsert",
+    reportFailure: false,
+  });
+  const remove = useAtomCommand(serverEnvironment.removeMcpServer, {
+    label: "docs cloud remove",
+    reportFailure: false,
+  });
+  const shownUrl = baseUrl ?? config?.baseUrl ?? DEFAULT_DOCS_CLOUD_URL;
+
+  const save = async () => {
+    const built = docsCloudUpsertInput({ baseUrl: shownUrl, token, existing: config });
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    const result = await upsert({ environmentId, input: built.input });
+    setSaving(false);
+    if (result._tag === "Success") {
+      setToken("");
+      setBaseUrl(null);
+      return;
+    }
+    setError(failureMessage(result));
+  };
+
+  const turnOff = async () => {
+    if (!config) return;
+    const confirmed = await requestConfirmDialog(
+      "Turn off Docs Cloud? New threads lose its tools, the Docs panel goes back to project files, and the stored token is deleted. Your docs stay in Docs Cloud.",
+      { variant: "destructive" },
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    const result = await remove({ environmentId, input: { id: config.serverId } });
+    setSaving(false);
+    if (result._tag !== "Success") setError(failureMessage(result));
+  };
+
+  return (
+    <SettingsSection id="docs-cloud" title="Docs Cloud">
+      <SettingsRow
+        title="Docs Cloud"
+        description={
+          config
+            ? "Agents in every provider can create and edit docs, and the Docs panel shows them beside the chat."
+            : "Off. Connect your hosted Docs Cloud so agents write docs there and the Docs panel shows them."
+        }
+        status={
+          config ? (
+            <Badge variant={config.enabled ? "success" : "outline"}>
+              {config.enabled ? "Connected" : "Disabled"}
+            </Badge>
+          ) : null
+        }
+      />
+      <form
+        className="space-y-3 px-4 pb-4 sm:px-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <fieldset disabled={!canWrite || saving} className="space-y-3">
+          <Field label="URL" htmlFor="docs-cloud-url">
+            <Input
+              id="docs-cloud-url"
+              autoComplete="off"
+              value={shownUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+          </Field>
+          <Field
+            label="API token"
+            hint={config ? "stored; paste a new one to replace it" : "from Docs Cloud Settings"}
+            htmlFor="docs-cloud-token"
+          >
+            <Input
+              id="docs-cloud-token"
+              type="password"
+              autoComplete="off"
+              placeholder={config ? "••••••" : "dct_…"}
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+          </Field>
+          {error ? (
+            <p className="text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            {config ? (
+              <Button type="button" size="sm" variant="ghost-destructive" onClick={turnOff}>
+                Turn off
+              </Button>
+            ) : null}
+            <Button type="submit" size="sm">
+              {config ? "Save" : "Connect"}
+            </Button>
+          </div>
+        </fieldset>
+      </form>
+    </SettingsSection>
   );
 }
 

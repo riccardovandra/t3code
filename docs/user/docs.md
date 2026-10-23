@@ -13,3 +13,11 @@ Ask any agent for a document, plan, spec or notes to keep and it writes a doc in
 Comments are stored by the environment running the project, not in the file. Every thread and worktree of that project on that environment shares them, but they are not committed to git. When the commented text is edited, the comment follows the passage; if the passage is deleted, the comment stays and is marked **Text removed**.
 
 Docs that use raw HTML, front matter or footnotes open read-only, because the editor cannot save those without changing them. You can still comment on them and ask the agent to edit them. The editor saves italics as `*text*` and lines up table columns, so the first edit to a hand-written doc may change that spacing.
+
+## Docs Cloud
+
+Docs Cloud is a hosted doc editor with nested tabs that every agent can write to. To connect it, go to **Settings → MCP Servers → Docs Cloud**, enter its URL and an API token created under Settings in Docs Cloud, and choose **Connect**. The token is stored on the environment and never sent back to the app. **Turn off** removes the connection and the token; your docs stay in Docs Cloud.
+
+Once connected, the Docs panel shows Docs Cloud beside the chat, and **Project files** switches back to the markdown files above. Sign in to Docs Cloud inside the panel the first time. Agents in threads started afterwards get the Docs Cloud tools and use them for docs you ask for. A doc an agent creates opens in the panel with a card in the conversation, and a tab it adds shows a notice with **Open**.
+
+The panel loads Docs Cloud directly in your browser, so it works the same over remote connections. Browsers that block cookies inside embedded pages, such as Safari, may not keep you signed in there; use **Open in browser** in the panel header instead.

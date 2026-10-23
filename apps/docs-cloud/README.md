@@ -2,6 +2,8 @@
 
 Private hosted doc editor at `docs.upliftedconsulting.com`. One Cloudflare Worker serves the SPA (static assets from `dist/`), the JSON API under `/api`, and the agent MCP endpoint under `/mcp`. Each doc has a `DocRoom` Durable Object that applies every write in order and pushes it to open editors over WebSocket. Data lives in D1 (`migrations/`).
 
+T3 Code embeds the app in its Docs panel. `FRAME_ANCESTORS` in `wrangler.jsonc` lists the origins allowed to frame it (CSP `frame-ancestors`); every other origin gets a non-frameable page. `src/client/embedBridge.ts` and `src/shared/embed.ts` hold the postMessage protocol T3 Code uses to navigate the app and follow its location.
+
 Only the owner signs in: any address in `OWNER_EMAILS` gets a 6-digit code by email (Resend). Agents and T3 Code use bearer tokens created under Settings.
 
 ## Local development

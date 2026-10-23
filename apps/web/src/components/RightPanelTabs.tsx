@@ -582,7 +582,9 @@ function surfaceTitle(
     case "ai-pm":
       return "AI PM";
     case "docs":
-      return surface.docPath ? docTitleFromPath(surface.docPath) : "Docs";
+      return surface.source !== "cloud" && surface.docPath
+        ? docTitleFromPath(surface.docPath)
+        : "Docs";
     case "diff":
       return "Diff";
     case "files":

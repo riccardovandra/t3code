@@ -7,6 +7,8 @@ export interface Env {
   /** Comma-separated; every address signs in to the same single owner account. */
   readonly OWNER_EMAILS: string;
   readonly EMAIL_FROM: string;
+  /** CSP host-sources (space-separated) allowed to frame the app: the T3 Code clients. */
+  readonly FRAME_ANCESTORS?: string;
   /** Unset in local dev: sign-in codes are logged to the console instead. */
   readonly RESEND_API_KEY?: string;
 }

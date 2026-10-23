@@ -17,6 +17,7 @@ import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
 } from "../PersistentThreadTerminals";
+import { DocsSurfaceContent } from "../docs/DocsSurfaceContent";
 import { pullRequestPanelContext } from "../pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
@@ -28,9 +29,6 @@ const PreviewPanel = lazy(() =>
 );
 const AiPmPanel = lazy(() =>
   import("../aiPm/AiPmPanel").then((module) => ({ default: module.AiPmPanel })),
-);
-const DocsPanel = lazy(() =>
-  import("../docs/DocsPanel").then((module) => ({ default: module.DocsPanel })),
 );
 const DiffPanel = lazy(() => import("../DiffPanel"));
 const DevicePanel = lazy(() =>
@@ -101,19 +99,14 @@ export function RightPanelSurfaceContent(props: {
         </Suspense>
       );
     case "docs":
-      if (!props.pullRequest.projectId || !props.files.workspaceRoot) return null;
       return (
-        <Suspense fallback={null}>
-          <DocsPanel
-            key={`${props.environmentId}:${props.files.workspaceRoot}`}
-            environmentId={props.environmentId}
-            projectId={props.pullRequest.projectId}
-            cwd={props.files.workspaceRoot}
-            threadRef={threadRef}
-            docPath={surface.docPath}
-            onSelectDoc={(docPath) => useRightPanelStore.getState().selectDoc(threadRef, docPath)}
-          />
-        </Suspense>
+        <DocsSurfaceContent
+          surface={surface}
+          environmentId={props.environmentId}
+          threadRef={threadRef}
+          projectId={props.pullRequest.projectId}
+          workspaceRoot={props.files.workspaceRoot || undefined}
+        />
       );
     case "preview":
       return (

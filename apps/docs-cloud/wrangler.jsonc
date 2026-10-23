@@ -3,13 +3,14 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-05-15",
   "routes": [{ "pattern": "docs.upliftedconsulting.com", "custom_domain": true }],
-  // The SPA is served from Vite's build output. API, socket and MCP paths run
-  // the Worker first; everything else falls back to index.html.
+  // The SPA is served from Vite's build output, and falls back to index.html.
+  // The Worker runs first on every path so each response carries the
+  // FRAME_ANCESTORS policy.
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*"],
+    "run_worker_first": true,
   },
   "d1_databases": [
     {
@@ -27,6 +28,10 @@
   "vars": {
     "OWNER_EMAILS": "riccardo@upliftedconsulting.com,riccardo.vandra@bark.com,riccardo.vandra@gmail.com",
     "EMAIL_FROM": "Docs <docs@upliftedconsulting.com>",
+    // Origins allowed to embed the app (CSP frame-ancestors): app.t3.codes (and preview),
+    // local `npx t3` and Vite dev, tailnet-served T3 Code, and the desktop
+    // renderer (t3code://app, t3code-dev://app in dev builds).
+    "FRAME_ANCESTORS": "https://app.t3.codes https://preview.t3.codes http://localhost:* http://127.0.0.1:* https://*.ts.net t3code://app t3code-dev://app",
   },
   // Secret: RESEND_API_KEY (`wrangler secret put RESEND_API_KEY`). Unset locally,
   // codes are printed to the wrangler dev console.
