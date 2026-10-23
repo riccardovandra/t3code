@@ -26,7 +26,8 @@ Rich tables (status chips, links, per-cell comments): a \`\`\`t3-table block who
 {"id":"requests","columns":[{"id":"req","name":"Request","type":"text"},{"id":"status","name":"Status","type":"select","options":[{"value":"Not started","color":"gray"},{"value":"Done","color":"green"}]},{"id":"ticket","name":"Ticket","type":"link"}],"rows":[{"id":"r1","cells":{"req":"Fix Bing MCP","status":"Not started","ticket":{"text":"PENG-5575","url":"https://example.atlassian.net/browse/PENG-5575"}}}]}
 \`\`\`
 Change one cell with update_table_cell and add rows with add_table_row rather than rewriting the block. Plain markdown tables still work for static data.
-Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab; on a table cell, pass anchor {"kind":"cell","blockId":<table id>,"rowId","colId"} instead.`;
+Comments: when asked to review or address comments, list_comments, make the requested edits in the doc, reply_comment in each thread saying what changed (or answering the question), and resolve_comment once a thread is fully handled. To raise a point on a passage, create_comment with a short exact quote from the tab; on a table cell, pass anchor {"kind":"cell","blockId":<table id>,"rowId","colId"} instead.
+Sharing: docs are private to the people on them. share_doc gives someone access by email (owner, editor, commenter or viewer); list_members and unshare_doc manage it. You act with the role of the person whose token you use.`;
 
 interface JsonRpcRequest {
   readonly jsonrpc: "2.0";
@@ -86,7 +87,10 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
 
   // Only bearer tokens: a session cookie is ambient and SameSite=None, so a
   // cross-site text/plain POST could otherwise drive the tools.
-  const principal = await Auth.authenticate(deps.db, request, deps.now());
+  const principal = await Auth.authenticate(deps.db, request, {
+    owners: deps.owners,
+    now: deps.now(),
+  });
   if (principal?.kind !== "token") {
     return Response.json(
       { error: "unauthorized" },
@@ -144,6 +148,7 @@ export async function handleMcp(request: Request, deps: ApiDeps): Promise<Respon
           deps,
           origin: deps.publicOrigin,
           agentName: clientNameFrom(request) ?? principal.tokenName,
+          principal,
         });
         return rpcResult(body.id, {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],

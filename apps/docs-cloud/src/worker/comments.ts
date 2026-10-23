@@ -2,6 +2,7 @@
 // go through `applyCommentOp`, which the DocRoom runs so open editors hear
 // about them; reads come straight from D1.
 
+import { canComment, canShare, type DocRole } from "../shared/access.ts";
 import {
   locateAnchor,
   parseStructuredAnchor,
@@ -60,21 +61,39 @@ function parseStoredAnchor(json: string | null): StructuredAnchor | null {
   }
 }
 
-/** Who is acting on a comment: the owner (any owner email) or a named agent. */
+/**
+ * Who is acting on a comment: a person signed in with `email` (one of
+ * `emails`, every address that signs in as them), or a named agent.
+ * `docRole` is the person's, or for an agent its token owner's, role on the doc.
+ */
 export type CommentActor =
-  | { readonly kind: "owner"; readonly email: string }
-  | { readonly kind: "agent"; readonly name: string };
+  | {
+      readonly kind: "person";
+      readonly email: string;
+      readonly emails: ReadonlyArray<string>;
+      readonly docRole: DocRole;
+    }
+  | { readonly kind: "agent"; readonly name: string; readonly docRole: DocRole };
 
-export const actorAuthor = (actor: CommentActor) =>
-  actor.kind === "owner" ? actor.email : `${AGENT_AUTHOR_PREFIX}${actor.name}`;
+export const actorAuthor = (
+  actor:
+    | { readonly kind: "person"; readonly email: string }
+    | { readonly kind: "agent"; readonly name: string },
+) => (actor.kind === "person" ? actor.email : `${AGENT_AUTHOR_PREFIX}${actor.name}`);
 
-/** Nobody rewrites someone else's words: the owner edits owner comments, an agent its own. */
+const isOwnComment = (actor: CommentActor, comment: Comment) =>
+  actor.kind === "person"
+    ? !isAgentAuthor(comment.author) && actor.emails.includes(comment.author)
+    : comment.author === actorAuthor(actor);
+
+/** Nobody rewrites someone else's words: people edit their own comments, an agent its own. */
 export const canEditComment = (actor: CommentActor, comment: Comment) =>
-  actor.kind === "owner" ? !isAgentAuthor(comment.author) : comment.author === actorAuthor(actor);
+  canComment(actor.docRole) && isOwnComment(actor, comment);
 
-/** The owner may delete anything on their doc; an agent only its own comments. */
+/** A doc owner may delete any comment on it; everyone else, agents included, only their own. */
 export const canDeleteComment = (actor: CommentActor, comment: Comment) =>
-  actor.kind === "owner" || comment.author === actorAuthor(actor);
+  canComment(actor.docRole) &&
+  ((actor.kind === "person" && canShare(actor.docRole)) || isOwnComment(actor, comment));
 
 export async function listComments(
   db: D1Database,
