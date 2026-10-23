@@ -100,6 +100,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.docsListComments]: "workspace",
   [WS_METHODS.docsCreateComment]: "workspace",
   [WS_METHODS.docsReplyComment]: "workspace",
+  [WS_METHODS.docsSendCloudComment]: "workspace",
   [WS_METHODS.docsSetCommentResolved]: "workspace",
   [WS_METHODS.docsDeleteComment]: "workspace",
   [WS_METHODS.scheduledTasksList]: "scheduledTasks",

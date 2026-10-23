@@ -1345,6 +1345,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:docs:reply-comment",
       tag: WS_METHODS.docsReplyComment,
     }),
+    sendDocsCloudComment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:docs:send-cloud-comment",
+      tag: WS_METHODS.docsSendCloudComment,
+    }),
     setDocCommentResolved: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:docs:set-comment-resolved",
       tag: WS_METHODS.docsSetCommentResolved,

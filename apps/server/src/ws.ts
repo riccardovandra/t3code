@@ -575,6 +575,7 @@ const FORK_RPC_METHODS = [
   WS_METHODS.docsListComments,
   WS_METHODS.docsCreateComment,
   WS_METHODS.docsReplyComment,
+  WS_METHODS.docsSendCloudComment,
   WS_METHODS.docsSetCommentResolved,
   WS_METHODS.docsDeleteComment,
 ] as const;
@@ -1305,6 +1306,9 @@ const layerAiPmDocsRpc = Layer.unwrap(
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsReplyComment, (input) =>
         docCommentDelivery.reply(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsSendCloudComment, (input) =>
+        docCommentDelivery.sendCloudComment(input),
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.docsSetCommentResolved, (input) =>
         docComments.setResolved(input),
