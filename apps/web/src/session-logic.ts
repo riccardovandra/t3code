@@ -27,8 +27,10 @@ import {
 import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
+import { docsCloudToolResult } from "@t3tools/client-runtime/docs-cloud";
 import {
   type DocReference,
+  type DocsCloudReference,
   docOpenFromToolItem,
   htmlRenderFromToolItem,
   mcpAppFromToolItem,
@@ -155,7 +157,7 @@ export type TimelineEntry = (
       readonly kind: "doc";
       readonly createdAt: string;
       readonly runId: RunId | null;
-      readonly doc: DocReference;
+      readonly doc: DocReference | DocsCloudReference;
     }
   | {
       readonly id: string;
@@ -783,10 +785,11 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
       continue;
     }
 
-    const doc =
-      item.type === "dynamic_tool" && item.status === "completed"
-        ? docOpenFromToolItem(item)
-        : null;
+    const completedTool = item.type === "dynamic_tool" && item.status === "completed";
+    const cloudDoc = completedTool ? docsCloudToolResult(item) : null;
+    const doc = completedTool
+      ? (docOpenFromToolItem(item) ?? (cloudDoc?.kind === "doc-created" ? cloudDoc.ref : null))
+      : null;
     if (doc !== null) {
       entries.push({
         id: item.id,

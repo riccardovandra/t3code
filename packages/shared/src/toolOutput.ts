@@ -42,6 +42,7 @@ interface CompactToolOutput {
   status?: "rolled_back";
   htmlRender?: HtmlRenderReference;
   doc?: DocReference;
+  docsCloud?: DocsCloudReference;
   [MCP_APP_OUTPUT_KEY]?: McpAppReference;
   thread?: { threadId: string };
   threads?: Array<{ threadId?: string; status?: "rolled_back" }>;
@@ -55,6 +56,42 @@ export interface DocReference {
 }
 
 const DOC_OPEN_TOOL_NAMES: ReadonlySet<string> = new Set(["docs_create", "docs_open"]);
+
+/** The tab a Docs Cloud tool result points at; `docTitle` is present when it names the doc too. */
+export interface DocsCloudReference {
+  readonly url: string;
+  readonly docId: string;
+  readonly tabId: string;
+  readonly tabTitle: string;
+  readonly docTitle?: string;
+}
+
+const DOCS_CLOUD_TAB_URL = /^https?:\/\/[^/?#\s]+\/d\/([\w-]{1,128})\/([\w-]{1,128})$/;
+
+function readDocsCloudReference(
+  data: Record<PropertyKey, unknown>,
+): DocsCloudReference | undefined {
+  const { tab, doc } = data;
+  if (!Predicate.isObject(tab)) return undefined;
+  const { url, tabId, title } = tab;
+  if (typeof url !== "string" || url.length > 1024 || typeof title !== "string") return undefined;
+  const match = DOCS_CLOUD_TAB_URL.exec(url);
+  if (!match || match[2] !== tabId || title.length > 512) return undefined;
+  const docTitle =
+    Predicate.isObject(doc) &&
+    doc.docId === match[1] &&
+    typeof doc.title === "string" &&
+    doc.title.length <= 512
+      ? doc.title
+      : undefined;
+  return {
+    url,
+    docId: match[1]!,
+    tabId: match[2]!,
+    tabTitle: title,
+    ...(docTitle === undefined ? {} : { docTitle }),
+  };
+}
 
 function readDocReference(value: unknown): DocReference | undefined {
   if (!Predicate.isObject(value)) return undefined;
@@ -157,6 +194,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
     const doc = readDocReference(data.doc);
     if (doc !== undefined) output.doc = doc;
+    const docsCloud = readDocsCloudReference(data);
+    if (docsCloud !== undefined) output.docsCloud = docsCloud;
     const mcpApp = readMcpAppReference(data[MCP_APP_OUTPUT_KEY]);
     if (mcpApp !== undefined) output[MCP_APP_OUTPUT_KEY] = mcpApp;
     const nestedThreadId = Predicate.isObject(data.thread)

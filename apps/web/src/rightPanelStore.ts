@@ -48,7 +48,15 @@ export type RightPanelSurface =
       splitDirection?: "horizontal" | "vertical";
     }
   | { id: "ai-pm"; kind: "ai-pm"; projectId?: string }
-  | { id: "docs"; kind: "docs"; docPath?: string }
+  | {
+      id: "docs";
+      kind: "docs";
+      docPath?: string;
+      /** Which docs the panel shows; unset means Docs Cloud when it is configured. */
+      source?: "files" | "cloud";
+      /** The Docs Cloud app path, such as `/d/:docId/:tabId`. */
+      cloudPath?: string;
+    }
   | { id: "diff"; kind: "diff" }
   | {
       id: "files";
@@ -137,6 +145,12 @@ interface RightPanelStoreState {
   ) => void;
   selectAiPmProject: (ref: ScopedThreadRef, projectId: string | undefined) => void;
   selectDoc: (ref: ScopedThreadRef, docPath: string | undefined) => void;
+  /** Shows Docs Cloud at `cloudPath`; `automatic` records where the embedded app navigated. */
+  selectDocsCloud: (
+    ref: ScopedThreadRef,
+    cloudPath: string | undefined,
+    automatic?: boolean,
+  ) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
@@ -483,6 +497,13 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                           ...(typeof surface.docPath === "string"
                             ? { docPath: surface.docPath }
                             : {}),
+                          ...(surface.source === "files" || surface.source === "cloud"
+                            ? { source: surface.source }
+                            : {}),
+                          ...(typeof surface.cloudPath === "string" &&
+                          surface.cloudPath.startsWith("/")
+                            ? { cloudPath: surface.cloudPath }
+                            : {}),
                         },
                       ];
                     }
@@ -714,9 +735,29 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ...current,
             surfaces: current.surfaces.map((surface) => {
               if (surface.kind !== "docs") return surface;
-              return { id: "docs", kind: "docs", ...(docPath === undefined ? {} : { docPath }) };
+              const { docPath: _docPath, ...rest } = surface;
+              return { ...rest, source: "files", ...(docPath === undefined ? {} : { docPath }) };
             }),
           })),
+        ),
+      selectDocsCloud: (ref, cloudPath, automatic = false) =>
+        set((state) =>
+          (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
+            const docs = current.surfaces.find((surface) => surface.kind === "docs");
+            if (docs && docs.source === "cloud" && docs.cloudPath === cloudPath) return current;
+            return {
+              ...current,
+              surfaces: current.surfaces.map((surface) => {
+                if (surface.kind !== "docs") return surface;
+                const { cloudPath: _cloudPath, ...rest } = surface;
+                return {
+                  ...rest,
+                  source: "cloud",
+                  ...(cloudPath === undefined ? {} : { cloudPath }),
+                };
+              }),
+            };
+          }),
         ),
       openDevice: (ref, target, automatic = false) =>
         set((state) =>

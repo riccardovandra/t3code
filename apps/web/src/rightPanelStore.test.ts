@@ -71,11 +71,42 @@ describe("rightPanelStore", () => {
     expect(
       selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA)
         .surfaces,
-    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md" }]);
+    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md", source: "files" }]);
     store.selectDoc(refA, undefined);
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
-    ).toEqual([{ id: "docs", kind: "docs" }]);
+    ).toEqual([{ id: "docs", kind: "docs", source: "files" }]);
+  });
+
+  it("switches between project files and Docs Cloud, keeping each place", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "docs");
+    store.selectDoc(refA, "docs/plan.md");
+    store.selectDocsCloud(refA, "/d/doc-1/tab-1");
+    const surfaces = () =>
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces;
+    expect(surfaces()).toEqual([
+      {
+        id: "docs",
+        kind: "docs",
+        docPath: "docs/plan.md",
+        source: "cloud",
+        cloudPath: "/d/doc-1/tab-1",
+      },
+    ]);
+    const persisted = useRightPanelStore.persist.getOptions().partialize!(
+      useRightPanelStore.getState(),
+    );
+    expect(
+      selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA)
+        .surfaces,
+    ).toEqual(surfaces());
+    store.selectDoc(refA, "docs/plan.md");
+    expect(surfaces()).toMatchObject([{ source: "files", cloudPath: "/d/doc-1/tab-1" }]);
+    store.selectDocsCloud(refA, undefined);
+    expect(surfaces()).toEqual([
+      { id: "docs", kind: "docs", docPath: "docs/plan.md", source: "cloud" },
+    ]);
   });
 
   it("remembers a closed AI PM surface for reopening", () => {

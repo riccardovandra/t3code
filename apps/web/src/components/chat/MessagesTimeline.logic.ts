@@ -60,7 +60,7 @@ import {
 } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
-import type { DocReference } from "@t3tools/shared/toolOutput";
+import type { DocReference, DocsCloudReference } from "@t3tools/shared/toolOutput";
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { dynamicToolTitle } from "@t3tools/shared/toolActivity";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
@@ -636,7 +636,7 @@ type MessagesTimelineRowContent =
       kind: "doc";
       id: string;
       createdAt: string;
-      doc: DocReference;
+      doc: DocReference | DocsCloudReference;
     }
   | {
       kind: "mcp-app";
@@ -2294,6 +2294,15 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "doc": {
       const bd = b as typeof a;
+      if ("url" in a.doc || "url" in bd.doc) {
+        return (
+          a.createdAt === bd.createdAt &&
+          "url" in a.doc &&
+          "url" in bd.doc &&
+          a.doc.url === bd.doc.url &&
+          a.doc.docTitle === bd.doc.docTitle
+        );
+      }
       return (
         a.createdAt === bd.createdAt &&
         a.doc.docPath === bd.doc.docPath &&

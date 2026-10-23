@@ -13,7 +13,7 @@ export function parseRoute(pathname: string): Route {
 }
 
 const listeners = new Set<() => void>();
-const subscribe = (listener: () => void) => {
+export const subscribePathname = (listener: () => void) => {
   listeners.add(listener);
   window.addEventListener("popstate", listener);
   return () => {
@@ -30,7 +30,7 @@ export function navigate(path: string, options: { replace?: boolean } = {}): voi
 }
 
 export function usePathname(): string {
-  return useSyncExternalStore(subscribe, () => window.location.pathname);
+  return useSyncExternalStore(subscribePathname, () => window.location.pathname);
 }
 
 export const docPath = (docId: string, tabId?: string | null) =>

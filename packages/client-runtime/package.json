@@ -143,6 +143,10 @@
       "types": "./src/textPaste.ts",
       "default": "./src/textPaste.ts"
     },
+    "./docs-cloud": {
+      "types": "./src/docsCloud.ts",
+      "default": "./src/docsCloud.ts"
+    },
     "./mcp-servers": {
       "types": "./src/mcpServers.ts",
       "default": "./src/mcpServers.ts"

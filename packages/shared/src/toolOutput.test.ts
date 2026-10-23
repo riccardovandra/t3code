@@ -134,6 +134,54 @@ describe("compactDynamicToolOutput", () => {
   });
 });
 
+describe("compactDynamicToolOutput Docs Cloud", () => {
+  const tab = {
+    tabId: "tab-1",
+    title: "Overview",
+    parentTabId: null,
+    position: 0,
+    version: 2,
+    url: "https://docs.example.com/d/doc-1/tab-1",
+  };
+
+  it("keeps the doc and tab a create_doc result points at", () => {
+    const result = {
+      doc: {
+        docId: "doc-1",
+        title: "Launch plan",
+        url: tab.url,
+        projectId: "p",
+        status: "thinking",
+      },
+      tab,
+    };
+    expect(
+      compactDynamicToolOutput({ content: [{ type: "text", text: JSON.stringify(result) }] }),
+    ).toEqual({
+      docsCloud: {
+        url: tab.url,
+        docId: "doc-1",
+        tabId: "tab-1",
+        tabTitle: "Overview",
+        docTitle: "Launch plan",
+      },
+    });
+  });
+
+  it("keeps a lone tab and rejects a url that does not name it", () => {
+    expect(compactDynamicToolOutput(JSON.stringify({ tab }))?.docsCloud).toEqual({
+      url: tab.url,
+      docId: "doc-1",
+      tabId: "tab-1",
+      tabTitle: "Overview",
+    });
+    expect(compactDynamicToolOutput({ tab: { ...tab, tabId: "other" } })).toBeUndefined();
+    expect(
+      compactDynamicToolOutput({ tab: { ...tab, url: "javascript:alert(1)//d/doc-1/tab-1" } }),
+    ).toBeUndefined();
+  });
+});
+
 describe("toolOutputIndicatesFailure", () => {
   it("preserves the command failure phrases across shells without copying the output", () => {
     for (const text of [

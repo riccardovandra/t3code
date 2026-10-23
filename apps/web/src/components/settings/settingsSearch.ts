@@ -665,6 +665,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "docs-cloud",
+    title: "Docs Cloud",
+    to: "/settings/mcp-servers",
+    targetId: "docs-cloud",
+    searchTerms: ["docs cloud hosted documents editor api token url agents docs panel"],
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",

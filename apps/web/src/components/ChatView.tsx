@@ -177,6 +177,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
+import { resolveProviderInstanceDisplayName } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -1899,7 +1900,14 @@ export default function ChatView(props: ChatViewProps) {
   const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(
     activeThreadRef?.environmentId ?? null,
   );
-  useAgentOpenedDocs(activeThreadRef, serverVisibleTurnItems);
+  const threadProviderSnapshot = providerStatuses.find(
+    (provider) => provider.instanceId === threadProvider,
+  );
+  useAgentOpenedDocs(
+    activeThreadRef,
+    serverVisibleTurnItems,
+    threadProviderSnapshot ? resolveProviderInstanceDisplayName(threadProviderSnapshot) : "Agent",
+  );
   useAgentOpenedPreviews({
     threadRef: activeThreadRef,
     deviceState,
