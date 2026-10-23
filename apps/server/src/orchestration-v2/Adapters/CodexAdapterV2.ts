@@ -30,6 +30,7 @@ import {
   CodexSettings,
   defaultInstanceIdForDriver,
   isOrchestrationV2WorkActive,
+  mcpServerVariableRecord,
   OrchestrationV2ProviderGoal,
   ProviderDriverKind,
   type ProviderSetupError,
@@ -68,6 +69,7 @@ import type {
   ProviderThreadId,
   ProviderTurnId,
   ProviderInstanceId,
+  ResolvedMcpServer,
   RuntimeMode,
   RuntimeRequestId,
   ThreadId,
@@ -118,6 +120,7 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { hasDocsCloud } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   MCP_APP_EXTENSION_ID,
@@ -737,6 +740,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly hasT3Mcp?: boolean;
     readonly browserToolsAvailable?: boolean;
     readonly deviceToolsAvailable?: boolean;
+    readonly docsCloudAvailable?: boolean;
     /** ChatGPT token sharing does not accept service tiers. */
     readonly omitServiceTier?: boolean;
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
@@ -779,6 +783,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
+              docsCloud: input.docsCloudAvailable ?? false,
             },
           )
         : undefined;
@@ -1392,6 +1397,7 @@ export function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
+  const tools = mcpSession?.tools ?? McpProviderSession.EMPTY_MCP_PROVIDER_SESSION_TOOLS;
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
@@ -1400,7 +1406,12 @@ export function codexThreadRuntimeParams(input: {
       ...(mcpSession === undefined
         ? {}
         : {
-            // Override only T3's server so launch-argument MCP servers survive.
+            // Dotted keys override single servers, so launch-argument MCP servers survive.
+            ...Object.fromEntries(
+              Object.entries(codexUserMcpServers(tools.servers))
+                .filter(([name]) => !input.userMcpServerNames?.has(name))
+                .map(([name, server]) => [`mcp_servers.${name}`, server]),
+            ),
             "mcp_servers.t3-code": {
               url: mcpSession.endpoint,
               tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
@@ -1420,8 +1431,37 @@ export function codexThreadRuntimeParams(input: {
                 ]),
             ),
           }),
+      // Thread config is Codex's session-flags layer, which its skill rules
+      // read alongside the user's config.toml; a later name rule wins.
+      ...(tools.disabledSkills.length === 0
+        ? {}
+        : {
+            skills: {
+              config: tools.disabledSkills.map((name) => ({ name, enabled: false })),
+            },
+          }),
     },
   };
+}
+
+function codexUserMcpServers(
+  servers: ReadonlyArray<ResolvedMcpServer>,
+): Record<string, Schema.Json> {
+  return Object.fromEntries(
+    servers.map((server) => [
+      server.name,
+      server.transport.type === "stdio"
+        ? {
+            command: server.transport.command,
+            args: [...server.transport.args],
+            env: mcpServerVariableRecord(server.transport.env),
+          }
+        : {
+            url: server.transport.url,
+            http_headers: mcpServerVariableRecord(server.transport.headers),
+          },
+    ]),
+  );
 }
 
 const decodeCodexResumeMetadata = Schema.decodeUnknownEffect(
@@ -6466,6 +6506,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               hasT3Mcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
+              docsCloudAvailable: hasDocsCloud(
+                McpProviderSession.upstreamServersFor(mcpSession, turnInput.runtimePolicy),
+              ),
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
             });

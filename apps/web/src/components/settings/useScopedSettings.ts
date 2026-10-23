@@ -54,6 +54,8 @@ export function useScopedSettingSource(keys: readonly (keyof ServerSettings)[]) 
 
 function useRunScopedPlan() {
   const persistServer = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+  // Optional: the plan also runs from controls rendered outside a settings page.
+  const connectedEnvironments = useOptionalSettingsScope()?.connectedEnvironments;
   return (plan: ReturnType<typeof planScopedSettingsPatch>) => {
     if (plan.unavailableReason) {
       toastManager.add({
@@ -66,9 +68,12 @@ function useRunScopedPlan() {
     void persistScopedSettingsPatch(
       plan,
       async (request) => {
-        const missing = requiredScopesForServerSettingsPatch(request.input.patch).find(
-          (scope) => !readEnvironmentScope(request.environmentId, scope),
-        );
+        const missing = requiredScopesForServerSettingsPatch(
+          request.input.patch,
+          connectedEnvironments?.find(
+            (environment) => environment.environmentId === request.environmentId,
+          )?.serverConfig?.settings,
+        ).find((scope) => !readEnvironmentScope(request.environmentId, scope));
         if (missing)
           return AsyncResult.failure(
             Cause.fail(

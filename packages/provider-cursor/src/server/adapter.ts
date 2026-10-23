@@ -26,6 +26,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
+  mcpServerVariableRecord,
   type ProviderInstanceId,
   type ServerProviderModel,
   type ThreadId,
@@ -54,7 +55,10 @@ import {
   rewriteCursorSkillMentions,
 } from "./skills.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { t3OrchestrationPromptForFirstRun } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  DOCS_CLOUD_MCP_SERVER_NAME,
+  t3OrchestrationPromptForFirstRun,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -215,7 +219,25 @@ export function cursorMcpServers(
     return undefined;
   }
   const headers = { Authorization: session.authorizationHeader };
+  const servers = session.tools?.servers ?? [];
   return {
+    ...Object.fromEntries(
+      servers.map((server): [string, McpServerConfig] => [
+        server.name,
+        server.transport.type === "stdio"
+          ? {
+              type: "stdio",
+              command: server.transport.command,
+              args: [...server.transport.args],
+              env: mcpServerVariableRecord(server.transport.env),
+            }
+          : {
+              type: "http",
+              url: server.transport.url,
+              headers: mcpServerVariableRecord(server.transport.headers),
+            },
+      ]),
+    ),
     "t3-code": { type: "http", url: session.endpoint, headers },
     ...Object.fromEntries(
       McpProviderSession.upstreamServersFor(session, runtimePolicy).map((server) => [
@@ -2205,6 +2227,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             }),
             runOrdinal: turnInput.runOrdinal,
             hasT3Mcp: mcpServers !== undefined,
+            docsCloud: mcpServers !== undefined && DOCS_CLOUD_MCP_SERVER_NAME in mcpServers,
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),

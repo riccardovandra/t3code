@@ -116,6 +116,8 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           "This tab was changed elsewhere, so it was reloaded. Your last edit was not saved.",
         );
       },
+      onInvalidWidget: () =>
+        setNotice("A diagram in this tab has errors, so it is not saved until they are fixed."),
     });
     saver.current = tabSaver;
     return () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Docs from "./docs.ts";
 import { handleMcp } from "./mcp.ts";
 import { makeApiHarness, ORIGIN } from "./testing/apiHarness.ts";
+import { FLOW_EXAMPLE } from "../shared/widget/testing/examples.ts";
 
 /** `requestOrigin` stands in for what request.url reports, which `wrangler dev` rewrites. */
 async function makeMcpHarness(requestOrigin = ORIGIN) {
@@ -319,5 +320,90 @@ describe("MCP tools", () => {
     expect(created.body.comment.author).toBe("agent:agent");
     const unknown = await mcp.tool("reply_comment", { commentId: "nope", body: "x" });
     expect(unknown).toMatchObject({ isError: true, body: { error: "not_found" } });
+  });
+});
+
+describe("MCP diagrams", () => {
+  const diagram = (id: string, code: string) => `\`\`\`t3-widget id=${id}\n${code}\n\`\`\``;
+  const invalid = FLOW_EXAMPLE.replace("fill={ink}>Commit lands", "fill='#123456'>Commit lands");
+
+  it("refuses writes that add an invalid diagram, naming the rule and position", async () => {
+    const mcp = await makeMcpHarness();
+    const { doc, tab } = await mcp.seedDoc("# Plan\n\nTODO");
+    const created = await mcp.tool("create_tab", {
+      docId: doc.docId,
+      title: "Flow",
+      markdown: diagram("flow", invalid),
+    });
+    expect(created.isError).toBe(true);
+    expect(created.body.error).toBe("widget_invalid");
+    expect(created.body.message).toMatch(/diagram 'flow' .* 1:\d+ colour:/);
+    expect(created.body.problems[0].diagnostics[0]).toMatchObject({ rule: "colour", line: 1 });
+
+    const edited = await mcp.tool("edit_tab", {
+      tabId: tab.tabId,
+      find: "TODO",
+      replace: diagram("flow", invalid),
+    });
+    expect(edited.body.error).toBe("widget_invalid");
+    const written = await mcp.tool("write_tab", {
+      tabId: tab.tabId,
+      markdown: diagram("", FLOW_EXAMPLE),
+      baseVersion: 1,
+    });
+    expect(written.body.problems[0].diagnostics[0].rule).toBe("diagram-id");
+    const read = await mcp.tool("read_doc", { docId: doc.docId, tabId: tab.tabId });
+    expect(read.body.tab.markdown).toBe("# Plan\n\nTODO");
+  });
+
+  it("reads a diagram's code and text ids, and edits one label in place", async () => {
+    const mcp = await makeMcpHarness();
+    const markdown = `# Plan\n\n${diagram("release-flow", FLOW_EXAMPLE)}\n\nAfter.`;
+    const { tab } = await mcp.seedDoc(markdown);
+
+    const read = await mcp.tool("read_diagram", { tabId: tab.tabId, diagramId: "release-flow" });
+    expect(read.body).toMatchObject({
+      code: FLOW_EXAMPLE,
+      title: "Only a green build reaches production",
+      diagnostics: [],
+    });
+    expect(read.body.texts).toContainEqual({
+      textId: "ship",
+      text: "Ship to production",
+      anchor: "step-ship",
+    });
+
+    const edit = await mcp.tool("edit_diagram_label", {
+      tabId: tab.tabId,
+      diagramId: "release-flow",
+      textId: "ship",
+      value: "THIS IS CHANGED",
+    });
+    expect(edit.body).toMatchObject({ changed: true, previous: "Ship to production" });
+    const after = await mcp.tool("read_doc", {
+      docId: (await mcp.tool("list_docs", {})).body.docs[0].docId,
+      tabId: tab.tabId,
+    });
+    expect(after.body.tab.markdown).toBe(markdown.replace("Ship to production", "THIS IS CHANGED"));
+
+    const missing = await mcp.tool("edit_diagram_label", {
+      tabId: tab.tabId,
+      diagramId: "release-flow",
+      textId: "nope",
+      value: "x",
+    });
+    expect(missing.body.error).toBe("unknown_text_id");
+    expect(missing.body.textIds).toContain("ship");
+    const noDiagram = await mcp.tool("read_diagram", { tabId: tab.tabId, diagramId: "other" });
+    expect(noDiagram.body).toMatchObject({ error: "not_found", diagramIds: ["release-flow"] });
+  });
+
+  it("documents the format with an example that passes the validator", async () => {
+    const { MCP_INSTRUCTIONS } = await import("./mcp.ts");
+    const { findWidgetFences } = await import("../shared/widget/fence.ts");
+    const { analyzeWidget } = await import("../shared/widget/validate.ts");
+    const [example] = findWidgetFences(MCP_INSTRUCTIONS);
+    expect(example?.id).toBe("release-flow");
+    expect(analyzeWidget(example!.source).diagnostics).toEqual([]);
   });
 });

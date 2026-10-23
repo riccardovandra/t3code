@@ -19,7 +19,7 @@ import {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import {
   MCP_CLIENT_OAUTH_CALLBACK_PATH,
-  type McpServerConfig,
+  type McpHubServerConfig,
   type McpServerEntry,
   McpServerError,
   type McpServerId,
@@ -63,12 +63,12 @@ interface PendingSignIn {
   discovery: OAuthDiscoveryState | undefined;
 }
 
-type OAuthServerConfig = McpServerConfig & {
+type OAuthServerConfig = McpHubServerConfig & {
   readonly transport: { readonly type: "http"; readonly url: string };
-  readonly auth: Extract<McpServerConfig["auth"], { readonly type: "oauth" }>;
+  readonly auth: Extract<McpHubServerConfig["auth"], { readonly type: "oauth" }>;
 };
 
-const isOAuthServer = (config: McpServerConfig): config is OAuthServerConfig =>
+const isOAuthServer = (config: McpHubServerConfig): config is OAuthServerConfig =>
   config.auth.type === "oauth" && config.transport.type === "http";
 
 /** Tokens for one server or registered client are not valid for another. */
@@ -131,7 +131,7 @@ export class McpServerOAuth extends Context.Service<
      * interactive sign-in: those fail with the SDK's UnauthorizedError.
      */
     readonly forwardingProvider: (
-      config: McpServerConfig,
+      config: McpHubServerConfig,
     ) => Effect.Effect<OAuthClientProvider | undefined>;
   }
 >()("t3/mcpHub/McpServerOAuth") {}

@@ -122,6 +122,27 @@ describe("tab writes", () => {
     expect(api.broadcasts).toHaveLength(1);
   });
 
+  it("refuses a tab write that adds an invalid diagram with 422 and its diagnostics", async () => {
+    const api = makeApiHarness();
+    const cookie = await api.signIn();
+    const { tabs } = await seedDoc(api, cookie);
+    const tab = tabs[0]!;
+    const response = await api.call("PATCH", `/api/tabs/${tab.id}`, {
+      body: {
+        baseVersion: tab.version,
+        markdown: "```t3-widget id=a\nexport default () => <g/>;\n```",
+      },
+      headers: { Cookie: cookie },
+    });
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as {
+      error: string;
+      problems: Array<{ diagnostics: Array<{ rule: string }> }>;
+    };
+    expect(body.error).toBe("widget_invalid");
+    expect(body.problems[0]?.diagnostics[0]?.rule).toBe("svg-root");
+  });
+
   it("supports nested tabs ordered among their siblings", async () => {
     const api = makeApiHarness();
     const cookie = await api.signIn();
