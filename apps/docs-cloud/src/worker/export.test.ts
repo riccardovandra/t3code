@@ -55,6 +55,25 @@ describe("markdown assembly", () => {
     );
   });
 
+  it("does not repeat a title the tab already opens with", () => {
+    const markdown = docMarkdown(
+      doc([
+        tab("a", null, 0, "Repo overlap analysis", "\n  # repo Overlap Analysis  \n\nBody"),
+        tab("b", null, 1, "Risks", "## Risks ##\n\nR"),
+        tab("c", null, 2, "Plan", "# Planning\n\nP"),
+        tab("d", null, 3, "Notes", "Notes\n\n# Notes"),
+      ]),
+    );
+    expect(markdown).toBe(
+      [
+        "# repo Overlap Analysis  \n\nBody\n",
+        "## Risks ##\n\nR\n",
+        "# Plan\n\n# Planning\n\nP\n",
+        "# Notes\n\nNotes\n\n# Notes\n",
+      ].join("\n"),
+    );
+  });
+
   it("keeps empty tabs as a bare heading and caps the level at six", () => {
     const chain = Array.from({ length: 8 }, (_, depth) =>
       tab(`t${depth}`, depth === 0 ? null : `t${depth - 1}`, 0, `Level ${depth}`),
