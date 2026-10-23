@@ -51,6 +51,7 @@ import { TestClock } from "effect/testing";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import packageJson from "../../../package.json" with { type: "json" };
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -6530,6 +6531,41 @@ describe("CodexAdapterV2 configured MCP servers", () => {
     });
 
     assert.deepEqual(mcpServerKeys(config), ["mcp_servers.t3-code", "mcp_servers.notion"]);
+  });
+
+  it("adds the user's servers and disabled skills to thread config", () => {
+    const threadId = ThreadId.make("thread-codex-user-tools");
+    const toolsSession: McpProviderSession.McpProviderSessionConfig = {
+      environmentId: EnvironmentId.make("environment-codex-user-tools"),
+      threadId,
+      providerSessionId: "mcp-session-codex-user-tools",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      endpoint: "http://127.0.0.1:43123/mcp",
+      authorizationHeader: "Bearer secret-codex-token",
+      browserToolsAvailable: true,
+      tools: {
+        servers: [
+          {
+            name: "linear",
+            transport: {
+              type: "http",
+              url: "https://mcp.linear.app/mcp",
+              headers: [{ name: "Authorization", value: "Bearer lin", sensitive: true }],
+            },
+          },
+        ],
+        disabledSkills: ["grill-me"],
+        fingerprint: "a",
+      },
+    };
+
+    const { config } = CodexAdapterV2.codexThreadRuntimeParams({ mcpSession: toolsSession });
+    assert.deepEqual(mcpServerKeys(config), ["mcp_servers.linear", "mcp_servers.t3-code"]);
+    assert.deepEqual(config["mcp_servers.linear"], {
+      url: "https://mcp.linear.app/mcp",
+      http_headers: { Authorization: "Bearer lin" },
+    });
+    assert.deepEqual(config.skills, { config: [{ name: "grill-me", enabled: false }] });
   });
 
   it("reads the user's Codex MCP server names from config/read", () => {

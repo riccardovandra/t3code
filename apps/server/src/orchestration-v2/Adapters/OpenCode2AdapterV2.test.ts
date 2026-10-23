@@ -82,11 +82,16 @@ const event = (
 });
 const durable = { durable: { aggregateID: SESSION, seq: 1, version: 1 } };
 
+/**
+ * The rules T3 gives every session it runs: only this thread's own T3 MCP
+ * server and hub servers are allowed, and no thread's Settings → Tools servers.
+ */
 const mcpRules = [
   { action: "t3-code-*", resource: "*", effect: "deny" },
   { action: "t3-code-thread_opencode2-adapter_*", resource: "*", effect: "allow" },
   { action: "t3-mcp-*", resource: "*", effect: "deny" },
   { action: "t3-mcp-c26f2f1f-*", resource: "*", effect: "allow" },
+  { action: "t3u-*", resource: "*", effect: "deny" },
 ];
 const t3Rules = [{ action: "*", resource: "*", effect: "allow" }, ...mcpRules];
 const TITLE = "Prime check";
@@ -2448,6 +2453,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
               { action: `${server}_*`, resource: "*", effect: "allow" },
               { action: "t3-mcp-*", resource: "*", effect: "deny" },
               { action: "t3-mcp-aa73fa1e-*", resource: "*", effect: "allow" },
+              { action: "t3u-*", resource: "*", effect: "deny" },
             ],
           }),
         ),
@@ -3855,6 +3861,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             { action: "t3-code-thread_opencode2-adapter_fork_*", resource: "*", effect: "allow" },
             { action: "t3-mcp-*", resource: "*", effect: "deny" },
             { action: "t3-mcp-7c81f4ba-*", resource: "*", effect: "allow" },
+            { action: "t3u-*", resource: "*", effect: "deny" },
           ],
         }),
         reply("session.update", null),

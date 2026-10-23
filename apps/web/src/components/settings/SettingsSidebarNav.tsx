@@ -22,6 +22,7 @@ import {
   PlugIcon,
   SearchIcon,
   Settings2Icon,
+  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -83,6 +84,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
+  "/settings/tools": WrenchIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/mcp-servers": PlugIcon,
   "/settings/scheduled-tasks": CalendarClockIcon,

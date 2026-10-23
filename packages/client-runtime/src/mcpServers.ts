@@ -1,7 +1,7 @@
 import {
   MCP_CLIENT_OAUTH_CALLBACK_PATH,
   RESERVED_MCP_SERVER_NAMES,
-  type McpServerConfig,
+  type McpHubServerConfig,
   type McpServerEntry,
   type McpServerId,
   type McpServerStatus,
@@ -39,7 +39,7 @@ export function mcpServerStatusPresentation(status: McpServerStatus): McpServerS
   }
 }
 
-export function mcpServerTransportSummary(server: Pick<McpServerConfig, "transport">): string {
+export function mcpServerTransportSummary(server: Pick<McpHubServerConfig, "transport">): string {
   const { transport } = server;
   if (transport.type === "http") return transport.url;
   return [transport.command, ...transport.args].join(" ");
@@ -101,7 +101,7 @@ export interface McpServerDraft {
   readonly clientSecretStored: boolean;
 }
 
-export function mcpServerDraft(entry: McpServerConfig | null): McpServerDraft {
+export function mcpServerDraft(entry: McpHubServerConfig | null): McpServerDraft {
   const transport = entry?.transport;
   const auth = entry?.auth;
   const client = auth?.type === "oauth" ? auth.client : undefined;
@@ -247,7 +247,7 @@ export function mcpServerUpsertInput(
 
 /** Saving drops a stored sign-in when the URL or registered client changes. */
 export function mcpServerDraftDropsSignIn(
-  entry: McpServerConfig | null,
+  entry: McpHubServerConfig | null,
   draft: McpServerDraft,
 ): boolean {
   if (entry === null || entry.auth.type !== "oauth" || entry.transport.type !== "http") {

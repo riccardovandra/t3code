@@ -4,7 +4,11 @@
  * reconnects, and closes after sitting idle, which also stops a stdio server's
  * process. Upstream credentials are attached here and never leave the server.
  */
-import { type McpServerConfig, type McpServerId, type McpServerStatus } from "@t3tools/contracts";
+import {
+  type McpHubServerConfig,
+  type McpServerId,
+  type McpServerStatus,
+} from "@t3tools/contracts";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
@@ -94,7 +98,7 @@ interface Entry {
  * UnauthorizedError or an OAuth error from the token endpoint.
  */
 const authFailure = (
-  config: McpServerConfig,
+  config: McpHubServerConfig,
   cause: unknown,
 ): UpstreamFailureReason | undefined => {
   if (cause instanceof StreamableHTTPError && (cause.code === 401 || cause.code === 403)) {
@@ -110,7 +114,7 @@ const authFailure = (
   return undefined;
 };
 
-const connectFailure = (config: McpServerConfig, cause: unknown): UpstreamFailureReason =>
+const connectFailure = (config: McpHubServerConfig, cause: unknown): UpstreamFailureReason =>
   authFailure(config, cause) ?? "unavailable";
 
 const statusFor = (reason: UpstreamFailureReason): McpServerStatus =>
@@ -134,7 +138,7 @@ const make = Effect.gen(function* () {
       if (entry.connected !== undefined) yield* closeClient(entry.connected);
     });
 
-  const connect = (config: McpServerConfig) =>
+  const connect = (config: McpHubServerConfig) =>
     Effect.gen(function* () {
       const fail = (reason: UpstreamFailureReason, cause?: unknown) =>
         new McpUpstreamError({
@@ -171,7 +175,7 @@ const make = Effect.gen(function* () {
       return client;
     });
 
-  const acquire = (config: McpServerConfig) =>
+  const acquire = (config: McpHubServerConfig) =>
     Effect.gen(function* () {
       const existing = entries.get(config.id);
       if (existing !== undefined) return existing;

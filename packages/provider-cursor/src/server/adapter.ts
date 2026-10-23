@@ -26,6 +26,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2Subagent,
   type OrchestrationV2TurnItem,
+  mcpServerVariableRecord,
   type ProviderInstanceId,
   type ServerProviderModel,
   type ThreadId,
@@ -215,7 +216,25 @@ export function cursorMcpServers(
     return undefined;
   }
   const headers = { Authorization: session.authorizationHeader };
+  const servers = session.tools?.servers ?? [];
   return {
+    ...Object.fromEntries(
+      servers.map((server): [string, McpServerConfig] => [
+        server.name,
+        server.transport.type === "stdio"
+          ? {
+              type: "stdio",
+              command: server.transport.command,
+              args: [...server.transport.args],
+              env: mcpServerVariableRecord(server.transport.env),
+            }
+          : {
+              type: "http",
+              url: server.transport.url,
+              headers: mcpServerVariableRecord(server.transport.headers),
+            },
+      ]),
+    ),
     "t3-code": { type: "http", url: session.endpoint, headers },
     ...Object.fromEntries(
       McpProviderSession.upstreamServersFor(session, runtimePolicy).map((server) => [
