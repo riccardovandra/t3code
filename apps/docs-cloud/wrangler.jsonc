@@ -16,8 +16,7 @@
     {
       "binding": "DB",
       "database_name": "docs-cloud",
-      // Replace with the id printed by `wrangler d1 create docs-cloud` before the first deploy.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "bc929a4b-2f57-45c2-8214-2a0fe82a29dd",
       "migrations_dir": "migrations",
     },
   ],
