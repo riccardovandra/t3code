@@ -72,3 +72,4 @@ export * from "./clientRpcPermissions.ts";
 export * from "./aiPm.ts";
 export * from "./docs.ts";
 export * from "./mcpServers.ts";
+export * from "./skillLibrarySources.ts";

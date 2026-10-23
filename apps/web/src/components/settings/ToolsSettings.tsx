@@ -58,6 +58,7 @@ import { McpServerDetail } from "./McpServerDetail";
 import { McpServerDialog } from "./McpServerDialog";
 import { SettingsGroup } from "./SettingsGroup";
 import { SkillDetail } from "./SkillDetail";
+import { SkillLibrarySection } from "./SkillLibrarySection";
 import {
   type SkillEnvironment,
   useEnvironmentProviders,
@@ -752,6 +753,9 @@ function SkillsPanel({
               />
             ))
           )}
+          {environmentId !== null ? (
+            <SkillLibrarySection environmentId={environmentId} onInstalled={afterSkillChange} />
+          ) : null}
           <p className="px-3 text-xs text-muted-foreground sm:px-4">
             Turning a skill off hides it from Claude, Codex and OpenCode, and from the composer's
             skill menu. Other agents may still load it on their own. Changes apply to new sessions.

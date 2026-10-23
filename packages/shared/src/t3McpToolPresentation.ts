@@ -368,6 +368,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   aipm_idea_list: tool(["List", "Listing", "Listed", "AI PM ideas"], "ai-pm-ideas"),
   aipm_idea_save: tool(["Park", "Parking", "Parked", "an idea"], "ai-pm-ideas"),
   aipm_idea_set_status: tool(["Update", "Updating", "Updated", "an idea's status"], "ai-pm-ideas"),
+  t3_skill_sources_list: tool(["List", "Listing", "Listed", "skill sources"], "tools-read"),
+  t3_skill_library_list: tool(["List", "Listing", "Listed", "the skill library"], "tools-read"),
   mcp_servers_list: tool(["List", "Listing", "Listed", "MCP servers"], "mcp-servers"),
   mcp_server_upsert: tool(["Save", "Saving", "Saved", "an MCP server"], "mcp-servers"),
   mcp_server_remove: tool(["Remove", "Removing", "Removed", "an MCP server"], "mcp-servers"),
