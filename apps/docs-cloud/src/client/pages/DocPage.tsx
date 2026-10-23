@@ -47,6 +47,8 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const [threadLinks, setThreadLinks] = useState<ReadonlyArray<DocThreadLink>>([]);
   const [tabs, setTabs] = useState<ReadonlyMap<string, Tab>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
+  // A tab someone else, such as an agent, added while this doc was open.
+  const [newTabId, setNewTabId] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const saver = useRef<TabSaver | null>(null);
   // Bumped when the active tab's content changes underneath the editor.
@@ -81,6 +83,9 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const activeTab =
     (props.tabId ? tabs.get(props.tabId) : undefined) ?? orderTabs(tabList)[0]?.tab ?? null;
   const activeTabId = activeTab?.id ?? null;
+  // Visiting the tab by any route counts as seeing it, so the notice never returns.
+  if (newTabId !== null && newTabId === activeTabId) setNewTabId(null);
+  const newTab = newTabId && newTabId !== activeTabId ? tabs.get(newTabId) : undefined;
 
   // The URL follows the active tab, including after it is deleted elsewhere.
   useEffect(() => {
@@ -137,6 +142,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       }
       if (message.type === "tab.created") {
         upsertTab(message.tab);
+        if (message.origin !== clientId) setNewTabId(message.tab.id);
         return;
       }
       // Moves and deletes are idempotent, so our own echoes are applied too.
@@ -394,6 +400,24 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           <div className="notice" role="status">
             {notice}
             <button type="button" className="link-button" onClick={() => setNotice(null)}>
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+        {newTab ? (
+          <div className="notice" role="status">
+            New tab: {newTab.title}
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setNewTabId(null);
+                navigate(docPath(props.docId, newTab.id));
+              }}
+            >
+              Open
+            </button>
+            <button type="button" className="link-button" onClick={() => setNewTabId(null)}>
               Dismiss
             </button>
           </div>

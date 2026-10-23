@@ -7,10 +7,20 @@ import type { DocWithTabs, Tab } from "../shared/protocol.ts";
 
 const MAX_HEADING_LEVEL = 6;
 
+const normalizeTitle = (text: string): string => text.trim().toLowerCase();
+
+/** Agents often open a tab with its own title as a heading; repeating it reads as a stutter. */
+function startsWithTitle(body: string, title: string): boolean {
+  const firstLine = body.split("\n", 1)[0] ?? "";
+  const match = /^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/.exec(firstLine);
+  return match !== null && normalizeTitle(match[1] ?? "") === normalizeTitle(title);
+}
+
 function section(tab: Tab, depth: number): string {
   const level = Math.min(depth + 1, MAX_HEADING_LEVEL);
   const heading = `${"#".repeat(level)} ${tab.title}`;
   const body = tab.markdown.trim();
+  if (body && startsWithTitle(body, tab.title)) return `${body}\n`;
   return body ? `${heading}\n\n${body}\n` : `${heading}\n`;
 }
 
