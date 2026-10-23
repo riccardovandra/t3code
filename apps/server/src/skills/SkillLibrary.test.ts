@@ -18,6 +18,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import * as SkillLibrary from "./SkillLibrary.ts";
 import { lockedInstallSource } from "./SkillLibrary.ts";
 
@@ -52,6 +53,10 @@ const withLibrary = <A, E>(
     readonly providers: Ref.Ref<ReadonlyArray<ServerProvider>>;
     readonly refreshed: Ref.Ref<ReadonlyArray<string>>;
   }) => Effect.Effect<A, E>,
+  options: {
+    /** Fork: instances whose Claude home is under the temp HOME, by instance id. */
+    readonly claudeHomes?: Readonly<Record<string, string>>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -137,12 +142,33 @@ const withLibrary = <A, E>(
           Layer.provide(Layer.succeed(ProviderRegistry.ProviderRegistry, registry)),
           Layer.provide(Layer.succeed(ProjectService.ProjectService, projects)),
           Layer.provide(ServerConfig.ServerConfig.layerTest(base, path.join(base, "t3"))),
+          Layer.provide(
+            ServerSettingsService.layerTest({
+              providerInstances: Object.fromEntries(
+                Object.entries(options.claudeHomes ?? {}).map(([instanceId, relative]) => [
+                  instanceId,
+                  {
+                    driver: "claudeAgent",
+                    environment: [
+                      {
+                        name: "CLAUDE_CONFIG_DIR",
+                        value: path.join(home, relative),
+                        sensitive: false,
+                      },
+                    ],
+                  },
+                ]),
+              ),
+            }),
+          ),
         ),
       ),
       Effect.provideService(HostProcess.Environment, {
         ...process.env,
         HOME: home,
         XDG_STATE_HOME: "",
+        // The default Claude instance would otherwise use the real one.
+        CLAUDE_CONFIG_DIR: "",
       }),
       Effect.provideService(HostProcess.Arguments, [process.execPath, entry]),
       Effect.provideService(HostProcess.IsExecutable, false),
@@ -268,75 +294,87 @@ it.effect(
 it.effect(
   "removes a skill put in an agent folder by hand, and only from the agents' own folders",
   () =>
-    withLibrary(({ library, home, providers }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        // A hand-made skill in ~/.agents/skills, linked into ~/.claude/skills
-        // the way other installers do, plus one only in a plugin's folder.
-        const own = path.join(home, ".agents", "skills", "handmade");
-        const link = path.join(home, ".claude", "skills", "handmade");
-        const plugin = path.join(home, ".claude", "plugins", "acme", "skills", "handmade");
-        yield* fileSystem.makeDirectory(own, { recursive: true });
-        yield* fileSystem.writeFileString(path.join(own, "SKILL.md"), SKILL("handmade", "Mine."));
-        yield* fileSystem.makeDirectory(path.dirname(link), { recursive: true });
-        yield* fileSystem.symlink(own, link);
-        yield* fileSystem.makeDirectory(plugin, { recursive: true });
-        yield* fileSystem.writeFileString(
-          path.join(plugin, "SKILL.md"),
-          SKILL("handmade", "A plugin's."),
-        );
-        const reported = (skillPath: string) => ({
-          name: "handmade",
-          path: skillPath,
-          scope: "user",
-          enabled: true,
-        });
-        yield* Ref.set(providers, [
-          {
-            ...claude,
-            skills: [
-              reported(path.join(link, "SKILL.md")),
-              reported(path.join(plugin, "SKILL.md")),
+    withLibrary(
+      ({ library, home, providers }) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          // A hand-made skill in ~/.agents/skills, linked into ~/.claude/skills
+          // the way other installers do, plus one only in a plugin's folder.
+          const own = path.join(home, ".agents", "skills", "handmade");
+          const link = path.join(home, ".claude", "skills", "handmade");
+          const plugin = path.join(home, ".claude", "plugins", "acme", "skills", "handmade");
+          yield* fileSystem.makeDirectory(own, { recursive: true });
+          yield* fileSystem.writeFileString(path.join(own, "SKILL.md"), SKILL("handmade", "Mine."));
+          yield* fileSystem.makeDirectory(path.dirname(link), { recursive: true });
+          yield* fileSystem.symlink(own, link);
+          // Another Claude home links it too, but no enabled agent reports that copy.
+          const otherHome = path.join(home, ".claude-bark", "skills", "handmade");
+          yield* fileSystem.makeDirectory(path.dirname(otherHome), { recursive: true });
+          yield* fileSystem.symlink(own, otherHome);
+          yield* fileSystem.makeDirectory(plugin, { recursive: true });
+          yield* fileSystem.writeFileString(
+            path.join(plugin, "SKILL.md"),
+            SKILL("handmade", "A plugin's."),
+          );
+          const reported = (skillPath: string) => ({
+            name: "handmade",
+            path: skillPath,
+            scope: "user",
+            enabled: true,
+          });
+          yield* Ref.set(providers, [
+            {
+              ...claude,
+              skills: [
+                reported(path.join(link, "SKILL.md")),
+                reported(path.join(plugin, "SKILL.md")),
+              ],
+            },
+            { ...claude, instanceId: ProviderInstanceId.make("claudeBark") },
+          ]);
+
+          const inspected = yield* library.inspect({});
+          assert.deepEqual(
+            inspected.folders.map((folder) => [
+              folder.path,
+              folder.location?.kind,
+              folder.installed,
+            ]),
+            [
+              [path.join(link, "SKILL.md"), "environment", undefined],
+              [path.join(plugin, "SKILL.md"), undefined, undefined],
             ],
-          },
-        ]);
+          );
 
-        const inspected = yield* library.inspect({});
-        assert.deepEqual(
-          inspected.folders.map((folder) => [folder.path, folder.location?.kind, folder.installed]),
-          [
-            [path.join(link, "SKILL.md"), "environment", undefined],
-            [path.join(plugin, "SKILL.md"), undefined, undefined],
-          ],
-        );
+          yield* library.remove({ name: "handmade", target: { kind: "environment" } });
+          assert.isFalse(yield* fileSystem.exists(own));
+          assert.isFalse(
+            yield* fileSystem.readLink(link).pipe(
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            ),
+          );
+          // The plugin's copy isn't the user's to remove.
+          assert.isTrue(yield* fileSystem.exists(path.join(plugin, "SKILL.md")));
 
-        yield* library.remove({ name: "handmade", target: { kind: "environment" } });
-        assert.isFalse(yield* fileSystem.exists(own));
-        assert.isFalse(
-          yield* fileSystem.readLink(link).pipe(
-            Effect.as(true),
-            Effect.orElseSucceed(() => false),
-          ),
-        );
-        // The plugin's copy isn't the user's to remove.
-        assert.isTrue(yield* fileSystem.exists(path.join(plugin, "SKILL.md")));
-
-        // It went to the trash, not away, and comes back as it was.
-        const realOwn = path.join(yield* fileSystem.realPath(path.dirname(own)), "handmade");
-        const { entries } = yield* library.listTrash;
-        assert.deepEqual(
-          entries.map((entry) => [entry.name, entry.target, entry.paths, entry.source]),
-          [["handmade", { kind: "environment" }, [realOwn, link], undefined]],
-        );
-        yield* library.restoreFromTrash({ id: entries[0]?.id ?? "" });
-        assert.equal(
-          yield* fileSystem.readFileString(path.join(own, "SKILL.md")),
-          SKILL("handmade", "Mine."),
-        );
-        assert.equal(yield* fileSystem.readLink(link), own);
-        assert.deepEqual((yield* library.listTrash).entries, []);
-      }).pipe(Effect.provide(NodeServices.layer)),
+          // It went to the trash, not away, and comes back as it was.
+          const realOwn = path.join(yield* fileSystem.realPath(path.dirname(own)), "handmade");
+          const { entries } = yield* library.listTrash;
+          assert.deepEqual(
+            entries.map((entry) => [entry.name, entry.target, entry.paths, entry.source]),
+            [["handmade", { kind: "environment" }, [realOwn, link, otherHome], undefined]],
+          );
+          yield* library.restoreFromTrash({ id: entries[0]?.id ?? "" });
+          assert.equal(
+            yield* fileSystem.readFileString(path.join(own, "SKILL.md")),
+            SKILL("handmade", "Mine."),
+          );
+          assert.equal(yield* fileSystem.readLink(link), own);
+          assert.equal(yield* fileSystem.readLink(otherHome), own);
+          assert.deepEqual((yield* library.listTrash).entries, []);
+        }).pipe(Effect.provide(NodeServices.layer)),
+      { claudeHomes: { claudeBark: ".claude-bark" } },
     ),
   60_000,
 );
@@ -633,3 +671,66 @@ describe("lockedInstallSource", () => {
     ).toBeNull();
   });
 });
+
+it.effect("links environment installs into each Claude instance's own home and lists them", () =>
+  withLibrary(
+    ({ library, home, source, providers }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const bark = { ...claude, instanceId: ProviderInstanceId.make("claudeBark") };
+        yield* Ref.set(providers, [claude, bark]);
+
+        yield* library.install({ source, skills: ["review"], target: { kind: "environment" } });
+        const installed = path.join(home, ".agents", "skills", "review");
+        const barkLink = path.join(home, ".claude-bark", "skills", "review");
+        assert.equal(yield* fileSystem.readLink(barkLink), installed);
+        assert.isTrue(yield* fileSystem.exists(path.join(home, ".claude", "skills", "review")));
+
+        // Claude Bark reports its copy; it is the environment's, from the source.
+        yield* Ref.set(providers, [
+          claude,
+          {
+            ...bark,
+            skills: [
+              {
+                name: "review",
+                path: path.join(barkLink, "SKILL.md"),
+                scope: "user",
+                enabled: true,
+              },
+            ],
+          },
+        ]);
+        const inspected = yield* library.inspect({});
+        assert.deepEqual(
+          inspected.folders.map((folder) => [
+            folder.path,
+            folder.location?.kind,
+            folder.installed?.target.kind,
+          ]),
+          [[path.join(barkLink, "SKILL.md"), "environment", "environment"]],
+        );
+
+        yield* library.remove({ name: "review", target: { kind: "environment" } });
+        assert.isFalse(yield* fileSystem.exists(installed));
+        assert.isFalse(
+          yield* fileSystem.readLink(barkLink).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+
+        // The Claude Bark link goes to the trash with the skill and comes back with it.
+        const { entries } = yield* library.listTrash;
+        assert.deepEqual(
+          entries[0]?.paths.toSorted(),
+          [installed, path.join(home, ".claude", "skills", "review"), barkLink].toSorted(),
+        );
+        yield* library.restoreFromTrash({ id: entries[0]?.id ?? "" });
+        assert.equal(yield* fileSystem.readLink(barkLink), installed);
+        assert.isTrue(yield* fileSystem.exists(path.join(barkLink, "SKILL.md")));
+      }).pipe(Effect.provide(NodeServices.layer)),
+    { claudeHomes: { claudeBark: ".claude-bark" } },
+  ),
+);

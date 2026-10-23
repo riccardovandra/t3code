@@ -91,6 +91,8 @@ import * as McpServersHandlers from "./toolkits/mcpServers/handlers.ts";
 import { McpServersToolkit } from "./toolkits/mcpServers/tools.ts";
 import * as SkillTrashHandlers from "./toolkits/skillTrash/handlers.ts";
 import { SkillTrashToolkit } from "./toolkits/skillTrash/tools.ts";
+import { SkillLibraryToolkit } from "./toolkits/skillLibrary/tools.ts";
+import * as SkillLibraryHandlers from "./toolkits/skillLibrary/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -1121,6 +1123,10 @@ const layerSkillTrashToolkit = toolkitRegistration(
   SkillTrashToolkit,
   SkillTrashHandlers.layer,
 ).pipe(Layer.provide(ThreadCommandExecutor.layer));
+const layerSkillLibraryToolkit = toolkitRegistration(
+  SkillLibraryToolkit,
+  SkillLibraryHandlers.layer,
+);
 
 const upstreamFailure = (status: number, error: string, message: string) =>
   HttpServerResponse.jsonUnsafe(
@@ -1212,6 +1218,7 @@ export const T3_MCP_TOOLKITS: ReadonlyArray<Toolkit.Any> = [
   AipmToolkit,
   McpServersToolkit,
   SkillTrashToolkit,
+  SkillLibraryToolkit,
 ];
 
 export const layer = Layer.mergeAll(
@@ -1231,5 +1238,6 @@ export const layer = Layer.mergeAll(
   layerAipmToolkit,
   layerMcpServersToolkit,
   layerSkillTrashToolkit,
+  layerSkillLibraryToolkit,
   layerUpstreamRoute,
 ).pipe(Layer.provideMerge(layerMcpTransport));

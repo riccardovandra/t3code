@@ -58,6 +58,7 @@ import { McpServerDetail } from "./McpServerDetail";
 import { McpServerDialog } from "./McpServerDialog";
 import { SettingsGroup } from "./SettingsGroup";
 import { SkillDetail } from "./SkillDetail";
+import { SkillLibrarySection } from "./SkillLibrarySection";
 import {
   type SkillEnvironment,
   useEnvironmentProviders,
@@ -767,6 +768,9 @@ function SkillsPanel({
               />
             ))
           )}
+          {environmentId !== null ? (
+            <SkillLibrarySection environmentId={environmentId} onInstalled={afterSkillChange} />
+          ) : null}
           <SkillTrashSection
             environments={environments}
             trash={trash}

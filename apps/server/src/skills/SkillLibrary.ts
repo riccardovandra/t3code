@@ -60,6 +60,7 @@ import { parse as parseYamlDocument } from "yaml";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as ForkSkillHomes from "./ForkSkillHomes.ts";
 import * as SkillsCli from "./SkillsCli.ts";
 import * as SkillTrash from "./SkillTrash.ts";
 
@@ -217,6 +218,7 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const projectService = yield* ProjectService.ProjectService;
   const environment = yield* HostProcess.Environment;
+  const claudeHomes = yield* ForkSkillHomes.ForkSkillHomes;
 
   const home = environment.HOME?.trim() || environment.USERPROFILE?.trim() || "";
   const globalLockPath = environment.XDG_STATE_HOME?.trim()
@@ -349,14 +351,22 @@ const make = Effect.gen(function* () {
 
   const hasScripts = (files: ReadonlyArray<SkillFileEntry>) => files.some((file) => file.script);
 
+  /** Fork: `<home>/skills` of Claude instances with their own home. */
+  const extraClaudeFolders = claudeHomes.claudeSkillFolders(home);
+
   /** The agents' skill folders at a level, as written and after links. */
-  const skillRoots = (target: SkillInstallTarget) =>
-    Effect.forEach(
-      agentSkillFolderRoots(target.kind === "environment" ? "home" : "project").map((folder) =>
+  const skillRoots = Effect.fn("SkillLibrary.skillRoots")(function* (target: SkillInstallTarget) {
+    const folders = [
+      ...agentSkillFolderRoots(target.kind === "environment" ? "home" : "project").map((folder) =>
         path.join(targetPaths(target).root, folder),
       ),
-      (folder) => realPath(folder).pipe(Effect.map((real) => [folder, real])),
-    ).pipe(Effect.map((pairs) => [...new Set(pairs.flat())]));
+      ...(target.kind === "environment" ? yield* extraClaudeFolders : []),
+    ];
+    const pairs = yield* Effect.forEach(folders, (folder) =>
+      realPath(folder).pipe(Effect.map((real) => [folder, real])),
+    );
+    return [...new Set(pairs.flat())];
+  });
 
   const sha256 = (text: string) =>
     crypto.digest("SHA-256", new TextEncoder().encode(text)).pipe(
@@ -547,6 +557,16 @@ const make = Effect.gen(function* () {
         fullDepth,
         cwd: targetPaths(target).root,
       });
+      if (target.kind === "environment") {
+        yield* claudeHomes.linkInto(
+          yield* extraClaudeFolders,
+          results.flatMap((result) =>
+            result.status === "installed" && result.name !== undefined
+              ? [path.join(targetPaths(target).folder, skillFolderName(result.name))]
+              : [],
+          ),
+        );
+      }
       yield* refreshAgents(target);
       return outcomes(results);
     });
@@ -607,7 +627,8 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const locked = lockEntryFor(yield* readLock(targetPaths(target).lock), name);
       if (locked === undefined) return yield* removeUnlocked(target, name);
-      // What `npx skills remove` deletes: the installed folder and each agent's copy or link.
+      // What `npx skills remove` deletes: the installed folder and each agent's copy or link,
+      // plus links in Claude instances' own homes, which `skillRoots` includes.
       const paths = targetPaths(target);
       const folder = skillFolderName(locked.key);
       const roots = yield* skillRoots(target);
@@ -680,6 +701,17 @@ const make = Effect.gen(function* () {
           reason: "notInstalled",
           message: `No skill named ${name} is in the agents' skill folders here.`,
         });
+      }
+      // Links to it in agent folders no agent reported, such as another Claude
+      // home's, go too, so none is left pointing into the trash.
+      const reals = new Set(yield* Effect.forEach([...reported], realPath));
+      for (const root of roots) {
+        for (const folder of reals) {
+          const candidate = path.join(root, path.basename(folder));
+          if (!reported.has(candidate) && reals.has(yield* realPath(candidate))) {
+            reported.add(candidate);
+          }
+        }
       }
       yield* moveToTrash(target, name, [...reported]);
     });
@@ -846,6 +878,9 @@ const make = Effect.gen(function* () {
         ),
       );
       yield* write;
+      if (target.kind === "environment") {
+        yield* claudeHomes.linkInto(yield* extraClaudeFolders, [destination]);
+      }
       yield* refreshAgents(target);
     });
 
@@ -866,4 +901,5 @@ const make = Effect.gen(function* () {
 export const layer = Layer.effect(SkillLibrary, make).pipe(
   Layer.provide(SkillsCli.layer),
   Layer.provide(SkillTrash.layer),
+  Layer.provide(ForkSkillHomes.layer),
 );

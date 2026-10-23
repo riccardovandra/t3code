@@ -73,3 +73,4 @@ export * from "./aiPm.ts";
 export * from "./docs.ts";
 export * from "./mcpServers.ts";
 export * from "./skillTrash.ts";
+export * from "./skillLibrarySources.ts";

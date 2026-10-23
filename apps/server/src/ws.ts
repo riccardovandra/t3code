@@ -206,6 +206,7 @@ import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as McpServerTools from "./mcpServers/McpServerTools.ts";
 import * as SkillLibrary from "./skills/SkillLibrary.ts";
+import * as SkillSources from "./skills/SkillSources.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -587,6 +588,10 @@ const FORK_RPC_METHODS = [
   WS_METHODS.skillsTrashList,
   WS_METHODS.skillsTrashRestore,
   WS_METHODS.skillsTrashDelete,
+  WS_METHODS.skillSourcesList,
+  WS_METHODS.skillSourcesUpsert,
+  WS_METHODS.skillSourcesRemove,
+  WS_METHODS.skillLibraryList,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1302,6 +1307,24 @@ const layerSkillTrashRpc = Layer.unwrap(
       ),
       ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillsTrashDelete, (input) =>
         skillLibrary.deleteFromTrash(input).pipe(Effect.as({})),
+      ),
+    );
+  }),
+);
+
+const layerSkillSourcesRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const skillSources = yield* SkillSources.SkillSources;
+    return Layer.mergeAll(
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesList, () => skillSources.list),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesUpsert, (input) =>
+        skillSources.upsert(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillSourcesRemove, (input) =>
+        skillSources.remove(input),
+      ),
+      ServerWsRpcGroup.toLayerHandler(WS_METHODS.skillLibraryList, (input) =>
+        skillSources.library(input),
       ),
     );
   }),
@@ -3435,6 +3458,7 @@ export const layer = Layer.unwrap(
               ),
               Layer.merge(layerAiPmDocsRpc),
               Layer.merge(layerSkillTrashRpc),
+              Layer.merge(layerSkillSourcesRpc),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

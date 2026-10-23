@@ -26,6 +26,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { Label } from "../ui/label";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SavedSourcePicker, useSavedSkillSources } from "./SavedSkillSources";
 import { TruncatedText } from "./TruncatedText";
 
 /** A source this big gets a filter above its list. */
@@ -64,9 +65,10 @@ export function AddSkillsDialog({
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState<"finding" | "installing" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const saved = useSavedSkillSources(environmentId);
 
-  const find = async () => {
-    const trimmed = source.trim();
+  const find = async (from: string = source) => {
+    const trimmed = from.trim();
     if (trimmed.length === 0 || busy !== null) return;
     setBusy("finding");
     setError(null);
@@ -195,6 +197,14 @@ export function AddSkillsDialog({
               <p className="text-xs text-muted-foreground">
                 A GitHub <code>owner/repo</code>, a git URL, or a folder on the environment.
               </p>
+              <SavedSourcePicker
+                sources={saved}
+                disabled={busy !== null}
+                onPick={(picked) => {
+                  setSource(picked);
+                  void find(picked);
+                }}
+              />
             </div>
             {found !== null ? (
               <fieldset className="grid gap-2">

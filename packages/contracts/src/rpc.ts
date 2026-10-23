@@ -10,6 +10,14 @@ import {
 } from "./aiPm.ts";
 import { SkillTrashEntryInput, SkillTrashError, SkillTrashListResult } from "./skillTrash.ts";
 import {
+  SkillLibraryListInput,
+  SkillLibraryListResult,
+  SkillSourceRemoveInput,
+  SkillSourcesError,
+  SkillSourcesListResult,
+  SkillSourceUpsertInput,
+} from "./skillLibrarySources.ts";
+import {
   DocCommentCreateInput,
   DocCommentDeleteInput,
   DocCommentMutationResult,
@@ -587,6 +595,10 @@ export const WS_METHODS = {
   skillsTrashList: "skillsTrash.list",
   skillsTrashRestore: "skillsTrash.restore",
   skillsTrashDelete: "skillsTrash.delete",
+  skillSourcesList: "skillSources.list",
+  skillSourcesUpsert: "skillSources.upsert",
+  skillSourcesRemove: "skillSources.remove",
+  skillLibraryList: "skillLibrary.list",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -2000,6 +2012,27 @@ const WsDocsCloudImportRpc = Rpc.make(WS_METHODS.docsCloudImport, {
   error: Schema.Union([DocsCloudError, EnvironmentAuthorizationError]),
 });
 
+const WsSkillSourcesListRpc = Rpc.make(WS_METHODS.skillSourcesList, {
+  payload: Schema.Struct({}),
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillSourcesUpsertRpc = Rpc.make(WS_METHODS.skillSourcesUpsert, {
+  payload: SkillSourceUpsertInput,
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillSourcesRemoveRpc = Rpc.make(WS_METHODS.skillSourcesRemove, {
+  payload: SkillSourceRemoveInput,
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillLibraryListRpc = Rpc.make(WS_METHODS.skillLibraryList, {
+  payload: SkillLibraryListInput,
+  success: SkillLibraryListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   payload: Schema.Struct({}),
   success: McpServerListResult,
@@ -2150,6 +2183,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsTrashListRpc,
   WsSkillsTrashRestoreRpc,
   WsSkillsTrashDeleteRpc,
+  WsSkillSourcesListRpc,
+  WsSkillSourcesUpsertRpc,
+  WsSkillSourcesRemoveRpc,
+  WsSkillLibraryListRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
