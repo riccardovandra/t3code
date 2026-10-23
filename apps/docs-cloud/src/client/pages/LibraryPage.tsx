@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { isAdmin, type AccessibleLibrary } from "../../shared/access.ts";
 import { titleProjectKey } from "../../shared/embed.ts";
 import {
   DOC_STATUS_LABEL,
   DOC_STATUSES,
   type DocStatus,
   type DocSummary,
-  type Library,
 } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { useEmbedProject } from "../embedContext.ts";
+import { useMe } from "../me.ts";
 import { docPath, navigate } from "../router.ts";
 
 export function LibraryPage() {
-  const [library, setLibrary] = useState<Library | null>(null);
+  const [library, setLibrary] = useState<AccessibleLibrary | null>(null);
+  const me = useMe();
+  const admin = me !== null && isAdmin(me.user.id);
   const [projectName, setProjectName] = useState("");
   const [statusFilter, setStatusFilter] = useState<DocStatus | null>(null);
   const embedProject = useEmbedProject();
@@ -54,11 +57,14 @@ export function LibraryPage() {
   );
 
   // Inside a T3 Code project the library opens on that project's docs. The T3
-  // server syncs its projects, so a miss is a project it has not synced yet:
-  // that one is created with the first doc, not on every visit.
-  if (embedProject !== null && !showAll) {
-    const key = embedProject.key ?? titleProjectKey(embedProject.name);
-    const match = projects.find((project) => project.key === key);
+  // server syncs its projects, so for the admin a miss is a project it has not
+  // synced yet, created with the first doc. Anyone else only sees projects
+  // holding a doc shared with them, so a miss shows the whole library.
+  const embedKey =
+    embedProject === null ? null : (embedProject.key ?? titleProjectKey(embedProject.name));
+  const match = projects.find((project) => project.key === embedKey);
+  const canOpenEmbedProject = embedProject !== null && (match !== undefined || admin);
+  if (embedProject !== null && embedKey !== null && canOpenEmbedProject && !showAll) {
     return (
       <main className="page">
         <div className="page-heading">
@@ -74,7 +80,7 @@ export function LibraryPage() {
           docs={match?.docs ?? []}
           statusFilter={statusFilter}
           projectId={async () =>
-            match?.id ?? (await api.createProject(embedProject.name, key)).project.id
+            match?.id ?? (await api.createProject(embedProject.name, embedKey)).project.id
           }
         />
       </main>
@@ -85,22 +91,24 @@ export function LibraryPage() {
     <main className="page">
       <div className="page-heading">
         <h1>Library</h1>
-        {embedProject !== null ? (
+        {embedProject !== null && canOpenEmbedProject ? (
           <button type="button" className="link-button" onClick={() => setShowAll(false)}>
             Only {embedProject.name}
           </button>
         ) : null}
       </div>
-      <form onSubmit={createProject} className="inline-form">
-        <input
-          placeholder="New project name"
-          value={projectName}
-          onChange={(event) => setProjectName(event.target.value)}
-        />
-        <button type="submit" className="button">
-          Create project
-        </button>
-      </form>
+      {admin ? (
+        <form onSubmit={createProject} className="inline-form">
+          <input
+            placeholder="New project name"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+          />
+          <button type="submit" className="button">
+            Create project
+          </button>
+        </form>
+      ) : null}
       {projects.length === 0 && noProjectDocs.length === 0 ? (
         <p className="muted">No projects yet.</p>
       ) : (

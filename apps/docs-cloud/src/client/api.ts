@@ -1,3 +1,4 @@
+import type { AccessibleLibrary, DocMember, DocRole, DocView, Me } from "../shared/access.ts";
 import type { DocAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
@@ -6,7 +7,6 @@ import type {
   DocSummary,
   DocThreadLink,
   DocWithTabs,
-  Library,
   Project,
   Tab,
   TabPlacement,
@@ -39,19 +39,37 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const clientId = crypto.randomUUID();
 
 export const api = {
-  me: () => request<{ email: string }>("GET", "/api/me"),
+  me: () => request<Me>("GET", "/api/me"),
+  setName: (name: string) => request<Me>("PATCH", "/api/me", { name }),
   requestCode: (email: string) =>
     request<{ ok: true }>("POST", "/api/auth/request-code", { email }),
   verifyCode: (email: string, code: string) =>
     request<{ email: string }>("POST", "/api/auth/verify", { email, code }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  library: () => request<Library>("GET", "/api/library"),
-  /** Returns the existing project when one already has the key (or, without one, the name). */
+  library: () => request<AccessibleLibrary>("GET", "/api/library"),
+  /** Admin only. Returns the existing project when one already has the key (or, without one, the name). */
   createProject: (name: string, key?: string) =>
     request<{ project: Project }>("POST", "/api/projects", key ? { name, key } : { name }),
   createDoc: (projectId: string | null, title: string) =>
     request<DocWithTabs>("POST", "/api/docs", { projectId, title }),
-  doc: (docId: string) => request<DocWithTabs>("GET", `/api/docs/${docId}`),
+  doc: (docId: string) => request<DocView>("GET", `/api/docs/${docId}`),
+  members: (docId: string) =>
+    request<{ members: Array<DocMember> }>("GET", `/api/docs/${docId}/members`),
+  /** Adds the person, or changes their role if they already have access. */
+  shareDoc: (docId: string, input: { email: string; role: DocRole }) =>
+    request<{ member: DocMember; members: Array<DocMember> }>(
+      "POST",
+      `/api/docs/${docId}/members`,
+      input,
+    ),
+  setMemberRole: (docId: string, memberId: string, role: DocRole) =>
+    request<{ member: DocMember; members: Array<DocMember> }>(
+      "PATCH",
+      `/api/docs/${docId}/members/${memberId}`,
+      { role },
+    ),
+  removeMember: (docId: string, memberId: string) =>
+    request<{ members: Array<DocMember> }>("DELETE", `/api/docs/${docId}/members/${memberId}`),
   setDocStatus: (docId: string, status: DocStatus) =>
     request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { status, clientId }),
   docThreads: (docId: string) =>

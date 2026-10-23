@@ -27,6 +27,7 @@ CREATE TABLE saved_docs AS SELECT * FROM docs;
 CREATE TABLE saved_tabs AS SELECT * FROM tabs;
 CREATE TABLE saved_comments AS SELECT * FROM comments;
 CREATE TABLE saved_doc_threads AS SELECT * FROM doc_threads;
+CREATE TABLE saved_doc_members AS SELECT * FROM doc_members;
 DROP TABLE docs;
 CREATE TABLE docs (
   id TEXT PRIMARY KEY,
@@ -42,8 +43,10 @@ INSERT INTO docs (id, project_id, title, status, created_at, updated_at)
 INSERT INTO tabs SELECT * FROM saved_tabs;
 INSERT INTO comments SELECT * FROM saved_comments;
 INSERT INTO doc_threads SELECT * FROM saved_doc_threads;
+INSERT INTO doc_members SELECT * FROM saved_doc_members;
 DROP TABLE saved_docs;
 DROP TABLE saved_tabs;
 DROP TABLE saved_comments;
 DROP TABLE saved_doc_threads;
+DROP TABLE saved_doc_members;
 PRAGMA defer_foreign_keys = off;

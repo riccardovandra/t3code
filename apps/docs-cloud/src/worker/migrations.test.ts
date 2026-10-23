@@ -24,13 +24,15 @@ describe("0005_project_keys", () => {
       INSERT INTO comments VALUES ('c1', 'd1', 't1', NULL, 'Plan', '', '', 'Why?', 'a', NULL, 1, 1);
       INSERT INTO comments VALUES ('c2', 'd1', 't1', 'c1', '', '', '', 'Because', 'b', NULL, 2, 2);
       INSERT INTO doc_threads VALUES ('l1', 'd1', 'env', 'thread', 'Work', 1);
+      INSERT INTO doc_members (id, doc_id, user_id, email, role, added_by, created_at)
+        VALUES ('m1', 'd1', 'owner', NULL, 'owner', NULL, 1), ('m2', 'd1', NULL, 'guest@x.test', 'viewer', 'owner', 2);
     `);
     apply(sqlite, "0005_project_keys.sql");
 
     const count = (table: string) =>
       (sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n;
-    expect([count("docs"), count("tabs"), count("comments"), count("doc_threads")]).toEqual([
-      1, 2, 2, 1,
+    expect(["docs", "tabs", "comments", "doc_threads", "doc_members"].map(count)).toEqual([
+      1, 2, 2, 1, 2,
     ]);
     expect(sqlite.prepare("SELECT id, key FROM projects ORDER BY id").all()).toEqual([
       { id: "p1", key: "title:client work" },
@@ -40,6 +42,6 @@ describe("0005_project_keys", () => {
     expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     // The children still cascade from the rebuilt table.
     sqlite.exec("DELETE FROM docs WHERE id = 'd1'");
-    expect([count("tabs"), count("comments"), count("doc_threads")]).toEqual([0, 0, 0]);
+    expect(["tabs", "comments", "doc_threads", "doc_members"].map(count)).toEqual([0, 0, 0, 0]);
   });
 });

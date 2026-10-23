@@ -4,7 +4,7 @@ export interface Env {
   readonly DB: D1Database;
   readonly DOC_ROOM: DurableObjectNamespace<DocRoom>;
   readonly ASSETS: Fetcher;
-  /** Comma-separated; every address signs in to the same single owner account. */
+  /** Comma-separated; every address signs in as the one admin user, who owns all pre-sharing data. */
   readonly OWNER_EMAILS: string;
   readonly EMAIL_FROM: string;
   /** Where the app is served, such as `https://docs.upliftedconsulting.com`. Local dev overrides it. */

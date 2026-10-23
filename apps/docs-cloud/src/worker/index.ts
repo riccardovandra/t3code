@@ -2,12 +2,12 @@ import { handleApi, type ApiDeps } from "./api.ts";
 import { parseOwnerEmails } from "./auth.ts";
 import { parseEmbedOrigins } from "../shared/embed.ts";
 import type { CommentOpResult } from "./comments.ts";
-import { docRoom } from "./docRoom.ts";
+import { docRoom, SOCKET_USER_HEADER } from "./docRoom.ts";
 import { reviveError, type TabWriteResult } from "./docs.ts";
 import type { Env } from "./env.ts";
 import { withEmbedPolicy } from "./embed.ts";
 import { handleMcp } from "./mcp.ts";
-import { sendLoginCode } from "./email.ts";
+import { sendDocInvite, sendLoginCode } from "./email.ts";
 
 export { DocRoom } from "./docRoom.ts";
 
@@ -34,9 +34,15 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
         revive(docRoom(env, docId).setDocProject({ docId, ...input })),
       commentOp: (docId, input) => revive<CommentOpResult>(docRoom(env, docId).commentOp(input)),
       threadOp: (docId, input) => revive(docRoom(env, docId).threadOp({ docId, ...input })),
-      openSocket: (docId, request) => docRoom(env, docId).fetch(request),
+      openSocket: (docId, request, userId) => {
+        const headers = new Headers(request.headers);
+        headers.set(SOCKET_USER_HEADER, userId);
+        return docRoom(env, docId).fetch(new Request(request, { headers }));
+      },
+      closeSockets: (docId, userId) => docRoom(env, docId).closeSockets(userId),
     },
     sendLoginCode: (email, code) => sendLoginCode(env, email, code),
+    sendDocInvite: (invite) => sendDocInvite(env, invite),
     waitUntil: (promise) => ctx.waitUntil(promise),
     now: () => Date.now(),
   };
