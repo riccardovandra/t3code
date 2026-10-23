@@ -14,6 +14,7 @@ import {
   resolveStructuredAnchor,
 } from "../shared/anchors.ts";
 import { normalizeProjectKey } from "../shared/embed.ts";
+import { SEARCH_MAX_QUERY, SEARCH_MIN_QUERY } from "../shared/home.ts";
 import * as Access from "./access.ts";
 import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
@@ -22,6 +23,7 @@ import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
+import * as Home from "./home.ts";
 import * as Images from "./images.ts";
 import { IMAGE_TYPES, isImageDocId } from "../shared/images.ts";
 import { widgetProblems } from "./widgets.ts";
@@ -255,13 +257,20 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (path === "/api/library" && method === "GET") {
-      return json(
-        await Access.scopeLibrary(deps.db, {
-          library: await Docs.listLibrary(deps.db),
-          userId: principal.userId,
-          owners: deps.owners,
-        }),
-      );
+      const library = await Access.scopeLibrary(deps.db, {
+        library: await Docs.listLibrary(deps.db),
+        userId: principal.userId,
+        owners: deps.owners,
+      });
+      return json(await Home.homeLibrary(deps.db, library, principal.userId));
+    }
+
+    if (path === "/api/search" && method === "GET") {
+      const query = (url.searchParams.get("q") ?? "").trim();
+      if (query.length < SEARCH_MIN_QUERY || query.length > SEARCH_MAX_QUERY) {
+        return error(400, "invalid_query");
+      }
+      return json({ hits: await Home.searchTabs(deps.db, { userId: principal.userId, query }) });
     }
 
     if (path === "/api/projects" && method === "POST") {
@@ -303,6 +312,10 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
 
     if (resource === "docs" && id && !sub && method === "GET") {
       const role = await need(id, "viewer");
+      // Agents read docs all the time; only a person opening one moves "Opened".
+      if (principal.kind === "session") {
+        await Home.recordOpen(deps.db, { docId: id, userId: principal.userId, now });
+      }
       const owner = await Access.docOwner(deps.db, id, deps.owners);
       return json({ ...(await Docs.getDoc(deps.db, id)), role, owner });
     }
