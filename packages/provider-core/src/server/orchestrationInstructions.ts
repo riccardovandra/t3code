@@ -8,7 +8,10 @@ export const hasDocsCloud = (servers: ReadonlyArray<{ readonly name: string }>):
   servers.some((server) => server.name === DOCS_CLOUD_MCP_SERVER_NAME);
 
 // The environment hides the local `docs_*` tools while Docs Cloud is connected,
-// so each session describes only the docs tools it actually has.
+// so each session describes only the docs tools it actually has. Adapters pick
+// the section from the session's hub servers, not the environment's connection:
+// a read-only session gets no hub servers yet still has `docs_*` hidden, so it
+// has neither set of tools and neither section would be accurate for it.
 const FILE_DOCS_SECTION = `### Docs
 
 Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.`;

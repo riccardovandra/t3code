@@ -1,4 +1,5 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
@@ -8,6 +9,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProject, useThreadShell } from "~/state/entities";
+import { useEnvironment } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { buildThreadRouteParams } from "~/threadRoutes";
@@ -64,8 +66,11 @@ export function DocsCloudPanel(props: {
       ? null
       : { environmentId: threadRef.environmentId, projectId: props.projectId },
   );
-  const projectName = project?.title ?? null;
-  const projectKey = project ? docsCloudProjectKey(project) : null;
+  const scratchRoot = useEnvironment(threadRef.environmentId)?.serverConfig?.scratchWorkspaceRoot;
+  // T3's scratch project means "no project", which Docs Cloud has its own of.
+  const docsProject = project && !isScratchProject(project, scratchRoot) ? project : null;
+  const projectName = docsProject?.title ?? null;
+  const projectKey = docsProject ? docsCloudProjectKey(docsProject) : null;
   useEffect(() => {
     frame.current?.contentWindow?.postMessage(
       { type: "t3-docs:context", projectName, projectKey },

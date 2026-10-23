@@ -19,6 +19,7 @@ import {
 
 import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
@@ -147,10 +148,15 @@ const files = new Map<string, string>([
   ["docs/notes.md", "Loose notes without a heading.\n"],
 ]);
 
-const identity = (canonicalKey: string, origin?: string): RepositoryIdentity => ({
+const identity = (
+  canonicalKey: string,
+  origin?: string,
+  rootPath?: string,
+): RepositoryIdentity => ({
   canonicalKey,
   locator: { source: "git-remote", remoteName: "origin", remoteUrl: `https://${canonicalKey}.git` },
-  ...(origin ? { origin: { canonicalKey: origin } } : {}),
+  ...(rootPath ? { rootPath } : {}),
+  ...(origin ? { origin: { canonicalKey: origin, remoteUrl: `https://${origin}.git` } } : {}),
 });
 
 const makeLayer = (
@@ -161,7 +167,9 @@ const makeLayer = (
     configured?: boolean;
     /** Remote per workspace root; a checkout without one has no remote. */
     remotes?: Record<string, RepositoryIdentity>;
-    shells?: Array<Pick<OrchestrationProjectShell, "title" | "workspaceRoot">>;
+    shells?: Array<Pick<OrchestrationProjectShell, "title" | "workspaceRoot"> & { id?: string }>;
+    /** The project, by id, that is T3's scratch project. */
+    scratchProjectId?: string;
   } = {},
 ) => {
   const server = {
@@ -194,6 +202,13 @@ const makeLayer = (
           } as ProjectRecord),
         listShells: () =>
           Effect.succeed((options.shells ?? []) as Array<OrchestrationProjectShell>),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/named",
+        isScratchProject: (id) =>
+          Effect.succeed(options.scratchProjectId !== undefined && id === options.scratchProjectId),
       }),
     ),
     Layer.provide(
@@ -271,6 +286,7 @@ describe("DocsCloudImport", () => {
       const cloud = yield* DocsCloudImport.DocsCloudImport;
       const first = yield* cloud.project({ projectId });
       const second = yield* cloud.project({ projectId });
+      assert(first && second);
       assert.strictEqual(first.key, "title:client work");
       assert.strictEqual(first.name, "Client Work");
       assert.strictEqual(second.id, first.id);
@@ -302,13 +318,51 @@ describe("DocsCloudImport", () => {
       );
       assert.deepStrictEqual(
         again.map((project) => project.key),
-        [
-          "github.com/riccardovandra/t3code",
-          "github.com/riccardovandra/t3code",
-          "title:herbox netherlands",
-        ],
+        ["github.com/riccardovandra/t3code", "title:herbox netherlands"],
       );
     }).pipe(Effect.provide(makeLayer(docsCloud, { shells, remotes })));
+  });
+
+  it.effect("keys a fork by its origin and names it after the checkout, skipping scratch", () => {
+    const docsCloud = makeDocsCloud();
+    // `upstream` is the parent repository, so it wins T3's canonical key.
+    const fork = (rootPath: string) =>
+      identity("github.com/pingdotgg/t3code", "github.com/riccardovandra/t3code", rootPath);
+    const shells = [
+      { title: "server", workspaceRoot: "/code/t3code/apps/server" },
+      { title: "T3 Code + AI PM", workspaceRoot: "/code/t3code" },
+      { title: "server", workspaceRoot: "/worktrees/feature/apps/server" },
+      { id: "scratch", title: "No project", workspaceRoot: "/home/.t3/scratch" },
+    ];
+    const remotes = {
+      "/code/t3code/apps/server": fork("/code/t3code"),
+      "/code/t3code": fork("/code/t3code"),
+      "/worktrees/feature/apps/server": fork("/worktrees/feature"),
+    };
+    return Effect.gen(function* () {
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      yield* cloud.syncProjects;
+      assert.deepStrictEqual(
+        docsCloud.state.projects.map(({ key, name }) => [key, name]),
+        [["github.com/riccardovandra/t3code", "T3 Code + AI PM"]],
+      );
+    }).pipe(Effect.provide(makeLayer(docsCloud, { shells, remotes, scratchProjectId: "scratch" })));
+  });
+
+  it.effect("gives the scratch project no Docs Cloud project, importing into No project", () => {
+    const docsCloud = makeDocsCloud();
+    return Effect.gen(function* () {
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      assert.strictEqual(yield* cloud.project({ projectId }), null);
+      const result = yield* importDocs({ docPaths: ["docs/plan.md"] });
+      assert.strictEqual(result.project, null);
+      assert.strictEqual(result.results[0]?.status, "imported");
+      assert.deepStrictEqual(
+        [...docsCloud.state.docs.values()].map((doc) => doc.projectId),
+        ["null"],
+      );
+      assert.deepStrictEqual(docsCloud.state.projects, []);
+    }).pipe(Effect.provide(makeLayer(docsCloud, { scratchProjectId: projectId })));
   });
 
   it.effect("does not sync when Docs Cloud is not set up", () => {

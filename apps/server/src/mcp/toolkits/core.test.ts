@@ -48,6 +48,7 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
+import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
@@ -333,6 +334,9 @@ const docsToolkitLayer = (servers: ReadonlyArray<McpServerEntry>) =>
         Layer.provide(Layer.mock(DocCommentsService.DocCommentsService)({})),
         Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
         Layer.provide(Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({})),
+        Layer.provide(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/named" }),
+        ),
         Layer.provide(
           Layer.mock(McpServerRegistry.McpServerRegistry)({
             list: Effect.succeed({ servers }),

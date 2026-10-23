@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { compileWidget, WIDGET_DRAWING, WIDGET_FRAGMENT, WIDGET_H } from "./compile.ts";
+import {
+  compileWidget,
+  WIDGET_BUDGET_MESSAGE,
+  WIDGET_DRAWING,
+  WIDGET_FRAGMENT,
+  WIDGET_H,
+  WIDGET_STEP,
+} from "./compile.ts";
 import { FLOW_EXAMPLE, PILLARS_EXAMPLE } from "./testing/examples.ts";
 
 interface VNode {
@@ -68,13 +75,51 @@ export default () => <svg viewBox='0 0 10 10'><>
     expect(text!.children).toEqual(["Two   words here"]);
   });
 
-  it("copies non-JSX code byte for byte", () => {
+  it("copies non-JSX code byte for byte, counting each function's steps", () => {
     const compiled = compileWidget(
       "const a = 1 /* keep */;\nexport default () => <svg viewBox='0 0 1 1'/>;",
     );
-    expect(compiled).toEqual({
-      ok: true,
-      code: `const a = 1 /* keep */;\n${WIDGET_DRAWING} = (() => ${WIDGET_H}("svg", {"viewBox": "0 0 1 1"}));`,
-    });
+    expect(compiled.ok && compiled.code.slice(compiled.code.indexOf("\n") + 1)).toBe(
+      `const a = 1 /* keep */;\n${WIDGET_DRAWING} = (() => (${WIDGET_STEP}(), ${WIDGET_H}("svg", {"viewBox": "0 0 1 1"})));`,
+    );
+  });
+
+  it("stops a module that never finishes instead of hanging", () => {
+    const svg = "<svg viewBox='0 0 1 1'/>";
+    for (const body of [
+      "while (true) {}",
+      "for (;;) ;",
+      "do {} while (true);",
+      "function f() { try { return f(); } catch { return f(); } } f();",
+      "for (;;) { try { [1].map((x) => x); } catch {} }",
+      "Array.from({ length: 1e9 }, (_, i) => i);",
+    ]) {
+      expect(() => draw(`export default () => { ${body} return ${svg}; };`), body).toThrow(
+        WIDGET_BUDGET_MESSAGE,
+      );
+    }
+    // Plain recursion already ends at the stack limit; recursion that catches
+    // that error would otherwise branch for ever (the try/catch case above).
+    expect(() =>
+      draw(`const spin = (n) => spin(n + 1);\nexport default () => { spin(0); return ${svg}; };`),
+    ).toThrow();
+    // A component that loops runs while the sandbox builds the tree.
+    const Loop = "const Spin = () => { for (const x of [1]) { while (x) {} } return null; };";
+    const compiled = compileWidget(`${Loop}\nexport default () => ${svg};`);
+    expect(compiled.ok && compiled.code).toContain(`while (x) {${WIDGET_STEP}();}`);
+  });
+
+  it("leaves bounded loops and helpers working", () => {
+    const tree = draw(
+      `const dots = (n) => { const out = []; for (let i = 0; i < n; i++) out.push(<circle r={i} />); return out; };
+export default () => <svg viewBox='0 0 10 10'>{dots(3)}{[1, 2].map((r) => <rect width={r} />)}</svg>;`,
+    );
+    expect(tree.children.map((node) => (node as VNode).tag)).toEqual([
+      "circle",
+      "circle",
+      "circle",
+      "rect",
+      "rect",
+    ]);
   });
 });

@@ -23,7 +23,7 @@ import {
   type RepositoryIdentity,
 } from "@t3tools/contracts";
 import { DOCS_ROOT, docTitleFromPath } from "@t3tools/shared/docPaths";
-import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
+import { docsCloudProjectKey, docsCloudSyncEntries } from "@t3tools/shared/docsCloudProjects";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -38,6 +38,7 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 import * as McpServerRegistry from "../mcpHub/McpServerRegistry.ts";
 import * as DocsCloudConnection from "./DocsCloudConnection.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
+import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
@@ -84,10 +85,14 @@ interface ImportRow {
 export class DocsCloudImport extends Context.Service<
   DocsCloudImport,
   {
-    /** This T3 project's Docs Cloud project (see `docsCloudProjectKey`), created on first use. */
+    /**
+     * This T3 project's Docs Cloud project (see `docsCloudProjectKey`), created
+     * on first use. Null for T3's scratch project, whose docs belong to Docs
+     * Cloud's own No project.
+     */
     readonly project: (input: {
       readonly projectId: ProjectId;
-    }) => Effect.Effect<DocsCloudProject, DocsCloudError>;
+    }) => Effect.Effect<DocsCloudProject | null, DocsCloudError>;
     /** Upserts every project of this environment into Docs Cloud, renaming them to match. */
     readonly syncProjects: Effect.Effect<ReadonlyArray<DocsCloudProject>, DocsCloudError>;
     /** The checkout's docs, and those already imported into the configured Docs Cloud. */
@@ -110,6 +115,7 @@ const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
   const registry = yield* McpServerRegistry.McpServerRegistry;
   const projects = yield* ProjectService.ProjectService;
+  const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
   const repositories = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const workspaceDocs = yield* WorkspaceDocs.WorkspaceDocs;
   const comments = yield* DocCommentsService.DocCommentsService;
@@ -203,16 +209,28 @@ const make = Effect.gen(function* () {
 
   // The shell's identity comes from an enrichment cache that may still be
   // cold; the resolver answers from git (and its own cache).
-  const keyOf = Effect.fn("DocsCloudImport.keyOf")(function* (project: {
-    readonly title: string;
-    readonly workspaceRoot: string;
-    readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
-  }) {
+  const withIdentity = Effect.fn("DocsCloudImport.withIdentity")(function* <
+    P extends {
+      readonly title: string;
+      readonly workspaceRoot: string;
+      readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+    },
+  >(project: P) {
     const resolved = yield* repositories.resolve(project.workspaceRoot);
-    return docsCloudProjectKey({
-      title: project.title,
-      repositoryIdentity: resolved ?? project.repositoryIdentity ?? null,
-    });
+    return { ...project, repositoryIdentity: resolved ?? project.repositoryIdentity ?? null };
+  });
+
+  // Every project but scratch, which stands for "no project" and never syncs.
+  const syncedShells = Effect.gen(function* () {
+    const shells = yield* projects
+      .listShells()
+      .pipe(Effect.mapError(() => new DocsCloudError({ reason: "persistence" })));
+    const kept = yield* Effect.filter(
+      shells,
+      (shell) => Effect.map(managedFolders.isScratchProject(shell.id), (scratch) => !scratch),
+      { concurrency: 4 },
+    );
+    return yield* Effect.forEach(kept, withIdentity, { concurrency: 4 });
   });
 
   const upsert = Effect.fn("DocsCloudImport.upsert")(function* (
@@ -233,7 +251,12 @@ const make = Effect.gen(function* () {
     projectId: ProjectId,
   ) {
     const t3 = yield* t3Project(projectId);
-    const [project] = yield* upsert(conn, [{ key: yield* keyOf(t3), name: t3.title.trim() }]);
+    if (yield* managedFolders.isScratchProject(projectId)) return null;
+    const key = docsCloudProjectKey(yield* withIdentity(t3));
+    // Named like the full sync names it, so a worktree project cannot rename
+    // its repository's project after itself.
+    const named = docsCloudSyncEntries(yield* syncedShells).find((entry) => entry.key === key);
+    const [project] = yield* upsert(conn, [named ?? { key, name: t3.title.trim() }]);
     if (!project)
       return yield* new DocsCloudError({ reason: "failed", detail: "unexpected response" });
     return project;
@@ -247,15 +270,7 @@ const make = Effect.gen(function* () {
 
   const syncProjects: DocsCloudImport["Service"]["syncProjects"] = Effect.gen(function* () {
     const conn = yield* connection;
-    const shells = yield* projects
-      .listShells()
-      .pipe(Effect.mapError(() => new DocsCloudError({ reason: "persistence" })));
-    const entries = yield* Effect.forEach(
-      shells,
-      (shell) => Effect.map(keyOf(shell), (key) => ({ key, name: shell.title.trim() })),
-      { concurrency: 4 },
-    );
-    return yield* upsert(conn, entries);
+    return yield* upsert(conn, docsCloudSyncEntries(yield* syncedShells));
   }).pipe(Effect.withSpan("DocsCloudImport.syncProjects"));
 
   const docUrl = (origin: string, docId: string) => `${origin}/d/${docId}`;
@@ -341,7 +356,7 @@ const make = Effect.gen(function* () {
   const importOne = Effect.fn("DocsCloudImport.importOne")(function* (input: {
     readonly conn: Connection;
     readonly projectId: ProjectId;
-    readonly cloudProjectId: string;
+    readonly cloudProjectId: string | null;
     readonly cwd: string;
     readonly docPath: string;
     readonly existing: ImportRow | undefined;
@@ -451,7 +466,7 @@ const make = Effect.gen(function* () {
         yield* importOne({
           conn,
           projectId: input.projectId,
-          cloudProjectId: cloudProject.id,
+          cloudProjectId: cloudProject?.id ?? null,
           cwd: input.cwd,
           docPath,
           existing: existing.get(docPath),
