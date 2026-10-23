@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
 
+import type { Me } from "../../shared/access.ts";
 import { api } from "../api.ts";
 
-export function LoginPage(props: { readonly onSignedIn: (email: string) => void }) {
+export function LoginPage(props: { readonly onSignedIn: (me: Me) => void }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
@@ -28,8 +29,8 @@ export function LoginPage(props: { readonly onSignedIn: (email: string) => void 
     setBusy(true);
     setError(null);
     try {
-      const result = await api.verifyCode(email, code);
-      props.onSignedIn(result.email);
+      await api.verifyCode(email, code);
+      props.onSignedIn(await api.me());
     } catch {
       setError("That code is not valid. Check it or request a new one.");
     } finally {
@@ -42,6 +43,7 @@ export function LoginPage(props: { readonly onSignedIn: (email: string) => void 
       <h1>Docs</h1>
       {step === "email" ? (
         <form onSubmit={submitEmail} className="stack">
+          <p className="muted">Sign in with the email a doc was shared with.</p>
           <label htmlFor="email">Email</label>
           <input
             id="email"

@@ -12,6 +12,7 @@ import type {
   Tab,
   TabPlacement,
 } from "../shared/protocol.ts";
+import { ownerMembershipStatement } from "./access.ts";
 import { randomId } from "./crypto.ts";
 
 interface DocRow {
@@ -118,10 +119,15 @@ export async function createProject(db: D1Database, name: string, now: number): 
   return project;
 }
 
-/** Creates a doc with one empty top-level tab. */
+/** Creates a doc with one empty top-level tab, owned by `ownerId`. */
 export async function createDoc(
   db: D1Database,
-  input: { readonly projectId: string; readonly title: string; readonly now: number },
+  input: {
+    readonly projectId: string;
+    readonly title: string;
+    readonly ownerId: string;
+    readonly now: number;
+  },
 ): Promise<DocWithTabs> {
   const project = await db
     .prepare("SELECT id FROM projects WHERE id = ?")
@@ -153,6 +159,7 @@ export async function createDoc(
       )
       .bind(doc.id, doc.projectId, doc.title, doc.status, doc.createdAt, doc.updatedAt),
     insertTabStatement(db, tab),
+    ownerMembershipStatement(db, { docId: doc.id, userId: input.ownerId, now: input.now }),
   ]);
   return { doc, tabs: [tab] };
 }

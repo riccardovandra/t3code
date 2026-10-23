@@ -111,7 +111,7 @@ describe("sign-in API", () => {
       expect(cookie).toContain(flag);
     }
     const me = await api.call("GET", "/api/me", { headers: { Cookie: cookie.split(";")[0]! } });
-    expect(await me.json()).toEqual({ email: OWNER });
+    expect(await me.json()).toMatchObject({ user: { id: "owner", email: OWNER } });
   });
 
   it("ends the session on logout", async () => {
