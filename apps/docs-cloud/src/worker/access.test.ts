@@ -355,6 +355,42 @@ describe("last owner", () => {
   });
 });
 
+describe("people suggestions", () => {
+  it("suggests everyone on the caller's docs, never the caller or strangers", async () => {
+    const { api, owner, as, projectId, person, share } = await setup();
+    const editor = await person("e@example.com", "editor");
+    await share("pending@example.com", "viewer");
+    // On a doc the editor is not on.
+    const other = await body<DocWithTabs>(
+      await api.call("POST", "/api/docs", {
+        body: { projectId, title: "Private" },
+        headers: as(owner),
+      }),
+    );
+    await api.call("POST", `/api/docs/${other.doc.id}/members`, {
+      body: { email: "stranger@example.com", role: "viewer" },
+      headers: as(owner),
+    });
+    await api.call("PATCH", "/api/me", { body: { name: "Eve" }, headers: as(editor) });
+
+    const people = async (cookie: string) =>
+      (
+        await body<{ people: Array<{ name: string; email: string }> }>(
+          await api.call("GET", "/api/people", { headers: as(cookie) }),
+        )
+      ).people;
+    expect(await people(owner)).toEqual([
+      { name: "Eve", email: "e@example.com" },
+      { name: "", email: "pending@example.com" },
+      { name: "", email: "stranger@example.com" },
+    ]);
+    expect(await people(editor)).toEqual([
+      { name: "", email: "pending@example.com" },
+      { name: "Riccardo Vandra", email: OWNER },
+    ]);
+  });
+});
+
 describe("doc sockets", () => {
   const upgrade = (cookie: string) => ({ Cookie: cookie, Upgrade: "websocket" });
 

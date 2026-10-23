@@ -189,6 +189,10 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       return json(await Access.getMe(deps.db, principal.userId, deps.owners));
     }
 
+    if (path === "/api/people" && method === "GET") {
+      return json({ people: await Access.listPeople(deps.db, principal.userId, deps.owners) });
+    }
+
     if (resource === "tokens") {
       // A leaked agent token must not be able to mint or revoke tokens.
       if (principal.kind !== "session") return error(403, "session_required");
