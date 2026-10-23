@@ -60,6 +60,15 @@ skills accepts, including a GitHub tree URL for one folder of a repository (for 
 skills. A source is read when you open it and kept for a few minutes; the refresh button fetches it
 again. Private repositories work when the environment's git can already reach them.
 
+### Trash
+
+**Remove** moves a skill to its environment's trash instead of deleting it: its folder, every
+agent's link to it, and the installer's record of where it came from. Right after removing, use
+**Restore** beside the message, or find the skill later under **Trash** at the bottom of the Skills
+tab. Restore puts everything back where it was; if something else now sits in one of those places,
+move it away first, since T3 Code never overwrites it. **Delete permanently** removes a skill from
+the trash for good.
+
 ## MCP servers
 
 MCP servers are managed in **Settings → MCP Servers**; the **MCP servers** tab here opens that

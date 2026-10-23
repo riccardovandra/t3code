@@ -55,6 +55,8 @@ export type T3McpToolSummaryAction =
   | "tools-update"
   | "skills-install"
   | "skills-remove"
+  | "skills-trash-list"
+  | "skills-restore"
   | "attachment-prepare"
   | "attachment-discard"
   | "attachment-send"
@@ -328,6 +330,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   ),
   t3_skills_install: tool(["Install", "Installing", "Installed", "skills"], "skills-install"),
   t3_skills_remove: tool(["Remove", "Removing", "Removed", "a skill"], "skills-remove"),
+  t3_skills_trash_list: tool(["List", "Listing", "Listed", "the skill trash"], "skills-trash-list"),
+  t3_skills_restore: tool(["Restore", "Restoring", "Restored", "a skill"], "skills-restore"),
   t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
   t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),

@@ -65,6 +65,7 @@ import {
   useEnvironmentSkillFolders,
 } from "./SkillEnvironments";
 import { SkillListSection, type SkillListRow, stopRowClick } from "./SkillList";
+import { SkillTrashNotice, SkillTrashSection, useSkillTrash } from "./SkillTrash";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -315,6 +316,7 @@ function SkillsPanel({
   } | null>(null);
   const [skillActionError, setSkillActionError] = useState<string | null>(null);
   const inspected = useEnvironmentSkillFolders(environments);
+  const trash = useSkillTrash(environments);
   const foldersOf = (id: EnvironmentId) => inspected.folders.get(id) ?? EMPTY_FOLDERS;
   const scopeLabel = isProjectScope
     ? scope.kind === "project" || scope.kind === "checkout"
@@ -357,6 +359,7 @@ function SkillsPanel({
 
   const afterSkillChange = () => {
     inspected.refresh();
+    trash.refresh();
   };
 
   /** A skill's level on one environment: where it lives there, to update or remove it. */
@@ -371,6 +374,7 @@ function SkillsPanel({
     inputs: ReadonlyArray<SkillAction>,
   ) => {
     setSkillActionError(null);
+    if (action === "remove") trash.setRemoved(null);
     const failures = await Promise.all(
       inputs.map(async ({ environmentId: id, ...input }) => {
         const label = environmentLabel(id);
@@ -389,6 +393,12 @@ function SkillsPanel({
       }),
     );
     afterSkillChange();
+    const trashedOn = inputs.flatMap((input, index) =>
+      failures[index] === null ? [input.environmentId] : [],
+    );
+    if (action === "remove" && trashedOn.length > 0) {
+      trash.setRemoved({ name: inputs[0]?.name ?? "", environmentIds: trashedOn });
+    }
     const messages = failures.filter((message) => message !== null);
     if (messages.length > 0) {
       setSkillActionError(
@@ -714,6 +724,11 @@ function SkillsPanel({
             {skillActionError !== null ? (
               <p className="mt-2 text-xs text-destructive-foreground">{skillActionError}</p>
             ) : null}
+            <SkillTrashNotice
+              environments={environments}
+              trash={trash}
+              onChanged={afterSkillChange}
+            />
           </SettingsSection>
           {showSkeleton ? <SkillsSkeleton /> : null}
           {rows.length === 0 && !refreshing ? (
@@ -756,6 +771,11 @@ function SkillsPanel({
           {environmentId !== null ? (
             <SkillLibrarySection environmentId={environmentId} onInstalled={afterSkillChange} />
           ) : null}
+          <SkillTrashSection
+            environments={environments}
+            trash={trash}
+            onChanged={afterSkillChange}
+          />
           <p className="px-3 text-xs text-muted-foreground sm:px-4">
             Turning a skill off hides it from Claude, Codex and OpenCode, and from the composer's
             skill menu. Other agents may still load it on their own. Changes apply to new sessions.
@@ -780,22 +800,15 @@ function SkillsPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {removingSkill?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              {removingSkill?.installed ? (
-                <>
-                  Deletes the skill's folder and every agent's link to it, as{" "}
-                  <code>npx skills remove</code> does
-                </>
-              ) : (
-                `Deletes ${removingSkill?.name ?? "the skill"} from every agent's skill folder`
-              )}
+              {removingSkill?.installed
+                ? "Moves the skill's folder, every agent's link to it and its lock entry to the trash"
+                : `Moves ${removingSkill?.name ?? "the skill"} from every agent's skill folder to the trash`}
               {removingSkill !== null && removingSkill.inputs.length > 1
                 ? ` on ${removingSkill.inputs.map((input) => environmentLabel(input.environmentId)).join(", ")}.`
                 : removingSkill?.inputs[0]?.target.kind === "project"
                   ? " in this project."
                   : " on this environment."}
-              {removingSkill?.installed
-                ? ""
-                : " It wasn't installed from a source, so it can't be added back from here."}
+              {" You can restore it from Trash on this page."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

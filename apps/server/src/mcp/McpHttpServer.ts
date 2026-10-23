@@ -89,6 +89,8 @@ import * as McpUpstreamClients from "../mcpHub/McpUpstreamClients.ts";
 import { forwardMcpRequest } from "../mcpHub/McpUpstreamForwarder.ts";
 import * as McpServersHandlers from "./toolkits/mcpServers/handlers.ts";
 import { McpServersToolkit } from "./toolkits/mcpServers/tools.ts";
+import * as SkillTrashHandlers from "./toolkits/skillTrash/handlers.ts";
+import { SkillTrashToolkit } from "./toolkits/skillTrash/tools.ts";
 import { SkillLibraryToolkit } from "./toolkits/skillLibrary/tools.ts";
 import * as SkillLibraryHandlers from "./toolkits/skillLibrary/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
@@ -1117,6 +1119,10 @@ export const layerDeviceToolkit = Layer.mergeAll(
 
 const layerMcpServersToolkit = toolkitRegistration(McpServersToolkit, McpServersHandlers.layer);
 
+const layerSkillTrashToolkit = toolkitRegistration(
+  SkillTrashToolkit,
+  SkillTrashHandlers.layer,
+).pipe(Layer.provide(ThreadCommandExecutor.layer));
 const layerSkillLibraryToolkit = toolkitRegistration(
   SkillLibraryToolkit,
   SkillLibraryHandlers.layer,
@@ -1211,6 +1217,7 @@ export const T3_MCP_TOOLKITS: ReadonlyArray<Toolkit.Any> = [
   DocsToolkit,
   AipmToolkit,
   McpServersToolkit,
+  SkillTrashToolkit,
   SkillLibraryToolkit,
 ];
 
@@ -1230,6 +1237,7 @@ export const layer = Layer.mergeAll(
   layerDocsToolkit,
   layerAipmToolkit,
   layerMcpServersToolkit,
+  layerSkillTrashToolkit,
   layerSkillLibraryToolkit,
   layerUpstreamRoute,
 ).pipe(Layer.provideMerge(layerMcpTransport));

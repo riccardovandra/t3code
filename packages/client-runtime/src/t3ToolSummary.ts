@@ -345,6 +345,12 @@ export function summarizeT3ToolCalls(
     case "skills-remove":
       label = phrase("Removed", "remove", `skills ${times}`);
       break;
+    case "skills-trash-list":
+      label = phrase("Checked", "check", `the skill trash ${times}`);
+      break;
+    case "skills-restore":
+      label = phrase("Restored", "restore", `skills ${times}`);
+      break;
     case "attachment-prepare":
       label = phrase(
         "Prepared",

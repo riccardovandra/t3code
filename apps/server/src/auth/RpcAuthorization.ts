@@ -161,6 +161,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.skillsPreview]: AuthFilesystemReadScope,
   // Packs a folder an agent reports for that skill, nothing a client names.
   [WS_METHODS.skillsExport]: AuthFilesystemReadScope,
+  [WS_METHODS.skillsTrashList]: AuthFilesystemReadScope,
   // Fork: saved sources and the library previews them like skills.preview.
   [WS_METHODS.skillSourcesList]: AuthFilesystemReadScope,
   [WS_METHODS.skillLibraryList]: AuthFilesystemReadScope,

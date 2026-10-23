@@ -40,11 +40,6 @@ export class ForkSkillHomes extends Context.Service<
       folders: ReadonlyArray<string>,
       installed: ReadonlyArray<string>,
     ) => Effect.Effect<void>;
-    /** Delete links named `folderName` in `folders` whose target is gone. */
-    readonly unlinkDangling: (
-      folders: ReadonlyArray<string>,
-      folderName: string,
-    ) => Effect.Effect<void>;
   }
 >()("t3/skills/ForkSkillHomes") {}
 
@@ -112,18 +107,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const unlinkDangling: ForkSkillHomes["Service"]["unlinkDangling"] = Effect.fn(
-    "ForkSkillHomes.unlinkDangling",
-  )(function* (folders, folderName) {
-    for (const folder of folders) {
-      const link = path.join(folder, folderName);
-      if ((yield* isLink(link)) && !(yield* exists(link))) {
-        yield* fileSystem.remove(link).pipe(Effect.ignore);
-      }
-    }
-  });
-
-  return ForkSkillHomes.of({ claudeSkillFolders, linkInto, unlinkDangling });
+  return ForkSkillHomes.of({ claudeSkillFolders, linkInto });
 });
 
 export const layer = Layer.effect(ForkSkillHomes, make);
