@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
 
 import { findWidgetFences, widgetInfoString } from "../../../shared/widget/fence.ts";
+import { insertRichTable } from "../../editor/table/tableBlock.ts";
 
 /** What an insert action can reach besides the editor. */
 export interface InsertContext {
@@ -109,7 +110,7 @@ const DEFAULT_ACTIONS: ReadonlyArray<InsertAction> = [
     id: "table",
     label: "Table",
     order: 70,
-    run: ({ editor }) => block(editor).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+    run: ({ editor }) => void insertRichTable(editor),
   },
   { id: "image", label: "Image", order: 80, run: ({ pickImage }) => pickImage() },
 ];

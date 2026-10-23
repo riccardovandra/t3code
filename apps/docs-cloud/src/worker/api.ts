@@ -7,7 +7,12 @@ import {
   type TabPlacement,
 } from "../shared/protocol.ts";
 import { isDocRole, type DocRole } from "../shared/access.ts";
-import { locateAnchor, markdownToText } from "../shared/anchors.ts";
+import {
+  locateAnchor,
+  markdownToText,
+  parseStructuredAnchor,
+  resolveStructuredAnchor,
+} from "../shared/anchors.ts";
 import * as Access from "./access.ts";
 import type { WidgetProblem } from "../shared/widget/check.ts";
 import * as Auth from "./auth.ts";
@@ -19,6 +24,7 @@ import * as Export from "./export.ts";
 import * as Images from "./images.ts";
 import { IMAGE_TYPES, isImageDocId } from "../shared/images.ts";
 import { widgetProblems } from "./widgets.ts";
+import { checkTablesIn } from "../shared/table.ts";
 
 /** The ordered write path for a doc; production routes it to the doc's DocRoom. */
 export interface DocRooms {
@@ -101,6 +107,8 @@ const json = (body: unknown, status = 200, headers: HeadersInit = {}) =>
 const error = (status: number, code: string) => json({ error: code }, status);
 const widgetInvalid = (problems: ReadonlyArray<WidgetProblem>) =>
   json({ error: "widget_invalid", problems }, 422);
+
+const tableInvalid = (message: string) => json({ error: "table_invalid", message }, 422);
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
@@ -316,6 +324,8 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       await need(id, "editor");
       const problems = widgetProblems(markdown);
       if (problems) return widgetInvalid(problems);
+      const tableProblem = checkTablesIn(markdown);
+      if (tableProblem) return tableInvalid(tableProblem);
       const tab = await deps.rooms.createTab(id, {
         parentTabId,
         title,
@@ -354,6 +364,9 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       await need(current.docId, "editor");
       const problems = markdown === undefined ? null : widgetProblems(markdown, current.markdown);
       if (problems) return widgetInvalid(problems);
+      const tableProblem =
+        markdown === undefined ? null : checkTablesIn(markdown, current.markdown);
+      if (tableProblem) return tableInvalid(tableProblem);
       const result = await deps.rooms.writeTab(current.docId, {
         tabId: id,
         baseVersion,
@@ -515,7 +528,10 @@ async function handleComments(
 
   if (resource === "tabs" && id && sub === "comments" && method === "POST") {
     const body = await readJson(request);
-    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, true);
+    // A cell or label anchor; the quote then only labels the thread.
+    const structured = body.anchor == null ? null : parseStructuredAnchor(body.anchor);
+    if (body.anchor != null && structured === null) return error(400, "invalid_anchor");
+    const quote = anchorText(body.quote, Comments.MAX_QUOTE_LENGTH, structured === null);
     const prefix = anchorText(body.prefix, Comments.MAX_CONTEXT_LENGTH, false);
     const suffix = anchorText(body.suffix, Comments.MAX_CONTEXT_LENGTH, false);
     if (quote === null || prefix === null || suffix === null) return error(400, "invalid_anchor");
@@ -523,8 +539,12 @@ async function handleComments(
     if (!text) return error(400, "invalid_body");
     const tab = await Docs.getTab(deps.db, id);
     const actor = await actorOn(tab.docId, "commenter");
+    const target = structured ? resolveStructuredAnchor(tab.markdown, structured) : null;
+    // A structured anchor must name a part that exists; there is no text to fall back on.
+    if (structured && !target) return error(409, "anchor_not_found");
     // Imports ask for this so a comment whose passage is gone is reported, not stored detached.
     if (
+      !structured &&
       body.requireAnchor === true &&
       !locateAnchor(markdownToText(tab.markdown), { quote, prefix, suffix })
     ) {
@@ -534,7 +554,10 @@ async function handleComments(
       op: {
         kind: "create",
         tabId: id,
-        anchor: { quote, prefix, suffix },
+        anchor: target
+          ? { quote: Comments.structuredQuote(target, quote), prefix: "", suffix: "" }
+          : { quote, prefix, suffix },
+        structuredAnchor: structured,
         body: text,
         author: Comments.actorAuthor(actor),
       },

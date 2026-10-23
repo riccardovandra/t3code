@@ -4,6 +4,7 @@
 // It is pure and imports only shared types, so the worker can use it.
 import { orderTabs } from "../client/doc/tabTree.ts";
 import type { DocWithTabs, Tab } from "../shared/protocol.ts";
+import { richTablesToGfm } from "../shared/table.ts";
 
 const MAX_HEADING_LEVEL = 6;
 
@@ -19,7 +20,8 @@ function startsWithTitle(body: string, title: string): boolean {
 function section(tab: Tab, depth: number): string {
   const level = Math.min(depth + 1, MAX_HEADING_LEVEL);
   const heading = `${"#".repeat(level)} ${tab.title}`;
-  const body = tab.markdown.trim();
+  // Downloads are for reading, so rich tables become GFM tables.
+  const body = richTablesToGfm(tab.markdown).trim();
   if (body && startsWithTitle(body, tab.title)) return `${body}\n`;
   return body ? `${heading}\n\n${body}\n` : `${heading}\n`;
 }

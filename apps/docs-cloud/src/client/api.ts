@@ -6,7 +6,7 @@ import type {
   Me,
   UserSummary,
 } from "../shared/access.ts";
-import type { DocAnchor } from "../shared/anchors.ts";
+import type { DocAnchor, StructuredAnchor } from "../shared/anchors.ts";
 import type {
   ApiTokenSummary,
   Comment,
@@ -125,8 +125,10 @@ export const api = {
     ),
   comments: (docId: string) =>
     request<{ comments: Array<Comment> }>("GET", `/api/docs/${docId}/comments`),
-  createComment: (tabId: string, input: DocAnchor & { body: string }) =>
-    request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
+  createComment: (
+    tabId: string,
+    input: DocAnchor & { body: string; anchor?: StructuredAnchor | null },
+  ) => request<{ comment: Comment }>("POST", `/api/tabs/${tabId}/comments`, { ...input, clientId }),
   replyComment: (commentId: string, body: string) =>
     request<{ comment: Comment }>("POST", `/api/comments/${commentId}/replies`, {
       body,

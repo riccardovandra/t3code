@@ -8,6 +8,8 @@ import type { DiagramCache, DiagramRender } from "./diagramCache.ts";
 import "./diagrams.css";
 import { widgetInfo } from "../../shared/widget/fence.ts";
 import { WidgetView } from "./widget/WidgetView.ts";
+import { tableSelectionPlugin } from "./table/tableBlock.ts";
+import { isTableNode, TableView } from "./table/TableView.ts";
 
 let loadedCache: DiagramCache | null = null;
 // Imported on demand so the renderer loads with a tab's first diagram. Once it
@@ -94,13 +96,17 @@ export const DocsCodeBlock = CodeBlock.extend({
     };
   },
 
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), tableSelectionPlugin];
+  },
+
   addNodeView() {
-    return (props) =>
-      isWidget(props.node)
-        ? new WidgetView(props, editSource)
-        : isMermaid(props.node)
-          ? new DiagramView(props)
-          : new PlainCodeView(props);
+    return (props) => {
+      // ```t3-table: a rich table whose JSON is the block's text.
+      if (isTableNode(props.node)) return new TableView(props);
+      if (isWidget(props.node)) return new WidgetView(props, editSource);
+      return isMermaid(props.node) ? new DiagramView(props) : new PlainCodeView(props);
+    };
   },
 });
 
@@ -122,7 +128,7 @@ class PlainCodeView implements NodeView {
   }
 
   update(node: ProseMirrorNode) {
-    if (node.type.name !== "codeBlock" || isDiagram(node)) return false;
+    if (node.type.name !== "codeBlock" || isDiagram(node) || isTableNode(node)) return false;
     this.setLanguage(node);
     return true;
   }
