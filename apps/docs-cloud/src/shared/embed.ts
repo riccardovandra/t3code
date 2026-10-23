@@ -5,16 +5,30 @@
  * `location`; `features` lists what this T3 Code can do for the doc),
  * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
  * thread started from a doc), `threads` (which linked threads it can open, with
- * their current titles), `comment-sent` (how a sent comment went) and `context`
+ * their current titles), `comment-sent` (how a sent comment went), `context`
  * (the T3 Code project the panel belongs to, by key and name, after hello and
- * on change).
+ * on change) and `theme` (T3 Code's appearance and resolved palette, after
+ * hello and on change; the mobile app sends the same message to the top-level
+ * page).
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
  * stored) and `send-comment`. Frame actions are only offered once a parent has
  * said hello. Every message is additive: an older peer ignores unknown types.
  */
+import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
+
 export type EmbedFeature = "start-work" | "send-to-agent";
+
+/** T3 Code's resolved palette, by its theme colour roles. */
+export type EmbedThemeColors = Readonly<Partial<Record<ThemeColorRole, string>>>;
+
+export interface EmbedThemeMessage {
+  readonly type: "t3-docs:theme";
+  readonly appearance: "light" | "dark";
+  /** Absent for a peer that sends only the appearance; this app's T3 defaults then apply. */
+  readonly colors: EmbedThemeColors | null;
+}
 
 /** A T3 Code thread, by the environment that owns it. */
 export interface EmbedThreadRef {
@@ -48,7 +62,8 @@ export type EmbedParentMessage =
       readonly projectName: string | null;
       /** Its Docs Cloud project key (see `normalizeProjectKey`); absent from older peers. */
       readonly projectKey: string | null;
-    };
+    }
+  | EmbedThemeMessage;
 
 /** Titles compare ignoring case and spacing. */
 export const projectNameKey = (name: string): string =>
@@ -142,6 +157,30 @@ const isText = (value: unknown, max = 200): value is string =>
 const isThreadRef = (value: unknown): value is EmbedThreadRef =>
   isObject(value) && isText(value.environmentId) && isText(value.threadId);
 
+const THEME_ROLES: ReadonlySet<string> = new Set(THEME_COLOR_ROLES);
+// Colours become CSS custom properties, which accept any token stream, so only
+// literal colours pass: no url(), var() or anything that could close the rule.
+const THEME_COLOR =
+  /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\([0-9a-z.,%/\s+-]{1,80}\))$/i;
+
+/** The well formed colours of a theme message; unknown roles and values are dropped. */
+function parseThemeColors(value: unknown): EmbedThemeColors | null {
+  if (!isObject(value)) return null;
+  const colors: Partial<Record<ThemeColorRole, string>> = {};
+  for (const [role, color] of Object.entries(value)) {
+    if (THEME_ROLES.has(role) && typeof color === "string" && THEME_COLOR.test(color.trim())) {
+      colors[role as ThemeColorRole] = color.trim();
+    }
+  }
+  return colors;
+}
+
+export function parseThemeMessage(data: unknown): EmbedThemeMessage | null {
+  if (!isObject(data) || data.type !== "t3-docs:theme") return null;
+  if (data.appearance !== "light" && data.appearance !== "dark") return null;
+  return { type: data.type, appearance: data.appearance, colors: parseThemeColors(data.colors) };
+}
+
 /**
  * The parent's message when it is well formed, else null. The origin and
  * source are checked by the caller; this guards the shape, since the parent
@@ -201,6 +240,8 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
         projectKey,
       };
     }
+    case "t3-docs:theme":
+      return parseThemeMessage(data);
     default:
       return null;
   }
