@@ -25,7 +25,7 @@ Tests: `vp test run apps/docs-cloud` from the repo root. Typecheck: `vp run --fi
 
 ## Deploy
 
-The D1 database and the `RESEND_API_KEY` secret already exist in the Cloudflare account that owns `upliftedconsulting.com`.
+The D1 database and the `RESEND_API_KEY` secret already exist in the Cloudflare account that owns `upliftedconsulting.com`. Doc images live in the R2 bucket `docs-cloud-images` (binding `IMAGES`); create it once with `wrangler r2 bucket create docs-cloud-images` before the first deploy that needs it.
 
 1. Authenticate wrangler: `wrangler login`, or export `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 2. `vp run --filter @t3tools/docs-cloud deploy` builds, applies remote migrations and deploys. The `docs.upliftedconsulting.com` custom domain is attached on deploy.

@@ -22,6 +22,8 @@ import * as DocThreads from "./docThreads.ts";
 import * as Docs from "./docs.ts";
 import type { DocInvite } from "./email.ts";
 import * as Export from "./export.ts";
+import * as Images from "./images.ts";
+import { IMAGE_TYPES, isImageDocId } from "../shared/images.ts";
 import { widgetProblems } from "./widgets.ts";
 import { checkTablesIn } from "../shared/table.ts";
 
@@ -64,6 +66,12 @@ export interface DocRooms {
     docId: string,
     input: { readonly status: DocStatus; readonly origin: string | null },
   ): Promise<DocSummary>;
+  renameDoc(
+    docId: string,
+    input: { readonly title: string; readonly origin: string | null },
+  ): Promise<DocSummary>;
+  /** Deletes the doc and closes every open socket on it. */
+  deleteDoc(docId: string, input: { readonly origin: string | null }): Promise<void>;
   setDocProject(
     docId: string,
     input: { readonly projectId: string | null; readonly origin: string | null },
@@ -91,6 +99,7 @@ export interface ApiDeps {
   readonly publicOrigin: string;
   readonly owners: ReadonlySet<string>;
   readonly rooms: DocRooms;
+  readonly images: Images.ImageStore;
   readonly sendLoginCode: (email: string, code: string) => Promise<void>;
   readonly sendDocInvite: (invite: DocInvite) => Promise<void>;
   readonly waitUntil: (promise: Promise<unknown>) => void;
@@ -159,7 +168,9 @@ function isSameOriginWrite(request: Request, deps: ApiDeps): boolean {
   const origin = request.headers.get("Origin");
   if (origin !== null && !isOwnOrigin(origin, request, deps)) return false;
   if (request.method !== "POST") return true;
-  return (request.headers.get("Content-Type") ?? "").startsWith("application/json");
+  const type = request.headers.get("Content-Type") ?? "";
+  // Image uploads send raw bytes; image types are not CORS-safelisted either.
+  return type.startsWith("application/json") || Object.hasOwn(IMAGE_TYPES, type);
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -304,6 +315,15 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     if (resource === "docs" && id && !sub && method === "PATCH") {
       await need(id, "editor");
       const body = await readJson(request);
+      const origin = str(body.clientId);
+      if (body.title !== undefined) {
+        const title = str(body.title);
+        if (!title) return error(400, "invalid_title");
+        if (body.status !== undefined || body.projectId !== undefined) {
+          return error(400, "one_change_at_a_time");
+        }
+        return json({ doc: await deps.rooms.renameDoc(id, { title, origin }) });
+      }
       const status = body.status;
       if (status !== undefined && !DOC_STATUSES.includes(status as DocStatus)) {
         return error(400, "invalid_status");
@@ -311,7 +331,6 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       const projectId = projectIdArg(body.projectId);
       if (projectId === false) return error(400, "invalid_project");
       if (status === undefined && projectId === undefined) return error(400, "empty_write");
-      const origin = str(body.clientId);
       let doc: DocSummary | undefined;
       if (projectId !== undefined) {
         if (projectId && !(await Access.canSeeProject(deps.db, projectId, principal.userId))) {
@@ -323,6 +342,28 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
         doc = await deps.rooms.setDocStatus(id, { status: status as DocStatus, origin });
       }
       return json({ doc });
+    }
+
+    if (resource === "docs" && id && !sub && method === "DELETE") {
+      await need(id, "owner");
+      await deps.rooms.deleteDoc(id, { origin: url.searchParams.get("clientId") });
+      deps.waitUntil(deps.images.deletePrefix(Images.docImagesPrefix(id)));
+      return json({ ok: true });
+    }
+
+    if (resource === "docs" && id && sub === "images" && !subId && method === "POST") {
+      await need(id, "editor");
+      const result = await Images.uploadImage(deps.images, { docId: id, request });
+      return result.ok ? json({ url: result.url }, 201) : error(result.status, result.error);
+    }
+
+    if (resource === "images" && id && sub && !subId && method === "GET") {
+      if (!isImageDocId(id)) return error(404, "not_found");
+      await need(id, "viewer");
+      return (
+        (await Images.imageResponse(deps.images, { docId: id, file: sub })) ??
+        error(404, "not_found")
+      );
     }
 
     if (resource === "docs" && id && sub === "threads") {

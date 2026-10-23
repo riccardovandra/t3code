@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { DocRole } from "../../shared/access.ts";
 import { ShareDialog } from "./ShareDialog.tsx";
@@ -16,8 +16,19 @@ export function ShareButton(props: {
   readonly tabId?: string | null;
   /** Saves the open tab's pending edit before an export. */
   readonly flush?: () => Promise<void>;
+  /** After the panel closes: the caller may have changed their own role or left. */
+  readonly onClosed?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const onClosed = useRef(props.onClosed);
+  useLayoutEffect(() => {
+    onClosed.current = props.onClosed;
+  });
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) onClosed.current?.();
+    wasOpen.current = open;
+  }, [open]);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
 

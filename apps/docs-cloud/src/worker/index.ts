@@ -6,6 +6,7 @@ import { docRoom, SOCKET_USER_HEADER } from "./docRoom.ts";
 import { reviveError, type TabWriteResult } from "./docs.ts";
 import type { Env } from "./env.ts";
 import { withEmbedPolicy } from "./embed.ts";
+import { r2ImageStore } from "./images.ts";
 import { handleMcp } from "./mcp.ts";
 import { sendDocInvite, sendLoginCode } from "./email.ts";
 
@@ -30,6 +31,8 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
       moveTab: (docId, input) => revive(docRoom(env, docId).moveTab(input)),
       deleteTab: (docId, input) => revive(docRoom(env, docId).deleteTab(input)),
       setDocStatus: (docId, input) => revive(docRoom(env, docId).setDocStatus({ docId, ...input })),
+      renameDoc: (docId, input) => revive(docRoom(env, docId).renameDoc({ docId, ...input })),
+      deleteDoc: (docId, input) => revive(docRoom(env, docId).deleteDoc({ docId, ...input })),
       setDocProject: (docId, input) =>
         revive(docRoom(env, docId).setDocProject({ docId, ...input })),
       commentOp: (docId, input) => revive<CommentOpResult>(docRoom(env, docId).commentOp(input)),
@@ -41,6 +44,7 @@ function apiDeps(env: Env, ctx: ExecutionContext): ApiDeps {
       },
       closeSockets: (docId, userId) => docRoom(env, docId).closeSockets(userId),
     },
+    images: r2ImageStore(env.IMAGES),
     sendLoginCode: (email, code) => sendLoginCode(env, email, code),
     sendDocInvite: (invite) => sendDocInvite(env, invite),
     waitUntil: (promise) => ctx.waitUntil(promise),
