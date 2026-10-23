@@ -13,9 +13,17 @@ export function Popover(props: {
   readonly align?: "start" | "end";
   readonly panelClassName?: string;
   readonly disabled?: boolean;
+  readonly onClosed?: () => void;
   readonly children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const onClosed = useRef(props.onClosed);
+  useLayoutEffect(() => {
+    onClosed.current = props.onClosed;
+  });
+  useEffect(() => {
+    if (!open) onClosed.current?.();
+  }, [open]);
   const root = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
 

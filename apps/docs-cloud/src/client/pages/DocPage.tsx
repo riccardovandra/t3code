@@ -417,6 +417,14 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       ),
   );
 
+  const moveDoc = useStableCallback(
+    (projectId: string | null) =>
+      void api.moveDoc(props.docId, projectId).then(
+        (result) => setDoc(result.doc),
+        () => setNotice("Could not move the doc. Reload and try again."),
+      ),
+  );
+
   const deleteDoc = useStableCallback(() => {
     if (!doc) return;
     if (
@@ -546,6 +554,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           docId={props.docId}
           title={doc.title}
           status={doc.status}
+          projectId={doc.projectId}
           role={role}
           abilities={abilities}
           tabId={activeTabId}
@@ -555,6 +564,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           onSetStatus={setStatus}
           onCopyLink={copyLink}
           onDelete={deleteDoc}
+          onMoveToProject={moveDoc}
           onStartChat={startWork}
           onExportResult={showMessage}
           onShareClosed={refreshRole}

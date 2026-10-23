@@ -7,6 +7,7 @@ import type { ExportAction } from "../ExportMenu.tsx";
 import { ChevronDown, CommentIcon, SparkIcon } from "../toolbar/icons.tsx";
 import { InlineRename, MenuItem, MenuLabel, MenuSeparator, Popover } from "../toolbar/Popover.tsx";
 import type { DocAbilities } from "./docAbilities.ts";
+import { MoveToProject } from "./MoveToProject.tsx";
 
 /**
  * The bar across the top of a doc: the title and its menu on the left;
@@ -17,6 +18,7 @@ export const DocHeader = memo(function DocHeader(props: {
   readonly docId: string;
   readonly title: string;
   readonly status: DocStatus;
+  readonly projectId: string | null;
   readonly role: DocRole;
   readonly abilities: DocAbilities;
   readonly tabId: string | null;
@@ -27,8 +29,7 @@ export const DocHeader = memo(function DocHeader(props: {
   readonly onSetStatus: (status: DocStatus) => void;
   readonly onCopyLink: () => void;
   readonly onDelete: () => void;
-  /** Move to another project. Absent until projects can be chosen here. */
-  readonly onMoveToProject?: () => void;
+  readonly onMoveToProject: (projectId: string | null) => void;
   readonly onStartChat: () => void;
   readonly onExportResult: (message: string | null) => void;
   /** The Share panel closed; the caller's own role may have changed. */
@@ -38,6 +39,7 @@ export const DocHeader = memo(function DocHeader(props: {
   readonly onToggleComments: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [choosingProject, setChoosingProject] = useState(false);
   const { abilities } = props;
 
   const runExport = (action: ExportAction) =>
@@ -59,6 +61,7 @@ export const DocHeader = memo(function DocHeader(props: {
         ) : (
           <Popover
             label="Doc menu"
+            onClosed={() => setChoosingProject(false)}
             triggerClassName="doc-title-button"
             trigger={
               <>
@@ -67,51 +70,64 @@ export const DocHeader = memo(function DocHeader(props: {
               </>
             }
           >
-            {() => (
-              <>
-                {abilities.manageDoc ? (
-                  <MenuItem label="Rename" onSelect={() => setRenaming(true)} />
-                ) : null}
-                {abilities.manageDoc && props.onMoveToProject ? (
-                  <MenuItem label="Move to project…" onSelect={props.onMoveToProject} />
-                ) : null}
-                <MenuItem label="Copy link" onSelect={props.onCopyLink} />
-                {abilities.manageDoc ? (
-                  <>
-                    <MenuSeparator />
-                    <MenuLabel>Status</MenuLabel>
-                    {DOC_STATUSES.map((status) => (
-                      <MenuItem
-                        key={status}
-                        label={DOC_STATUS_LABEL[status]}
-                        checked={status === props.status}
-                        onSelect={() => {
-                          if (status !== props.status) props.onSetStatus(status);
-                        }}
-                      />
-                    ))}
-                  </>
-                ) : (
-                  <MenuLabel>Status: {DOC_STATUS_LABEL[props.status]}</MenuLabel>
-                )}
-                <MenuSeparator />
-                <MenuLabel>Export</MenuLabel>
-                {props.exportActions.map((action) => (
-                  // Called straight from the click: copying needs its user activation.
-                  <MenuItem
-                    key={action.id}
-                    label={action.label}
-                    onSelect={() => void runExport(action)}
-                  />
-                ))}
-                {abilities.deleteDoc ? (
-                  <>
-                    <MenuSeparator />
-                    <MenuItem label="Delete doc…" danger onSelect={props.onDelete} />
-                  </>
-                ) : null}
-              </>
-            )}
+            {() =>
+              choosingProject ? (
+                <>
+                  <MenuItem label="Back" keepOpen onSelect={() => setChoosingProject(false)} />
+                  <MenuSeparator />
+                  <MenuLabel>Move to project</MenuLabel>
+                  <MoveToProject projectId={props.projectId} onMove={props.onMoveToProject} />
+                </>
+              ) : (
+                <>
+                  {abilities.manageDoc ? (
+                    <MenuItem label="Rename" onSelect={() => setRenaming(true)} />
+                  ) : null}
+                  {abilities.manageDoc ? (
+                    <MenuItem
+                      label="Move to project…"
+                      keepOpen
+                      onSelect={() => setChoosingProject(true)}
+                    />
+                  ) : null}
+                  <MenuItem label="Copy link" onSelect={props.onCopyLink} />
+                  {abilities.manageDoc ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuLabel>Status</MenuLabel>
+                      {DOC_STATUSES.map((status) => (
+                        <MenuItem
+                          key={status}
+                          label={DOC_STATUS_LABEL[status]}
+                          checked={status === props.status}
+                          onSelect={() => {
+                            if (status !== props.status) props.onSetStatus(status);
+                          }}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <MenuLabel>Status: {DOC_STATUS_LABEL[props.status]}</MenuLabel>
+                  )}
+                  <MenuSeparator />
+                  <MenuLabel>Export</MenuLabel>
+                  {props.exportActions.map((action) => (
+                    // Called straight from the click: copying needs its user activation.
+                    <MenuItem
+                      key={action.id}
+                      label={action.label}
+                      onSelect={() => void runExport(action)}
+                    />
+                  ))}
+                  {abilities.deleteDoc ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem label="Delete doc…" danger onSelect={props.onDelete} />
+                    </>
+                  ) : null}
+                </>
+              )
+            }
           </Popover>
         )}
       </div>

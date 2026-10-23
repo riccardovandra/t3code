@@ -82,6 +82,9 @@ export const api = {
     request<{ members: Array<DocMember> }>("DELETE", `/api/docs/${docId}/members/${memberId}`),
   setDocStatus: (docId: string, status: DocStatus) =>
     request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { status, clientId }),
+  /** `null` moves the doc out of every project. */
+  moveDoc: (docId: string, projectId: string | null) =>
+    request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { projectId, clientId }),
   renameDoc: (docId: string, title: string) =>
     request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { title, clientId }),
   /** Owner only; removes the doc, its tabs, comments, people and images. */
