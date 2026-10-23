@@ -483,6 +483,9 @@ importers:
 
   apps/docs-cloud:
     dependencies:
+      '@babel/parser':
+        specifier: 7.29.8
+        version: 7.29.8
       '@t3tools/shared':
         specifier: workspace:*
         version: link:../../packages/shared
