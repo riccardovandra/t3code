@@ -210,6 +210,8 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
 }
 
 export const EMBED_ORIGINS_META = "t3-embed-origins";
+/** The app's canonical origin, for links people share; the page may be served from another. */
+export const PUBLIC_ORIGIN_META = "t3-docs-public-origin";
 
 const SOURCE = /^([a-z][a-z0-9+.-]*):\/\/(\*\.)?([a-z0-9.-]+)(?::(\d+|\*))?$/i;
 const ORIGIN = /^([a-z][a-z0-9+.-]*):\/\/([a-z0-9.-]+)(?::(\d+))?$/i;

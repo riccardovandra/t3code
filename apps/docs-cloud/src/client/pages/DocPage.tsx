@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import type { DocRole } from "../../shared/access.ts";
 import type { DocAnchor } from "../../shared/anchors.ts";
 import {
   DOC_STATUS_LABEL,
@@ -41,9 +42,11 @@ import { useDocRoom } from "../doc/useDocRoom.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { docPath, navigate } from "../router.ts";
+import { ShareButton } from "../share/ShareButton.tsx";
 
 export function DocPage(props: { readonly docId: string; readonly tabId: string | null }) {
   const [doc, setDoc] = useState<DocSummary | null>(null);
+  const [role, setRole] = useState<DocRole>("viewer");
   const [threadLinks, setThreadLinks] = useState<ReadonlyArray<DocThreadLink>>([]);
   const [tabs, setTabs] = useState<ReadonlyMap<string, Tab>>(new Map());
   const [notice, setNotice] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       loadComments(),
     ]);
     setDoc(loaded.doc);
+    setRole(loaded.role);
     setThreadLinks(linked.threads);
     setTabs(new Map(loaded.tabs.map((tab) => [tab.id, tab])));
   }, [props.docId, loadComments]);
@@ -391,6 +395,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
             <ExportMenu
               docId={props.docId}
               docTitle={doc.title}
+              tabId={activeTabId}
+              flush={async () => saver.current?.flush()}
+            />
+            <ShareButton
+              docId={props.docId}
+              role={role}
+              title={doc.title}
               tabId={activeTabId}
               flush={async () => saver.current?.flush()}
             />

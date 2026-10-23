@@ -3,9 +3,9 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { hasEmbedParent, postToEmbedParent, subscribeEmbedParent } from "../embedBridge.ts";
 import { docPath } from "../router.ts";
 
-const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
+export const tabExportPath = (tabId: string) => `/api/tabs/${tabId}/export.md`;
 
-function download(path: string) {
+export function download(path: string) {
   const link = document.createElement("a");
   link.href = path;
   link.download = "";
@@ -16,6 +16,19 @@ async function fetchMarkdown(path: string): Promise<string> {
   const response = await fetch(path, { credentials: "same-origin" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.text();
+}
+
+/** Copies an export route's Markdown, after `flush` lands pending edits. Call straight from a click. */
+export async function copyMarkdown(flush: () => Promise<void>, path: string): Promise<void> {
+  const markdown = flush().then(() => fetchMarkdown(path));
+  // Handing the clipboard a promise keeps the click's user activation in
+  // Safari, which rejects a write that starts after an await.
+  if (typeof ClipboardItem !== "undefined") {
+    const blob = markdown.then((text) => new Blob([text], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+  } else {
+    await navigator.clipboard.writeText(await markdown);
+  }
 }
 
 export function ExportMenu(props: {
@@ -42,15 +55,7 @@ export function ExportMenu(props: {
 
   const copyTab = (id: string) =>
     run(async () => {
-      const markdown = flush().then(() => fetchMarkdown(tabExportPath(id)));
-      // Handing the clipboard a promise keeps the click's user activation in
-      // Safari, which rejects a write that starts after an await.
-      if (typeof ClipboardItem !== "undefined") {
-        const blob = markdown.then((text) => new Blob([text], { type: "text/plain" }));
-        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
-      } else {
-        await navigator.clipboard.writeText(await markdown);
-      }
+      await copyMarkdown(flush, tabExportPath(id));
       setStatus("Copied");
     });
 
