@@ -1,4 +1,4 @@
-import { McpServerId, type McpServerConfig } from "@t3tools/contracts";
+import { McpServerId, type McpHubServerConfig } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -14,7 +14,7 @@ const id = McpServerId.make("server-1");
 const timestamps = { createdAt: "2026-10-20T00:00:00.000Z", updatedAt: "2026-10-20T00:00:00.000Z" };
 const redirectUri = "https://mac.tail1234.ts.net/oauth/mcp-client/callback";
 
-const gamma: McpServerConfig = {
+const gamma: McpHubServerConfig = {
   id,
   name: "gamma",
   enabled: true,
@@ -23,7 +23,7 @@ const gamma: McpServerConfig = {
   ...timestamps,
 };
 
-const local: McpServerConfig = {
+const local: McpHubServerConfig = {
   id,
   name: "google",
   enabled: true,
