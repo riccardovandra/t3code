@@ -1,0 +1,75 @@
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+
+import type { ApiTokenSummary } from "../../shared/protocol.ts";
+import { api } from "../api.ts";
+
+export function SettingsPage() {
+  const [tokens, setTokens] = useState<ReadonlyArray<ApiTokenSummary>>([]);
+  const [name, setName] = useState("");
+  const [created, setCreated] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setTokens((await api.tokens()).tokens);
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim()) return;
+    const result = await api.createToken(name.trim());
+    setCreated(result.token);
+    setName("");
+    await reload();
+  };
+
+  const revoke = async (id: string) => {
+    await api.revokeToken(id);
+    await reload();
+  };
+
+  return (
+    <main className="page">
+      <h1>Settings</h1>
+      <h2>API tokens</h2>
+      <p className="muted">
+        Agents and T3 Code use these as <code>Authorization: Bearer …</code> on <code>/api</code>{" "}
+        and <code>/mcp</code>.
+      </p>
+      <form onSubmit={create} className="inline-form">
+        <input
+          placeholder="Token name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <button type="submit" className="button">
+          Create token
+        </button>
+      </form>
+      {created ? (
+        <div className="notice">
+          <p>Copy this token now. It is not shown again.</p>
+          <code className="token">{created}</code>
+        </div>
+      ) : null}
+      <ul className="token-list">
+        {tokens.map((token) => (
+          <li key={token.id}>
+            <span>{token.name}</span>
+            <span className="muted">
+              Created {new Date(token.createdAt).toLocaleDateString()}
+              {token.lastUsedAt
+                ? ` · last used ${new Date(token.lastUsedAt).toLocaleString()}`
+                : ""}
+            </span>
+            <button type="button" className="link-button danger" onClick={() => revoke(token.id)}>
+              Revoke
+            </button>
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}
