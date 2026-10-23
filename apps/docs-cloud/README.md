@@ -23,10 +23,11 @@ Without `RESEND_API_KEY`, sign-in codes are printed to the `wrangler dev` consol
 
 Tests: `vp test run apps/docs-cloud` from the repo root. Typecheck: `vp run --filter @t3tools/docs-cloud typecheck`.
 
-## First deploy
+## Deploy
 
-1. `wrangler login`
-2. `wrangler d1 create docs-cloud`, then put the printed id in `wrangler.jsonc` (`database_id`).
-3. `wrangler secret put RESEND_API_KEY`, and verify the `EMAIL_FROM` domain in Resend.
-4. Confirm `OWNER_EMAILS` in `wrangler.jsonc` (the Gmail address is still a placeholder).
-5. `vp run --filter @t3tools/docs-cloud deploy` (builds, applies remote migrations, deploys). The `docs.upliftedconsulting.com` custom domain is created on deploy because the zone is in the same account.
+The D1 database and the `RESEND_API_KEY` secret already exist in the Cloudflare account that owns `upliftedconsulting.com`.
+
+1. Authenticate wrangler: `wrangler login`, or export `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+2. `vp run --filter @t3tools/docs-cloud deploy` builds, applies remote migrations and deploys. The `docs.upliftedconsulting.com` custom domain is attached on deploy.
+
+To rotate the email key: `wrangler secret put RESEND_API_KEY`. The `EMAIL_FROM` domain must stay verified in Resend.
