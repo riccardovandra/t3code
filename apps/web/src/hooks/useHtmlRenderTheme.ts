@@ -27,7 +27,8 @@ function resolveActiveThemeColors(
     : (getThemeColorsForMode(definition, appearance) ?? definition.colors);
 }
 
-export function useHtmlRenderTheme() {
+/** The palette on screen, as hex where possible, for pages framed by the app. */
+export function useActiveThemeColors() {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   // Custom and published palettes can be edited in place, under an unchanged preference.
   const colors = useSyncExternalStore(
@@ -35,16 +36,20 @@ export function useHtmlRenderTheme() {
     () => resolveActiveThemeColors(theme, themeHalves, resolvedTheme),
     () => getStandardThemeColors(resolvedTheme),
   );
-  const sans = useClientSettings((settings) => settings.fontFamilySans);
-  const mono = useClientSettings((settings) => settings.fontFamilyCode);
-  return htmlRenderTheme(
-    Object.fromEntries(
+  return {
+    appearance: resolvedTheme,
+    colors: Object.fromEntries(
       Object.entries(colors).map(([role, color]) => [role, themeColorToHex(color) ?? color]),
     ) as typeof colors,
-    resolvedTheme,
-    {
-      sans: appearanceFontStack(sans, HTML_RENDER_DEFAULT_FONTS.sans),
-      mono: appearanceFontStack(mono, HTML_RENDER_DEFAULT_FONTS.mono),
-    },
-  );
+  };
+}
+
+export function useHtmlRenderTheme() {
+  const { appearance, colors } = useActiveThemeColors();
+  const sans = useClientSettings((settings) => settings.fontFamilySans);
+  const mono = useClientSettings((settings) => settings.fontFamilyCode);
+  return htmlRenderTheme(colors, appearance, {
+    sans: appearanceFontStack(sans, HTML_RENDER_DEFAULT_FONTS.sans),
+    mono: appearanceFontStack(mono, HTML_RENDER_DEFAULT_FONTS.mono),
+  });
 }

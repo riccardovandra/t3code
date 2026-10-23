@@ -1,30 +1,36 @@
+/*
+ * Theme variables. The colours are T3 Code's own: src/client/theme.ts sets
+ * each one from a T3 Code colour role (light, dark, or the palette T3 Code
+ * sends when it embeds this app), so only names live here.
+ *
+ *   --bg              page background (canvas)
+ *   --surface         cards, inputs, panels (surface)
+ *   --popover         menus, dialogs, floating panels (surfaceOverlay)
+ *   --sidebar         side rails and navigation (sidebar)
+ *   --text            body text (text)
+ *   --muted           secondary text (mutedForeground)
+ *   --text-subtle     placeholders and the faintest text (placeholder)
+ *   --border          dividers and outlines (border)
+ *   --input           form control borders (input)
+ *   --ring            focus outlines (focus)
+ *   --accent          primary actions and highlights (messageAction)
+ *   --accent-text     text on --accent (messageActionForeground)
+ *   --hover           hover background for rows, buttons and menu items (accentSurface)
+ *   --selected        background of the selected row or item (derived from --accent)
+ *   --chip-bg         chips, badges and tags (accentSurface)
+ *   --chip-text       text on --chip-bg (accentSurfaceForeground)
+ *   --code-bg         inline code, code blocks and quiet tints (accentSurface)
+ *   --danger          error text and destructive actions (errorForeground)
+ *   --danger-surface  error banners (errorSurface)
+ *
+ * Fonts follow T3 Code's interface stacks; headings keep --font-serif.
+ */
 :root {
-  --bg: #faf9f6;
-  --surface: #ffffff;
-  --text: #1f1e1c;
-  --muted: #6f6c66;
-  --border: #e6e3dc;
-  --accent: #b4532a;
-  --accent-text: #ffffff;
-  --code-bg: #f1efe9;
-  --danger: #b3261e;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --selected: color-mix(in srgb, var(--accent) 10%, transparent);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-serif: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b1a18;
-    --surface: #23221f;
-    --text: #ebe8e2;
-    --muted: #9c988f;
-    --border: #36342f;
-    --accent: #e08a5f;
-    --accent-text: #1b1a18;
-    --code-bg: #2b2a26;
-    --danger: #f2b8b5;
-  }
+  --font-mono:
+    ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 * {
