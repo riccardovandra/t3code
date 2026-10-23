@@ -162,7 +162,10 @@ import {
 } from "../../provider/claudeUsageLimits.ts";
 import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  DOCS_CLOUD_MCP_SERVER_NAME,
+  t3CodeOrchestrationInstructions,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   mcpToolPresentation,
@@ -1395,7 +1398,9 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append: [
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-          (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
+          (input.mcpServers === undefined
+            ? ""
+            : t3CodeOrchestrationInstructions(DOCS_CLOUD_MCP_SERVER_NAME in input.mcpServers)),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },

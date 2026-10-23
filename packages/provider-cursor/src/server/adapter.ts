@@ -54,7 +54,10 @@ import {
   rewriteCursorSkillMentions,
 } from "./skills.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { t3OrchestrationPromptForFirstRun } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  DOCS_CLOUD_MCP_SERVER_NAME,
+  t3OrchestrationPromptForFirstRun,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -2205,6 +2208,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             }),
             runOrdinal: turnInput.runOrdinal,
             hasT3Mcp: mcpServers !== undefined,
+            docsCloud: mcpServers !== undefined && DOCS_CLOUD_MCP_SERVER_NAME in mcpServers,
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),

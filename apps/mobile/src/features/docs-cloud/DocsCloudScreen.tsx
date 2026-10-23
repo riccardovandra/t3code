@@ -32,7 +32,7 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
   const startUrl = baseUrl === null ? null : docsCloudUrl(baseUrl, route.params.path ?? "/");
   const [page, setPage] = useState<{ readonly url: string; readonly title: string } | null>(null);
   const currentUrl = page?.url ?? startUrl;
-  const title = page?.title || route.params.title || "Docs Cloud";
+  const title = page?.title || route.params.title || "Docs";
 
   return (
     <View className="flex-1 bg-screen" style={{ paddingTop: insets.top }}>

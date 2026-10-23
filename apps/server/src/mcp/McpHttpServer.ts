@@ -72,8 +72,10 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import * as DocsCloudConnection from "../docs/DocsCloudConnection.ts";
 import * as DocsCloudImport from "../docs/DocsCloudImport.ts";
 import * as DocsHandlers from "./toolkits/docs/handlers.ts";
+import { hideLocalDocsToolsWhen } from "./toolkits/docs/visibility.ts";
 import { DocsToolkit } from "./toolkits/docs/tools.ts";
 import * as WorkspaceDocs from "../workspace/WorkspaceDocs.ts";
 import * as AiPmService from "../aiPm/AiPmService.ts";
@@ -1002,9 +1004,34 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 
-export const layerDocsToolkit = toolkitRegistration(DocsToolkit, DocsHandlers.layer).pipe(
+// Agents read the tool list once per session, so tell them when it changes.
+const layerDocsToolsListChanged = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const connection = yield* DocsCloudConnection.DocsCloudConnection;
+    yield* connection.changes.pipe(
+      Stream.runForEach(() =>
+        server.notifications["notifications/tools/list_changed"]({}).pipe(Effect.ignore),
+      ),
+      Effect.forkScoped,
+    );
+  }),
+).pipe(Layer.provide(McpServer.McpServer.layer));
+
+export const layerDocsToolkit = Layer.unwrap(
+  DocsCloudConnection.DocsCloudConnection.useSync((connection) =>
+    Layer.merge(
+      toolkitRegistration(
+        hideLocalDocsToolsWhen(DocsToolkit, connection.isConnected),
+        DocsHandlers.layer,
+      ),
+      layerDocsToolsListChanged,
+    ),
+  ),
+).pipe(
   Layer.provide(DocsCloudImport.layer),
   Layer.provide(WorkspaceDocs.layer),
+  Layer.provide(DocsCloudConnection.layer),
 );
 
 export const layerAipmToolkit = toolkitRegistration(AipmToolkit, AipmHandlers.layer).pipe(
