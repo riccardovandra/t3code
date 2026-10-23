@@ -59,6 +59,12 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.skillsUpdate]: AuthProvidersManageScope,
   [WS_METHODS.skillsRemove]: AuthProvidersManageScope,
   [WS_METHODS.skillsImport]: AuthProvidersManageScope,
+  // Restore puts a skill's scripts back where every agent can run them.
+  [WS_METHODS.skillsTrashRestore]: AuthProvidersManageScope,
+  [WS_METHODS.skillsTrashDelete]: AuthProvidersManageScope,
+  // Fork: a saved source is what the library offers to install from.
+  [WS_METHODS.skillSourcesUpsert]: AuthProvidersManageScope,
+  [WS_METHODS.skillSourcesRemove]: AuthProvidersManageScope,
 
   [WS_METHODS.scheduledTasksUpsert]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksSetEnabled]: AuthOrchestrationOperateScope,

@@ -8,6 +8,15 @@ import {
   AiPmSaveIdeaInput,
   AiPmSetIdeaStatusInput,
 } from "./aiPm.ts";
+import { SkillTrashEntryInput, SkillTrashError, SkillTrashListResult } from "./skillTrash.ts";
+import {
+  SkillLibraryListInput,
+  SkillLibraryListResult,
+  SkillSourceRemoveInput,
+  SkillSourcesError,
+  SkillSourcesListResult,
+  SkillSourceUpsertInput,
+} from "./skillLibrarySources.ts";
 import {
   DocCommentCreateInput,
   DocCommentDeleteInput,
@@ -583,6 +592,13 @@ export const WS_METHODS = {
   docsDeleteComment: "docs.deleteComment",
   docsCloudListImports: "docsCloud.listImports",
   docsCloudImport: "docsCloud.import",
+  skillsTrashList: "skillsTrash.list",
+  skillsTrashRestore: "skillsTrash.restore",
+  skillsTrashDelete: "skillsTrash.delete",
+  skillSourcesList: "skillSources.list",
+  skillSourcesUpsert: "skillSources.upsert",
+  skillSourcesRemove: "skillSources.remove",
+  skillLibraryList: "skillLibrary.list",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -1938,6 +1954,22 @@ const WsAiPmSetIdeaStatusRpc = Rpc.make(WS_METHODS.aiPmSetIdeaStatus, {
   error: Schema.Union([AiPmError, EnvironmentAuthorizationError]),
 });
 
+const WsSkillsTrashListRpc = Rpc.make(WS_METHODS.skillsTrashList, {
+  payload: Schema.Struct({}),
+  success: SkillTrashListResult,
+  error: Schema.Union([SkillTrashError, EnvironmentAuthorizationError]),
+});
+const WsSkillsTrashRestoreRpc = Rpc.make(WS_METHODS.skillsTrashRestore, {
+  payload: SkillTrashEntryInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([SkillTrashError, EnvironmentAuthorizationError]),
+});
+const WsSkillsTrashDeleteRpc = Rpc.make(WS_METHODS.skillsTrashDelete, {
+  payload: SkillTrashEntryInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([SkillTrashError, EnvironmentAuthorizationError]),
+});
+
 const WsDocsListCommentsRpc = Rpc.make(WS_METHODS.docsListComments, {
   payload: DocCommentsListInput,
   success: DocCommentsResult,
@@ -1978,6 +2010,27 @@ const WsDocsCloudImportRpc = Rpc.make(WS_METHODS.docsCloudImport, {
   payload: DocsCloudImportInput,
   success: DocsCloudImportResult,
   error: Schema.Union([DocsCloudError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillSourcesListRpc = Rpc.make(WS_METHODS.skillSourcesList, {
+  payload: Schema.Struct({}),
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillSourcesUpsertRpc = Rpc.make(WS_METHODS.skillSourcesUpsert, {
+  payload: SkillSourceUpsertInput,
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillSourcesRemoveRpc = Rpc.make(WS_METHODS.skillSourcesRemove, {
+  payload: SkillSourceRemoveInput,
+  success: SkillSourcesListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
+});
+const WsSkillLibraryListRpc = Rpc.make(WS_METHODS.skillLibraryList, {
+  payload: SkillLibraryListInput,
+  success: SkillLibraryListResult,
+  error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
 });
 
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
@@ -2127,6 +2180,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsDocsDeleteCommentRpc,
   WsDocsCloudListImportsRpc,
   WsDocsCloudImportRpc,
+  WsSkillsTrashListRpc,
+  WsSkillsTrashRestoreRpc,
+  WsSkillsTrashDeleteRpc,
+  WsSkillSourcesListRpc,
+  WsSkillSourcesUpsertRpc,
+  WsSkillSourcesRemoveRpc,
+  WsSkillLibraryListRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

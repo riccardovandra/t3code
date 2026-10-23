@@ -8,8 +8,9 @@
  * `$XDG_STATE_HOME/skills/.skill-lock.json`, and a project's
  * `skills-lock.json`) record where each install came from; this module reads
  * them to group skills by source and to update only what the CLI installed.
- * Remove takes any skill in the agents' own skill folders, through the CLI
- * when it installed the skill. Turning skills on or off stays in settings.
+ * Remove takes any skill in the agents' own skill folders into the trash
+ * (SkillTrash.ts), with its lock entry when the CLI installed it. Turning
+ * skills on or off stays in settings.
  *
  * @module SkillLibrary
  */
@@ -32,6 +33,9 @@ import {
   SkillLibraryError,
   type SkillPreviewInput,
   type SkillPreviewResult,
+  type SkillTrashEntryInput,
+  type SkillTrashError,
+  type SkillTrashListResult,
 } from "@t3tools/contracts";
 import {
   STANDARD_SKILL_FOLDER,
@@ -56,7 +60,9 @@ import { parse as parseYamlDocument } from "yaml";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as ForkSkillHomes from "./ForkSkillHomes.ts";
 import * as SkillsCli from "./SkillsCli.ts";
+import * as SkillTrash from "./SkillTrash.ts";
 
 export class SkillLibrary extends Context.Service<
   SkillLibrary,
@@ -75,10 +81,16 @@ export class SkillLibrary extends Context.Service<
       input: InstalledSkillInput,
     ) => Effect.Effect<SkillInstallResult, SkillLibraryError>;
     /**
-     * Remove a skill from the agents' skill folders at one level: through the
-     * CLI when it installed the skill, else each folder's copy of that name.
+     * Move a skill from the agents' skill folders at one level into the
+     * trash: with its lock entry when the CLI installed it, else each folder's
+     * copy of that name.
      */
     readonly remove: (input: InstalledSkillInput) => Effect.Effect<void, SkillLibraryError>;
+    readonly listTrash: Effect.Effect<SkillTrashListResult>;
+    readonly restoreFromTrash: (
+      input: SkillTrashEntryInput,
+    ) => Effect.Effect<void, SkillTrashError>;
+    readonly deleteFromTrash: (input: SkillTrashEntryInput) => Effect.Effect<void, SkillTrashError>;
     /** Pack the folder an agent reports for a skill, to copy it to another environment. */
     readonly exportSkill: (
       input: SkillExportInput,
@@ -199,12 +211,14 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const cli = yield* SkillsCli.SkillsCli;
+  const trash = yield* SkillTrash.SkillTrash;
   // Each CLI run rewrites a whole lock file without locking it, so two at once
   // can drop each other's entries. Installs are rare; run them one at a time.
   const changes = yield* Semaphore.make(1);
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const projectService = yield* ProjectService.ProjectService;
   const environment = yield* HostProcess.Environment;
+  const claudeHomes = yield* ForkSkillHomes.ForkSkillHomes;
 
   const home = environment.HOME?.trim() || environment.USERPROFILE?.trim() || "";
   const globalLockPath = environment.XDG_STATE_HOME?.trim()
@@ -337,14 +351,22 @@ const make = Effect.gen(function* () {
 
   const hasScripts = (files: ReadonlyArray<SkillFileEntry>) => files.some((file) => file.script);
 
+  /** Fork: `<home>/skills` of Claude instances with their own home. */
+  const extraClaudeFolders = claudeHomes.claudeSkillFolders(home);
+
   /** The agents' skill folders at a level, as written and after links. */
-  const skillRoots = (target: SkillInstallTarget) =>
-    Effect.forEach(
-      agentSkillFolderRoots(target.kind === "environment" ? "home" : "project").map((folder) =>
+  const skillRoots = Effect.fn("SkillLibrary.skillRoots")(function* (target: SkillInstallTarget) {
+    const folders = [
+      ...agentSkillFolderRoots(target.kind === "environment" ? "home" : "project").map((folder) =>
         path.join(targetPaths(target).root, folder),
       ),
-      (folder) => realPath(folder).pipe(Effect.map((real) => [folder, real])),
-    ).pipe(Effect.map((pairs) => [...new Set(pairs.flat())]));
+      ...(target.kind === "environment" ? yield* extraClaudeFolders : []),
+    ];
+    const pairs = yield* Effect.forEach(folders, (folder) =>
+      realPath(folder).pipe(Effect.map((real) => [folder, real])),
+    );
+    return [...new Set(pairs.flat())];
+  });
 
   const sha256 = (text: string) =>
     crypto.digest("SHA-256", new TextEncoder().encode(text)).pipe(
@@ -535,6 +557,16 @@ const make = Effect.gen(function* () {
         fullDepth,
         cwd: targetPaths(target).root,
       });
+      if (target.kind === "environment") {
+        yield* claudeHomes.linkInto(
+          yield* extraClaudeFolders,
+          results.flatMap((result) =>
+            result.status === "installed" && result.name !== undefined
+              ? [path.join(targetPaths(target).folder, skillFolderName(result.name))]
+              : [],
+          ),
+        );
+      }
       yield* refreshAgents(target);
       return outcomes(results);
     });
@@ -595,34 +627,49 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const locked = lockEntryFor(yield* readLock(targetPaths(target).lock), name);
       if (locked === undefined) return yield* removeUnlocked(target, name);
-      const { key } = locked;
+      // What `npx skills remove` deletes: the installed folder and each agent's copy or link,
+      // plus links in Claude instances' own homes, which `skillRoots` includes.
       const paths = targetPaths(target);
-      yield* cli
-        .remove({
-          skills: [key],
-          global: target.kind === "environment",
-          cwd: paths.root,
-        })
-        .pipe(
-          Effect.catchTags({
-            SkillsCliError: (error) => Effect.fail(cliFailed(error.message)),
-          }),
-        );
-      yield* refreshAgents(target);
-      // The CLI reports a skill it couldn't delete without failing, so check what's left.
-      const folderLeft = yield* fileSystem
-        .exists(path.join(paths.folder, skillFolderName(key)))
-        .pipe(Effect.orElseSucceed(() => false));
-      const lockLeft = (yield* readLock(paths.lock)).has(key);
-      if (folderLeft || lockLeft) {
-        return yield* cliFailed(
-          `Couldn't remove ${name}. Check the permissions of ${folderLeft ? paths.folder : paths.lock}.`,
-        );
-      }
+      const folder = skillFolderName(locked.key);
+      const roots = yield* skillRoots(target);
+      yield* moveToTrash(
+        target,
+        name,
+        [paths.folder, ...roots].map((root) => path.join(root, folder)),
+        { file: paths.lock, key: locked.key },
+      );
     });
 
+  const moveToTrash = (
+    target: SkillInstallTarget,
+    name: string,
+    paths: ReadonlyArray<string>,
+    lock?: SkillTrash.SkillTrashPutInput["lock"],
+  ) =>
+    trash.put({ name, target, paths, ...(lock === undefined ? {} : { lock }) }).pipe(
+      Effect.mapError((error) => cliFailed(error.message)),
+      Effect.andThen(refreshAgents(target)),
+    );
+
+  const listTrash: SkillLibrary["Service"]["listTrash"] = trash.list.pipe(
+    Effect.map((entries) => ({ entries })),
+  );
+
+  const restoreFromTrash: SkillLibrary["Service"]["restoreFromTrash"] = Effect.fn(
+    "SkillLibrary.restoreFromTrash",
+  )(function* (input) {
+    const entry = yield* trash.restore(input.id).pipe(changes.withPermits(1));
+    yield* refreshAgents(entry.target);
+  });
+
+  const deleteFromTrash: SkillLibrary["Service"]["deleteFromTrash"] = Effect.fn(
+    "SkillLibrary.deleteFromTrash",
+  )(function* (input) {
+    yield* trash.deletePermanently(input.id).pipe(changes.withPermits(1));
+  });
+
   /**
-   * A skill no lock records, put in place by hand or by another tool: delete
+   * A skill no lock records, put in place by hand or by another tool: trash
    * each folder an enabled agent reports for that name directly inside one of
    * the level's agent skill folders, links first. Only reported folders count,
    * so a name can't reach anything else.
@@ -655,29 +702,18 @@ const make = Effect.gen(function* () {
           message: `No skill named ${name} is in the agents' skill folders here.`,
         });
       }
-      // Links go first, so none is left pointing at a deleted folder.
-      const isLink = (folder: string) =>
-        fileSystem.readLink(folder).pipe(
-          Effect.as(true),
-          Effect.orElseSucceed(() => false),
-        );
-      const links = yield* Effect.filter([...reported], isLink);
-      const folders = [...links, ...[...reported].filter((folder) => !links.includes(folder))];
-      yield* Effect.forEach(
-        folders,
-        (folder) =>
-          fileSystem
-            .remove(folder, { recursive: true })
-            .pipe(
-              Effect.mapError(() =>
-                cliFailed(
-                  `Couldn't remove ${name}. Check the permissions of ${path.dirname(folder)}.`,
-                ),
-              ),
-            ),
-        { discard: true },
-      );
-      yield* refreshAgents(target);
+      // Links to it in agent folders no agent reported, such as another Claude
+      // home's, go too, so none is left pointing into the trash.
+      const reals = new Set(yield* Effect.forEach([...reported], realPath));
+      for (const root of roots) {
+        for (const folder of reals) {
+          const candidate = path.join(root, path.basename(folder));
+          if (!reported.has(candidate) && reals.has(yield* realPath(candidate))) {
+            reported.add(candidate);
+          }
+        }
+      }
+      yield* moveToTrash(target, name, [...reported]);
     });
 
   /**
@@ -842,6 +878,9 @@ const make = Effect.gen(function* () {
         ),
       );
       yield* write;
+      if (target.kind === "environment") {
+        yield* claudeHomes.linkInto(yield* extraClaudeFolders, [destination]);
+      }
       yield* refreshAgents(target);
     });
 
@@ -851,9 +890,16 @@ const make = Effect.gen(function* () {
     install,
     update,
     remove,
+    listTrash,
+    restoreFromTrash,
+    deleteFromTrash,
     exportSkill,
     importSkill,
   });
 });
 
-export const layer = Layer.effect(SkillLibrary, make).pipe(Layer.provide(SkillsCli.layer));
+export const layer = Layer.effect(SkillLibrary, make).pipe(
+  Layer.provide(SkillsCli.layer),
+  Layer.provide(SkillTrash.layer),
+  Layer.provide(ForkSkillHomes.layer),
+);

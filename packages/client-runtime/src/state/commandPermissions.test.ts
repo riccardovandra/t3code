@@ -10,6 +10,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
+  AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
@@ -111,6 +112,32 @@ describe("command permissions", () => {
         yield* cleanup.authorize(registry, env);
         registry.set(sessions(other), AsyncResult.success(grant(false)));
         expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
+      }),
+    ),
+  );
+
+  it.effect("requires the providers grant to save or remove skill sources", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        for (const tag of [WS_METHODS.skillSourcesUpsert, WS_METHODS.skillSourcesRemove]) {
+          const write = createCommandPermissions(runtime, tag);
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(write.permissionAtom(env))).toBe(false);
+          expect((yield* write.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+            "EnvironmentAuthorizationError",
+          );
+          registry.set(
+            sessions(env),
+            AsyncResult.success({
+              ...grant(true),
+              scopes: [AuthProvidersManageScope],
+              permissions: [AuthProvidersManageScope],
+            }),
+          );
+          expect(registry.get(write.permissionAtom(env))).toBe(true);
+          yield* write.authorize(registry, env);
+        }
       }),
     ),
   );
