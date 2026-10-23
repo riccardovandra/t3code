@@ -76,6 +76,22 @@ export const api = {
     request<{ members: Array<DocMember> }>("DELETE", `/api/docs/${docId}/members/${memberId}`),
   setDocStatus: (docId: string, status: DocStatus) =>
     request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { status, clientId }),
+  renameDoc: (docId: string, title: string) =>
+    request<{ doc: DocSummary }>("PATCH", `/api/docs/${docId}`, { title, clientId }),
+  /** Owner only; removes the doc, its tabs, comments, people and images. */
+  deleteDoc: (docId: string) =>
+    request<{ ok: true }>("DELETE", `/api/docs/${docId}?clientId=${encodeURIComponent(clientId)}`),
+  uploadImage: async (docId: string, file: File): Promise<string> => {
+    const response = await fetch(`/api/docs/${docId}/images`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    const data = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (!response.ok || !data.url) throw new ApiError(response.status, data);
+    return data.url;
+  },
   docThreads: (docId: string) =>
     request<{ threads: Array<DocThreadLink> }>("GET", `/api/docs/${docId}/threads`),
   linkThread: (docId: string, input: { environmentId: string; threadId: string; title: string }) =>
