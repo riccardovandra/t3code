@@ -20,21 +20,30 @@
  *
  * With `local-files`, the frame also opens the T3 project's markdown files:
  * `local-request` (frame -> parent), `local-response` and `local-files-changed`
- * (parent -> frame), defined in `@t3tools/shared/docsCloudLocal`.
+ * (parent -> frame), defined in `@t3tools/shared/docsCloudLocal`. With
+ * `local-comments` as well, those files take comments the same way, and the
+ * parent sends `local-comments-changed` when they may have changed.
  */
 import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
 import type { StructuredAnchor } from "./anchors.ts";
 import {
+  LOCAL_COMMENTS_CHANGED_TYPE,
   LOCAL_FILES_CHANGED_TYPE,
   LOCAL_RESPONSE_TYPE,
   parseLocalResponseMessage,
+  type LocalCommentsChangedMessage,
   type LocalFilesChangedMessage,
   type LocalRequestMessage,
   type LocalResponseMessage,
 } from "@t3tools/shared/docsCloudLocal";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
-export type EmbedFeature = "start-work" | "add-to-chat" | "send-to" | "local-files";
+export type EmbedFeature =
+  | "start-work"
+  | "add-to-chat"
+  | "send-to"
+  | "local-files"
+  | "local-comments";
 
 /** Apps T3 Code can copy a doc into. */
 export type EmbedSendTarget = "notion";
@@ -86,6 +95,7 @@ export type EmbedParentMessage =
     }
   | LocalResponseMessage
   | LocalFilesChangedMessage
+  | LocalCommentsChangedMessage
   | EmbedThemeMessage;
 
 export {
@@ -158,6 +168,7 @@ const FEATURES: ReadonlyArray<EmbedFeature> = [
   "add-to-chat",
   "send-to",
   "local-files",
+  "local-comments",
 ];
 
 type Fields = Record<string, unknown>;
@@ -260,6 +271,8 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
       return parseLocalResponseMessage(data);
     case LOCAL_FILES_CHANGED_TYPE:
       return { type: LOCAL_FILES_CHANGED_TYPE };
+    case LOCAL_COMMENTS_CHANGED_TYPE:
+      return { type: LOCAL_COMMENTS_CHANGED_TYPE };
     default:
       return null;
   }

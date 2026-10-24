@@ -25,8 +25,14 @@ export function CommentMargin(props: {
   readonly draftOpen: boolean;
   /** Offers "Add to chat" on the draft, for a T3 Code that can take it. */
   readonly offerAddToChat: boolean;
+  /** Offers "Send to agent" on the draft, for a source with a doc agent to ask. */
+  readonly offerSendToAgent?: boolean;
   readonly onStartComment: () => void;
-  readonly onSubmitDraft: (body: string, addToChat: boolean) => Promise<unknown>;
+  readonly onSubmitDraft: (
+    body: string,
+    addToChat: boolean,
+    sendToAgent: boolean,
+  ) => Promise<unknown>;
   readonly onCancelDraft: () => void;
   readonly onActivate: (id: string | null) => void;
   readonly handlersFor: (thread: CommentThread) => ThreadHandlers;
@@ -88,6 +94,7 @@ export function CommentMargin(props: {
           submitLabel="Comment"
           autoFocus
           offerAddToChat={props.offerAddToChat}
+          offerSendToAgent={!!props.offerSendToAgent}
           onSubmit={props.onSubmitDraft}
           onCancel={props.onCancelDraft}
         />

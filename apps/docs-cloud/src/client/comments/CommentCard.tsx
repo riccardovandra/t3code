@@ -43,25 +43,33 @@ function CommentEntry(props: { readonly comment: Comment; readonly onDelete?: ()
 
 /**
  * A textarea that submits on Cmd/Ctrl+Enter and cancels on Escape. With
- * `offerAddToChat`, an "Add to chat" box (ticked by default) rides along.
+ * `offerAddToChat`, an "Add to chat" box rides along; with `offerSendToAgent`,
+ * a "Send to agent" box. Send to agent is ticked by default and then Add to
+ * chat is not, so one comment does not reach two agents.
  */
 export function CommentComposer(props: {
   readonly placeholder: string;
   readonly submitLabel: string;
   readonly autoFocus?: boolean;
   readonly offerAddToChat?: boolean;
-  readonly onSubmit: (body: string, addToChat: boolean) => Promise<unknown>;
+  readonly offerSendToAgent?: boolean;
+  readonly onSubmit: (body: string, addToChat: boolean, sendToAgent: boolean) => Promise<unknown>;
   readonly onCancel?: () => void;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
-  const [addToChat, setAddToChat] = useState(true);
+  const [addToChat, setAddToChat] = useState(!props.offerSendToAgent);
+  const [sendToAgent, setSendToAgent] = useState(true);
   const submit = async () => {
     const text = body.trim();
     if (!text || busy) return;
     setBusy(true);
     try {
-      await props.onSubmit(text, !!props.offerAddToChat && addToChat);
+      await props.onSubmit(
+        text,
+        !!props.offerAddToChat && addToChat,
+        !!props.offerSendToAgent && sendToAgent,
+      );
       setBody("");
     } catch {
       // The page reports the failure; the text stays so it can be resent.
@@ -104,6 +112,16 @@ export function CommentComposer(props: {
           Add to chat
         </label>
       ) : null}
+      {props.offerSendToAgent ? (
+        <label className="comment-add-to-chat">
+          <input
+            type="checkbox"
+            checked={sendToAgent}
+            onChange={(event) => setSendToAgent(event.target.checked)}
+          />
+          Send to agent
+        </label>
+      ) : null}
       <div className="comment-actions">
         <button type="submit" className="button small" disabled={busy || !body.trim()}>
           {props.submitLabel}
@@ -120,7 +138,9 @@ export function CommentComposer(props: {
 
 /** Commenting actions; absent for readers who may only view the thread. */
 export interface ThreadHandlers {
-  readonly onReply?: (body: string) => Promise<unknown>;
+  readonly onReply?: (body: string, sendToAgent: boolean) => Promise<unknown>;
+  /** Offers "Send to agent" on replies, for a source with a doc agent to ask. */
+  readonly offerSendToAgent?: boolean;
   readonly onResolve?: () => void;
   readonly onDelete?: (commentId: string) => void;
   /** Present only when T3 Code can add the thread to its chat. */
@@ -164,7 +184,12 @@ export function CommentCard(
             />
           ))}
           {props.onReply ? (
-            <CommentComposer placeholder="Reply" submitLabel="Reply" onSubmit={props.onReply} />
+            <CommentComposer
+              placeholder="Reply"
+              submitLabel="Reply"
+              offerSendToAgent={!!props.offerSendToAgent}
+              onSubmit={(body, _addToChat, sendToAgent) => props.onReply!(body, sendToAgent)}
+            />
           ) : null}
           <div className="comment-actions">
             {props.onResolve ? (

@@ -5,7 +5,8 @@ import { authorLabel } from "./CommentCard.tsx";
 /** The doc's resolved threads, across tabs, with the way back (reopen) and out (delete). */
 export function ResolvedComments(props: {
   readonly threads: ReadonlyArray<CommentThread>;
-  readonly tabs: ReadonlyMap<string, Tab>;
+  /** Names the tab each thread is on; a page without tabs leaves it out. */
+  readonly tabs?: ReadonlyMap<string, Tab>;
   readonly onReopen: (commentId: string) => void;
   readonly onDelete: (commentId: string) => void;
 }) {
@@ -17,7 +18,8 @@ export function ResolvedComments(props: {
         {props.threads.map(({ root, replies }) => (
           <div key={root.id} className="resolved-item">
             <p className="muted resolved-where">
-              {props.tabs.get(root.tabId)?.title ?? "Tab"} · <q>{root.quote}</q>
+              {props.tabs ? `${props.tabs.get(root.tabId)?.title ?? "Tab"} · ` : null}
+              <q>{root.quote}</q>
             </p>
             <p className="comment-body">
               <strong>{authorLabel(root.author)}:</strong> {root.body}

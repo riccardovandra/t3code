@@ -89,6 +89,90 @@ describe("parseLocalResponseMessage and parseLocalResult", () => {
   });
 });
 
+describe("comment requests and results", () => {
+  const anchor = { quote: "ship Friday", prefix: "We ", suffix: "." };
+
+  it("accepts each comment kind with its fields", () => {
+    expect(
+      request({
+        kind: "comment.create",
+        path: "docs/a.md",
+        ...anchor,
+        body: "Why?",
+        sendToAgent: true,
+      })?.request,
+    ).toEqual({
+      kind: "comment.create",
+      path: "docs/a.md",
+      ...anchor,
+      body: "Why?",
+      sendToAgent: true,
+    });
+    const target = { path: "docs/a.md", commentId: "c1" };
+    expect(request({ kind: "comments.list", path: "docs/a.md" })?.request).toEqual({
+      kind: "comments.list",
+      path: "docs/a.md",
+    });
+    expect(
+      request({ kind: "comment.reply", ...target, body: "ok", sendToAgent: false })?.request,
+    ).toEqual({ kind: "comment.reply", ...target, body: "ok", sendToAgent: false });
+    expect(request({ kind: "comment.resolve", ...target, resolved: false })?.request).toEqual({
+      kind: "comment.resolve",
+      ...target,
+      resolved: false,
+    });
+    expect(request({ kind: "comment.delete", ...target })?.request).toEqual({
+      kind: "comment.delete",
+      ...target,
+    });
+    expect(request({ kind: "comment.chat", ...target })?.request).toEqual({
+      kind: "comment.chat",
+      ...target,
+    });
+  });
+
+  it("refuses comments the T3 server would refuse, and files outside docs", () => {
+    const create = { kind: "comment.create", path: "docs/a.md", ...anchor, sendToAgent: false };
+    expect(request({ ...create, body: "  " })).toBeNull();
+    expect(request({ ...create, body: "x".repeat(10_001) })).toBeNull();
+    expect(request({ ...create, body: "x", quote: "q".repeat(2_001) })).toBeNull();
+    expect(request({ ...create, body: "x", prefix: "p".repeat(201) })).toBeNull();
+    expect(request({ ...create, body: "x", path: "src/a.md" })).toBeNull();
+    expect(request({ kind: "comment.create", path: "docs/a.md", ...anchor, body: "x" })).toBeNull();
+    expect(request({ kind: "comment.resolve", path: "docs/a.md", commentId: "c1" })).toBeNull();
+    expect(request({ kind: "comment.delete", path: "docs/a.md", commentId: "" })).toBeNull();
+  });
+
+  it("keeps well-formed comments and drops malformed ones", () => {
+    const root = {
+      id: "c1",
+      parentId: null,
+      ...anchor,
+      body: "Why?",
+      author: "user",
+      resolvedAt: null,
+      createdAt: 1,
+    };
+    const reply = { ...root, id: "c2", parentId: "c1", author: "agent", quote: "", createdAt: 2 };
+    expect(
+      parseLocalResult("comment.reply", {
+        comments: [root, reply, { ...root, id: "c3", author: "someone" }, { ...root, id: 4 }],
+        canComment: true,
+        canSendToAgent: false,
+      }),
+    ).toEqual({ comments: [root, reply], canComment: true, canSendToAgent: false });
+    expect(parseLocalResult("comments.list", { comments: [root] })).toBeNull();
+    const state = { comments: [root], canComment: true, canSendToAgent: true };
+    expect(parseLocalResult("comment.create", state)).toBeNull();
+    expect(parseLocalResult("comment.create", { ...state, commentId: "c1" })).toEqual({
+      ...state,
+      commentId: "c1",
+    });
+    expect(parseLocalResult("comment.chat", { added: true })).toEqual({ added: true });
+    expect(parseLocalResult("comment.chat", {})).toBeNull();
+  });
+});
+
 describe("local routes", () => {
   it("round-trips a path through the app route", () => {
     const path = "docs/plans/Q3 roadmap.md";
