@@ -603,6 +603,7 @@ export const WS_METHODS = {
   skillSourcesUpsert: "skillSources.upsert",
   skillSourcesRemove: "skillSources.remove",
   skillLibraryList: "skillLibrary.list",
+  serverReleaseMirrorPublished: "server.releaseMirrorPublished",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -2042,6 +2043,13 @@ const WsSkillLibraryListRpc = Rpc.make(WS_METHODS.skillLibraryList, {
   error: Schema.Union([SkillSourcesError, EnvironmentAuthorizationError]),
 });
 
+// Fork: whether the server's release mirror has this version's archive for its platform.
+const WsServerReleaseMirrorPublishedRpc = Rpc.make(WS_METHODS.serverReleaseMirrorPublished, {
+  payload: Schema.Struct({ version: TrimmedNonEmptyString }),
+  success: Schema.Boolean,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   payload: Schema.Struct({}),
   success: McpServerListResult,
@@ -2197,6 +2205,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillSourcesUpsertRpc,
   WsSkillSourcesRemoveRpc,
   WsSkillLibraryListRpc,
+  WsServerReleaseMirrorPublishedRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

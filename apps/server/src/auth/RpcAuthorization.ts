@@ -166,6 +166,8 @@ export const RPC_REQUIRED_SCOPES = {
   // Fork: saved sources and the library previews them like skills.preview.
   [WS_METHODS.skillSourcesList]: AuthFilesystemReadScope,
   [WS_METHODS.skillLibraryList]: AuthFilesystemReadScope,
+  // Fork: a yes/no about the server's own update mirror, as public as its version.
+  [WS_METHODS.serverReleaseMirrorPublished]: AuthOrchestrationReadScope,
   // Listing a server's tools runs its command with its stored secrets, which
   // only a connection allowed to add that command may do. A read the client
   // caches as a query, so the client checks the scope itself (no guard entry).

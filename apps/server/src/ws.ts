@@ -182,6 +182,7 @@ import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import { makeReleaseMirrorCheck } from "./cloud/releaseMirror.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -595,6 +596,7 @@ const FORK_RPC_METHODS = [
   WS_METHODS.skillSourcesUpsert,
   WS_METHODS.skillSourcesRemove,
   WS_METHODS.skillLibraryList,
+  WS_METHODS.serverReleaseMirrorPublished,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1331,6 +1333,14 @@ const layerSkillSourcesRpc = Layer.unwrap(
       ),
     );
   }),
+);
+
+const layerReleaseMirrorRpc = Layer.unwrap(
+  Effect.map(makeReleaseMirrorCheck, (published) =>
+    ServerWsRpcGroup.toLayerHandler(WS_METHODS.serverReleaseMirrorPublished, ({ version }) =>
+      published(version),
+    ),
+  ),
 );
 
 const layerAiPmDocsRpc = Layer.unwrap(
@@ -3467,6 +3477,7 @@ export const layer = Layer.unwrap(
               Layer.merge(layerAiPmDocsRpc),
               Layer.merge(layerSkillTrashRpc),
               Layer.merge(layerSkillSourcesRpc),
+              Layer.merge(layerReleaseMirrorRpc),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

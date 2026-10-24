@@ -1307,6 +1307,14 @@ export function createServerEnvironmentAtoms<R, E>(
       staleTimeMs: 10 * 60_000,
       idleTtlMs: 30 * 60_000,
     }),
+    // Fork: release-mirror servers answer for their own mirror, which publishes nothing to npm.
+    releaseMirrorPublished: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:release-mirror-published",
+      tag: WS_METHODS.serverReleaseMirrorPublished,
+      staleTimeMs: 5 * 60_000,
+      refreshIntervalMs: 5 * 60_000,
+      isFinal: (published) => published,
+    }),
     refreshSkillLibrary: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skill-library:refresh",
       tag: WS_METHODS.skillLibraryList,

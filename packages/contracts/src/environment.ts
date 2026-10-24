@@ -133,6 +133,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Manual commands must update this install, not the host's default global prefix. */
   serverInstallation: ForwardCompatibleOptional(ServerInstallation),
   serverSelfUpdateProgress: Schema.optionalKey(Schema.Boolean),
+  /** Fork: updates download from a `T3CODE_RELEASE_BASE_URL` mirror, which publishes nothing to
+      npm, so clients ask the server (server.releaseMirrorPublished) instead of npm whether a
+      version is ready to install. */
+  serverReleaseMirror: Schema.optionalKey(Schema.Boolean),
   serverUpdateThreadContinuation: Schema.optionalKey(Schema.Boolean),
   /**
    * Clients skip seeding a Live Activity when
