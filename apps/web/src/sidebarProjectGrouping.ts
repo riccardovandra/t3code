@@ -84,6 +84,31 @@ export function resolveSidebarProjectScopeKey(input: {
   return group?.projectKey ?? (input.canClearMissingScope ? null : input.key);
 }
 
+// With the sidebar filtered to one project, New starts a thread there instead
+// of asking. The context project wins when it belongs to the filtered group so
+// a grouped project keeps the environment the user is already working in.
+export function resolveScopedNewThreadProjectRef(input: {
+  readonly groups: ReadonlyArray<
+    Pick<SidebarProjectSnapshot, "projectKey" | "environmentId" | "id" | "memberProjectRefs">
+  >;
+  readonly scopeKey: string | null;
+  readonly contextProjectRef: ScopedProjectRef | null;
+}): ScopedProjectRef | null {
+  if (input.scopeKey === null) return null;
+  const group = input.groups.find((candidate) => candidate.projectKey === input.scopeKey);
+  if (!group) return null;
+  const context = input.contextProjectRef;
+  if (
+    context &&
+    group.memberProjectRefs.some(
+      (ref) => ref.environmentId === context.environmentId && ref.projectId === context.projectId,
+    )
+  ) {
+    return context;
+  }
+  return { environmentId: group.environmentId, projectId: group.id };
+}
+
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
