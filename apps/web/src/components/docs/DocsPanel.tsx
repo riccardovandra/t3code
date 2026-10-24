@@ -49,8 +49,13 @@ import {
   type DocsCloudTarget,
   useDocsCloudImports,
 } from "./DocsCloudImport";
-import { DOCS_ROOT, docTitleFromPath, isMarkdownPath, nextDocPath } from "@t3tools/shared/docPaths";
-import { unsupportedMarkdownReason } from "./docPaths";
+import {
+  DOCS_ROOT,
+  docTitleFromPath,
+  isMarkdownPath,
+  nextDocPath,
+  unsupportedMarkdownReason,
+} from "@t3tools/shared/docPaths";
 
 const DRAFT_COMMENT_ID = "draft";
 /** Below this panel width comments collapse to margin icons, as Claude Docs does in a narrow pane. */

@@ -8,7 +8,7 @@ import {
   locateDocAnchor,
   resolveDocAnchor,
 } from "./docAnchors";
-import { unsupportedMarkdownReason } from "./docPaths";
+import { unsupportedMarkdownReason } from "@t3tools/shared/docPaths";
 
 const schema = getSchema([StarterKit]);
 const doc = (...paragraphs: string[]) =>

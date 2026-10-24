@@ -81,6 +81,7 @@ export function startEmbedBridge(): void {
       path,
       docId: route.name === "doc" ? route.docId : null,
       tabId: route.name === "doc" ? route.tabId : null,
+      localPath: route.name === "local" ? route.path : null,
     });
   };
 

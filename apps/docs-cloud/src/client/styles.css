@@ -316,6 +316,27 @@ input:focus {
   white-space: nowrap;
 }
 
+/* A project file's header: its title, then its path in the checkout. */
+.local-doc-title {
+  font-size: 1.05rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.local-doc-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+.local-doc-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .doc-title-rename {
   font-size: 1.05rem;
   width: min(32rem, 60vw);
