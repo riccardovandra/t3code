@@ -274,7 +274,7 @@ describe("MCP tools", () => {
   });
 
   it("builds URLs from the public origin, not the request URL", async () => {
-    const mcp = await makeMcpHarness("https://docs.upliftedconsulting.com");
+    const mcp = await makeMcpHarness("https://docs.example.com");
     const { doc, tab } = await mcp.seedDoc();
     expect(doc.url).toBe(`${ORIGIN}/d/${doc.docId}/${tab.tabId}`);
   });

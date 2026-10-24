@@ -16,11 +16,7 @@ import {
   type McpServerPreset,
   type McpServerStatusTone,
 } from "@t3tools/client-runtime/mcp-servers";
-import {
-  DEFAULT_DOCS_CLOUD_URL,
-  docsCloudConfig,
-  docsCloudUpsertInput,
-} from "@t3tools/client-runtime/docs-cloud";
+import { docsCloudConfig, docsCloudUpsertInput } from "@t3tools/client-runtime/docs-cloud";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -223,7 +219,7 @@ function DocsCloudSettings({
     label: "docs cloud remove",
     reportFailure: false,
   });
-  const shownUrl = baseUrl ?? config?.baseUrl ?? DEFAULT_DOCS_CLOUD_URL;
+  const shownUrl = baseUrl ?? config?.baseUrl ?? "";
 
   const save = async () => {
     const built = docsCloudUpsertInput({ baseUrl: shownUrl, token, existing: config });
@@ -285,6 +281,7 @@ function DocsCloudSettings({
             <Input
               id="docs-cloud-url"
               autoComplete="off"
+              placeholder="https://docs.example.com"
               value={shownUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
             />

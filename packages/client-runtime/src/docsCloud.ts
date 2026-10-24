@@ -7,11 +7,10 @@ import { compactDynamicToolOutput, type DocsCloudReference } from "@t3tools/shar
  * turns Docs Cloud off everywhere.
  */
 const DOCS_CLOUD_SERVER_NAME = "docs-cloud";
-export const DEFAULT_DOCS_CLOUD_URL = "https://docs.upliftedconsulting.com";
 
 export interface DocsCloudConfig {
   readonly serverId: McpServerId;
-  /** The app's origin, such as `https://docs.upliftedconsulting.com`. */
+  /** The app's origin, such as `https://docs.example.com`. */
   readonly baseUrl: string;
   readonly enabled: boolean;
 }
