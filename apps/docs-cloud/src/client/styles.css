@@ -269,6 +269,15 @@ input:focus {
   color: var(--text);
 }
 
+/* Back to the Uplifted Hub, before the doc header and the home title. */
+.hub-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
 .settings-bar {
   display: flex;
   align-items: center;
