@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vp build && wrangler d1 migrations apply DB --local && wrangler dev",
     "build": "vp build",
-    "deploy": "vp build && wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy": "vp build && node scripts/deploy.ts",
     "test": "vp test run --config ../../vite.config.ts --dir .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json"
   },
