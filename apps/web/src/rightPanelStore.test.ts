@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { useClosedViewStore } from "./closedViewStore";
 import { reopenClosedView } from "./reopenClosedView";
 import {
-  docsSurfaceSource,
   migratePersistedRightPanelState,
   pullRequestSurface,
   pullRequestSurfaceId,
@@ -62,75 +61,51 @@ describe("rightPanelStore", () => {
     ).toEqual(state);
   });
 
-  it("keeps the open doc across a persisted reload and returns to the list", () => {
+  it("keeps the open Docs Cloud path across a persisted reload", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "docs");
-    store.selectDoc(refA, "docs/plan.md");
+    store.selectDocsCloud(refA, "/local/docs/plan.md");
     const persisted = useRightPanelStore.persist.getOptions().partialize!(
       useRightPanelStore.getState(),
     );
     expect(
       selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA)
         .surfaces,
-    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md", source: "files" }]);
-    store.selectDoc(refA, undefined);
-    expect(
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
-    ).toEqual([{ id: "docs", kind: "docs", source: "files" }]);
-  });
-
-  it("switches between project files and Docs Cloud, keeping each place", () => {
-    const store = useRightPanelStore.getState();
+    ).toEqual([{ id: "docs", kind: "docs", cloudPath: "/local/docs/plan.md" }]);
     store.open(refA, "docs");
-    store.selectDoc(refA, "docs/plan.md");
-    store.selectDocsCloud(refA, "/d/doc-1/tab-1");
-    const surfaces = () =>
-      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces;
-    expect(surfaces()).toEqual([
-      {
-        id: "docs",
-        kind: "docs",
-        docPath: "docs/plan.md",
-        source: "cloud",
-        cloudPath: "/d/doc-1/tab-1",
-      },
-    ]);
-    const persisted = useRightPanelStore.persist.getOptions().partialize!(
-      useRightPanelStore.getState(),
-    );
-    expect(
-      selectThreadRightPanelState(migratePersistedRightPanelState(persisted).byThreadKey, refA)
-        .surfaces,
-    ).toEqual(surfaces());
-    store.selectDoc(refA, "docs/plan.md");
-    expect(surfaces()).toMatchObject([{ source: "files", cloudPath: "/d/doc-1/tab-1" }]);
     store.selectDocsCloud(refA, undefined);
-    expect(surfaces()).toEqual([
-      { id: "docs", kind: "docs", docPath: "docs/plan.md", source: "cloud" },
-    ]);
-  });
-
-  it("shows Docs Cloud by default only when it is configured", () => {
-    const docs = { id: "docs", kind: "docs" } as const;
-    const pinned = { ...docs, source: "files" } as const;
-    expect(docsSurfaceSource(docs, { cloudConfigured: true, hasFiles: true })).toBe("cloud");
-    expect(docsSurfaceSource(pinned, { cloudConfigured: true, hasFiles: true })).toBe("files");
-    expect(docsSurfaceSource(pinned, { cloudConfigured: true, hasFiles: false })).toBe("cloud");
-    expect(docsSurfaceSource(docs, { cloudConfigured: false, hasFiles: true })).toBe("files");
-    expect(
-      docsSurfaceSource({ ...docs, source: "cloud" }, { cloudConfigured: false, hasFiles: true }),
-    ).toBe("files");
-    expect(docsSurfaceSource(docs, { cloudConfigured: false, hasFiles: false })).toBeNull();
-  });
-
-  it("returns an open Docs tab to the default source from a Docs entry point", () => {
-    const store = useRightPanelStore.getState();
-    store.open(refA, "docs");
-    store.selectDoc(refA, "docs/plan.md");
-    store.open(refA, "docs");
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
-    ).toEqual([{ id: "docs", kind: "docs", docPath: "docs/plan.md" }]);
+    ).toEqual([{ id: "docs", kind: "docs" }]);
+  });
+
+  it("moves Docs tabs saved by the old file panel into Docs Cloud", () => {
+    const migrate = (surface: Record<string, unknown>) =>
+      migratePersistedRightPanelState({
+        byThreadKey: { "env-1:thread-A": { surfaces: [{ id: "docs", kind: "docs", ...surface }] } },
+      }).byThreadKey["env-1:thread-A"]?.surfaces;
+    expect(migrate({ source: "files", docPath: "docs/plans/Q3 roadmap.md" })).toEqual([
+      { id: "docs", kind: "docs", cloudPath: "/local/docs/plans/Q3%20roadmap.md" },
+    ]);
+    expect(
+      migrate({ source: "files", docPath: "docs/plan.md", cloudPath: "/d/doc-1/tab-1" }),
+    ).toEqual([{ id: "docs", kind: "docs", cloudPath: "/local/docs/plan.md" }]);
+    // The old file list is Docs Cloud's home, which lists the project's files.
+    expect(migrate({ source: "files", cloudPath: "/d/doc-1/tab-1" })).toEqual([
+      { id: "docs", kind: "docs" },
+    ]);
+    expect(migrate({ docPath: "docs/plan.md" })).toEqual([
+      { id: "docs", kind: "docs", cloudPath: "/local/docs/plan.md" },
+    ]);
+    expect(
+      migrate({ source: "cloud", docPath: "docs/plan.md", cloudPath: "/d/doc-1/tab-1" }),
+    ).toEqual([{ id: "docs", kind: "docs", cloudPath: "/d/doc-1/tab-1" }]);
+    expect(migrate({ docPath: "docs/plan.md", cloudPath: "/d/doc-1/tab-1" })).toEqual([
+      { id: "docs", kind: "docs", cloudPath: "/d/doc-1/tab-1" },
+    ]);
+    expect(migrate({ source: "files", docPath: "src/index.ts" })).toEqual([
+      { id: "docs", kind: "docs" },
+    ]);
   });
 
   it("reopens a closed Docs Cloud tab on Docs Cloud", async () => {
@@ -146,7 +121,7 @@ describe("rightPanelStore", () => {
     });
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
-    ).toEqual([{ id: "docs", kind: "docs", source: "cloud", cloudPath: "/d/doc-1/tab-1" }]);
+    ).toEqual([{ id: "docs", kind: "docs", cloudPath: "/d/doc-1/tab-1" }]);
   });
 
   it("remembers a closed AI PM surface for reopening", () => {

@@ -118,21 +118,6 @@ const handlers = {
       };
     }),
   ),
-  docs_create: McpToolAccess.actsAsCaller((input) =>
-    Effect.gen(function* () {
-      const { cwd } = yield* callerCheckout("docs_create");
-      const files = yield* WorkspaceDocs.WorkspaceDocs;
-      const doc = yield* files
-        .create({
-          cwd,
-          folder: input.folder ?? DOCS_ROOT,
-          title: input.title,
-          markdown: input.markdown,
-        })
-        .pipe(Effect.mapError(toFileFailure));
-      return { doc: { ...doc, excerpt: docExcerpt(input.markdown ?? "") } };
-    }),
-  ),
   docs_open: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const { cwd } = yield* callerCheckout("docs_open");

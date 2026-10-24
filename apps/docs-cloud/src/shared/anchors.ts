@@ -2,7 +2,6 @@
 // tab's visible text (no markdown syntax, one newline between blocks). The
 // editor builds that text from its document; the Worker derives it from the
 // tab's markdown, so both sides can locate the same anchor.
-// Adapted from apps/web/src/components/docs/docAnchors.ts.
 //
 // Blocks with their own structure (rich tables, diagrams) use a structured
 // anchor instead, naming the block and the part by id, so a comment follows

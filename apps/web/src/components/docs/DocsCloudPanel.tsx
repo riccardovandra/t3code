@@ -13,7 +13,7 @@ import {
 } from "@t3tools/shared/docsCloudLocal";
 import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
-import { ExternalLinkIcon, FolderIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -79,7 +79,6 @@ export function DocsCloudPanel(props: {
   /** The thread's checkout; with a project, Docs Cloud can open its files under docs/. */
   readonly workspaceRoot: string | undefined;
   readonly path: string | undefined;
-  readonly onShowFiles: (() => void) | null;
 }) {
   const { baseUrl, threadRef, path } = props;
   const origin = new URL(baseUrl).origin;
@@ -305,12 +304,6 @@ export function DocsCloudPanel(props: {
     <section aria-label="Docs Cloud" className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-border px-3 py-1.5">
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">Docs Cloud</span>
-        {props.onShowFiles ? (
-          <Button size="xs" variant="ghost-muted" onClick={props.onShowFiles}>
-            <FolderIcon />
-            Project files
-          </Button>
-        ) : null}
         {/* A project file only opens inside T3 Code, which serves it. */}
         {localDocPathFromAppPath(path ?? "/") === null ? (
           <Button

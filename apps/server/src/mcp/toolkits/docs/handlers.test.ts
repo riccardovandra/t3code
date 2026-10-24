@@ -131,38 +131,7 @@ const makeCheckout = Effect.fn("makeCheckout")(function* (files: Record<string, 
   return root;
 });
 
-const readText = Effect.fn("readText")(function* (root: string, relativePath: string) {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  return yield* fileSystem.readFileString(path.join(root, relativePath));
-});
-
 describe("docs toolkit", () => {
-  it.effect("creates a doc named after its title without overwriting an existing one", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const checkout = yield* makeCheckout({ "docs/launch-plan.md": "# Original\n" });
-
-        const created = yield* callTool(checkout, "docs_create", { title: "Launch Plan" });
-        expect(created).toEqual({
-          doc: { docPath: "docs/launch-plan-2.md", title: "Launch Plan", excerpt: "" },
-        });
-        expect(yield* readText(checkout, "docs/launch-plan-2.md")).toBe("# Launch Plan\n");
-        expect(yield* readText(checkout, "docs/launch-plan.md")).toBe("# Original\n");
-
-        const withBody = yield* callTool(checkout, "docs_create", {
-          title: "Notes",
-          markdown: "No heading here.\n",
-          folder: "docs/meetings",
-        });
-        expect(withBody).toEqual({
-          doc: { docPath: "docs/meetings/notes.md", title: "Notes", excerpt: "No heading here." },
-        });
-        expect(yield* readText(checkout, "docs/meetings/notes.md")).toBe("No heading here.\n");
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  );
-
   it.effect("reads a doc with only its open comments", () =>
     Effect.scoped(
       Effect.gen(function* () {

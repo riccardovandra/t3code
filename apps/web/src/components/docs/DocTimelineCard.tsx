@@ -3,23 +3,10 @@ import { docsCloudPath } from "@t3tools/client-runtime/docs-cloud";
 import type { DocReference, DocsCloudReference } from "@t3tools/shared/toolOutput";
 import { CloudIcon, FileTextIcon, Maximize2Icon, PanelRightIcon } from "lucide-react";
 
-import { useRightPanelStore } from "~/rightPanelStore";
-
 import { Button } from "../ui/button";
-import { openDocsCloudInPanel, useDocsCloudBaseUrl } from "./docsCloud";
+import { openDocsCloudInPanel, openLocalDocInPanel, useDocsCloudBaseUrl } from "./docsCloud";
 
-export function openDocInPanel(
-  threadRef: ScopedThreadRef,
-  docPath: string,
-  options: { readonly maximized: boolean },
-) {
-  const panels = useRightPanelStore.getState();
-  panels.open(threadRef, "docs");
-  panels.selectDoc(threadRef, docPath);
-  if (options.maximized) panels.setMaximized(threadRef, true);
-}
-
-/** The doc an agent created or opened, shown in the conversation like a Claude Docs card. */
+/** A project file an agent created or opened, shown in the conversation like a Claude Docs card. */
 export function DocTimelineCard(props: {
   readonly threadRef: ScopedThreadRef | null;
   readonly doc: DocReference;
@@ -42,7 +29,7 @@ export function DocTimelineCard(props: {
             <Button
               size="xs"
               variant="outline"
-              onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: false })}
+              onClick={() => openLocalDocInPanel(threadRef, doc.docPath, { maximized: false })}
             >
               <PanelRightIcon />
               Open
@@ -51,7 +38,7 @@ export function DocTimelineCard(props: {
               size="icon-xs"
               variant="ghost-muted"
               aria-label="Open full screen"
-              onClick={() => openDocInPanel(threadRef, doc.docPath, { maximized: true })}
+              onClick={() => openLocalDocInPanel(threadRef, doc.docPath, { maximized: true })}
             >
               <Maximize2Icon />
             </Button>

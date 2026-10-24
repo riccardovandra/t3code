@@ -80,27 +80,6 @@ const DocsReadTool = Tool.make("docs_read", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
-const DocsCreateTool = Tool.make("docs_create", {
-  ...shared,
-  description:
-    "Create a markdown doc in the project and open it in the user's Docs panel, where they can read, edit and comment on it. Use this when the user asks for a document, plan, spec, report or notes to keep, instead of pasting it into chat. The file is named after the title and never overwrites an existing doc. Without markdown, the doc starts as just its title heading.",
-  parameters: Schema.Struct({
-    title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
-    markdown: Schema.optional(
-      Schema.String.check(Schema.isMaxLength(1_000_000)).annotate({
-        description: "The doc's full markdown, usually starting with a `# Title` heading.",
-      }),
-    ),
-    folder: Schema.optional(Folder),
-  }),
-  success: Schema.Struct({ doc: OpenedDoc }),
-})
-  .annotate(Tool.Title, "Create a doc")
-  .annotate(Tool.Readonly, false)
-  .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
-
 const DocsOpenTool = Tool.make("docs_open", {
   ...shared,
   description:
@@ -229,7 +208,6 @@ const DocsCloudImportTool = Tool.make("docs_cloud_import", {
 export const DocsToolkit = Toolkit.make(
   DocsListTool,
   DocsReadTool,
-  DocsCreateTool,
   DocsOpenTool,
   DocsListCommentsTool,
   DocsCommentCreateTool,

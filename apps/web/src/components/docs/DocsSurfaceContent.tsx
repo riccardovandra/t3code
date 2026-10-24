@@ -1,21 +1,21 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
-import { CloudIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 
 import type { DraftId } from "~/composerDraftStore";
-import { docsSurfaceSource, type RightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
+import type { RightPanelSurface } from "~/rightPanelStore";
+import { serverEnvironment } from "~/state/server";
 
 import { Button } from "../ui/button";
-import { useDocsCloudBaseUrl } from "./docsCloud";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { useDocsCloudSetup } from "./docsCloud";
 
-const DocsPanel = lazy(() =>
-  import("./DocsPanel").then((module) => ({ default: module.DocsPanel })),
-);
 const DocsCloudPanel = lazy(() =>
   import("./DocsCloudPanel").then((module) => ({ default: module.DocsCloudPanel })),
 );
 
-/** Docs Cloud when this environment has it set up, otherwise the project's markdown files. */
+/** Docs Cloud, with the project's markdown files inside it, or how to connect it. */
 export function DocsSurfaceContent(props: {
   readonly surface: Extract<RightPanelSurface, { kind: "docs" }>;
   readonly environmentId: EnvironmentId;
@@ -24,61 +24,54 @@ export function DocsSurfaceContent(props: {
   readonly projectId: ProjectId | null;
   readonly workspaceRoot: string | undefined;
 }) {
-  const { surface, threadRef } = props;
-  const baseUrl = useDocsCloudBaseUrl(props.environmentId);
-  const hasFiles = props.projectId !== null && props.workspaceRoot !== undefined;
-  const panels = useRightPanelStore.getState;
-
-  const source = docsSurfaceSource(surface, { cloudConfigured: baseUrl !== null, hasFiles });
-
-  if (source === "cloud" && baseUrl !== null) {
-    return (
-      <Suspense fallback={null}>
-        <DocsCloudPanel
-          key={baseUrl}
-          baseUrl={baseUrl}
-          threadRef={threadRef}
-          composerDraftTarget={props.composerDraftTarget}
-          projectId={props.projectId}
-          workspaceRoot={props.workspaceRoot}
-          path={surface.cloudPath}
-          onShowFiles={hasFiles ? () => panels().selectDoc(threadRef, surface.docPath) : null}
-        />
-      </Suspense>
-    );
-  }
-  if (props.projectId === null || props.workspaceRoot === undefined) return null;
+  const baseUrl = useDocsCloudSetup(props.environmentId);
+  if (baseUrl === undefined) return null;
+  if (baseUrl === null) return <ConnectDocsCloud environmentId={props.environmentId} />;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {baseUrl !== null ? (
-        <div className="flex items-center gap-1 border-b border-border px-3 py-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            Project files
-          </span>
+    <Suspense fallback={null}>
+      <DocsCloudPanel
+        key={baseUrl}
+        baseUrl={baseUrl}
+        threadRef={props.threadRef}
+        composerDraftTarget={props.composerDraftTarget}
+        projectId={props.projectId}
+        workspaceRoot={props.workspaceRoot}
+        path={props.surface.cloudPath}
+      />
+    </Suspense>
+  );
+}
+
+function ConnectDocsCloud(props: { readonly environmentId: EnvironmentId }) {
+  const canConnect = useAtomValue(
+    serverEnvironment.upsertMcpServer.permissionAtom(props.environmentId),
+  );
+  return (
+    <Empty className="flex-1">
+      <EmptyHeader>
+        <EmptyTitle>Connect Docs Cloud</EmptyTitle>
+        <EmptyDescription>
+          {canConnect
+            ? "Docs opens in Docs Cloud, with this project's markdown files beside your docs. Connect it to read, edit and comment on them here."
+            : "Docs opens in Docs Cloud, which this environment has not connected. Ask its owner to connect it in Settings."}
+        </EmptyDescription>
+      </EmptyHeader>
+      {canConnect ? (
+        <EmptyContent>
           <Button
-            size="xs"
-            variant="ghost-muted"
-            onClick={() => panels().selectDocsCloud(threadRef, surface.cloudPath)}
+            size="sm"
+            render={
+              <Link
+                to="/settings/mcp-servers"
+                search={{ machine: props.environmentId }}
+                hash="docs-cloud"
+              />
+            }
           >
-            <CloudIcon />
-            Docs Cloud
+            Open MCP servers settings
           </Button>
-        </div>
+        </EmptyContent>
       ) : null}
-      <Suspense fallback={null}>
-        <DocsPanel
-          key={`${props.environmentId}:${props.workspaceRoot}`}
-          environmentId={props.environmentId}
-          projectId={props.projectId}
-          cwd={props.workspaceRoot}
-          threadRef={threadRef}
-          docPath={surface.docPath}
-          onSelectDoc={(docPath) => panels().selectDoc(threadRef, docPath)}
-          docsCloud={
-            baseUrl !== null ? { open: (path) => panels().selectDocsCloud(threadRef, path) } : null
-          }
-        />
-      </Suspense>
-    </div>
+    </Empty>
   );
 }

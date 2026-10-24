@@ -7,18 +7,24 @@ export const DOCS_CLOUD_MCP_SERVER_NAME = "docs-cloud";
 export const hasDocsCloud = (servers: ReadonlyArray<{ readonly name: string }>): boolean =>
   servers.some((server) => server.name === DOCS_CLOUD_MCP_SERVER_NAME);
 
-// The environment hides the local `docs_*` tools while Docs Cloud is connected,
-// so each session describes only the docs tools it actually has. Adapters pick
-// the section from the session's hub servers, not the environment's connection:
-// a read-only session gets no hub servers yet still has `docs_*` hidden, so it
-// has neither set of tools and neither section would be accurate for it.
-const FILE_DOCS_SECTION = `### Docs
+// Adapters pick the Docs section from the session's own hub servers, since
+// those decide whether it has Docs Cloud's tools: a read-only session gets no
+// hub servers even where the environment connects Docs Cloud. The `docs_*`
+// tools for the project's files are listed in every session, so both sections
+// describe them the same way.
+const PROJECT_FILES_PARAGRAPH = `Markdown files under the project's \`docs/\` folder are project files: the user also sees them in the Docs panel, inside Docs Cloud, and comments on them there. \`docs_list\` lists them with their open comment counts, \`docs_read\` returns one with its open comments, \`docs_list_comments\` lists comments across files, and \`docs_open\` shows a file in the Docs panel. Change a file with your file tools. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread with \`docs_comment_resolve\` only when asked or when you started it. \`docs_comment_create\` leaves a comment anchored to a short quote of the file's visible text, without markdown syntax.`;
 
-Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.`;
+const NO_CLOUD_DOCS_SECTION = `### Docs
+
+Docs Cloud's tools are not available in this session. When the user asks for a document, plan, spec, report, or notes to keep, write it as a markdown file under \`docs/\` with your file tools, then show it with \`docs_open\`; if this session cannot write files, put it in your reply instead. The user reads these files in the Docs panel when Docs Cloud is connected in Settings → MCP servers.
+
+${PROJECT_FILES_PARAGRAPH}`;
 
 const CLOUD_DOCS_SECTION = `### Docs
 
-Docs live in Docs Cloud, which the user reads, edits, and comments on in T3 Code's Docs panel. Use the \`docs-cloud\` MCP server's tools (such as \`create_doc\`, \`create_tab\`, \`edit_tab\`, \`write_tab\`, often prefixed \`mcp__docs-cloud__\` or \`docs-cloud.\`). When the user asks for a document, plan, spec, report, or notes to keep, write it there instead of pasting it into chat or writing a markdown file, unless the user asks for a file in the repo. Call \`docs_cloud_project\` (t3-code) for this T3 Code project's Docs Cloud project, which creates it on first use and is keyed by the git repository so every checkout shares it, and pass its \`key\` as \`projectKey\` to \`create_doc\`. \`move_doc\` moves a doc to another project or to none. Create the doc with its skeleton first (headings with one-line placeholders) so it opens beside the chat, then fill in each section with \`edit_tab\` or \`write_tab\`. Add a tab with \`create_tab\` for each large part. Share each doc's returned \`url\` once. When asked to move the project's markdown files under \`docs/\` into Docs Cloud, use \`docs_cloud_import\`; it copies each file with its open comments and skips docs imported before.`;
+Docs live in Docs Cloud, which the user reads, edits, and comments on in T3 Code's Docs panel. Use the \`docs-cloud\` MCP server's tools (such as \`create_doc\`, \`create_tab\`, \`edit_tab\`, \`write_tab\`, often prefixed \`mcp__docs-cloud__\` or \`docs-cloud.\`). When the user asks for a document, plan, spec, report, or notes to keep, write it there instead of pasting it into chat or writing a markdown file, unless the user asks for a file in the repo. Call \`docs_cloud_project\` (t3-code) for this T3 Code project's Docs Cloud project, which creates it on first use and is keyed by the git repository so every checkout shares it, and pass its \`key\` as \`projectKey\` to \`create_doc\`. \`move_doc\` moves a doc to another project or to none. Create the doc with its skeleton first (headings with one-line placeholders) so it opens beside the chat, then fill in each section with \`edit_tab\` or \`write_tab\`. Add a tab with \`create_tab\` for each large part. Share each doc's returned \`url\` once.
+
+${PROJECT_FILES_PARAGRAPH} To turn project files into Docs Cloud docs when asked, use \`docs_cloud_import\`; it copies each file with its open comments, leaves the file in place, and skips files imported before.`;
 
 /**
  * Authored as self-contained sections so a provider that limits the size of
@@ -57,7 +63,7 @@ ACP fallback: some ACP agents accept the injected MCP server but fail to expose 
 
 When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.`,
   `- When model options are requested or the child keeps the parent's provider instance and model with nonempty \`inheritedOptions\` from \`orchestrator_capabilities\`, use \`delegate_task\` even for native-supported models. Native subagents cannot reliably apply T3 model options. Read the selected model's descriptors from \`orchestrator_capabilities\` and put settings in \`target.options\`, not only in the prompt. Claude commonly uses {"effort":"max","fastMode":true}; Codex uses {"reasoningEffort":"max","serviceTier":"priority"}. Do not translate max to high or ignore unsupported settings: report a capability mismatch. Options inherit only for the same provider instance and model; explicit entries override individual values, and [] or {} clears them. Check the returned providerInstanceId, model, and options against the requested selection.`,
-  docsCloud ? CLOUD_DOCS_SECTION : FILE_DOCS_SECTION,
+  docsCloud ? CLOUD_DOCS_SECTION : NO_CLOUD_DOCS_SECTION,
   `### AI PM ideas
 
 When the user wants to park an idea or concept for later ("park this idea"), save it with \`aipm_idea_save\`: a summary of where the work was left, the next step, and absolute paths of files it produced. It links this thread. Call \`aipm_idea_list\` first and pass an existing idea's id to update it rather than duplicate it.`,
