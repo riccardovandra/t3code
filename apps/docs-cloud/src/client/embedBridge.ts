@@ -2,7 +2,6 @@ import { useSyncExternalStore } from "react";
 
 import {
   EMBED_ORIGINS_META,
-  isAllowedEmbedOrigin,
   parseParentMessage,
   type EmbedFeature,
   type EmbedFrameMessage,
@@ -11,15 +10,30 @@ import {
 import { api } from "./api.ts";
 import { setAddToChatHandler } from "./comments/addToChat.ts";
 import { setEmbedProject } from "./embedContext.ts";
+import { embedTransport, type EmbedTransport } from "./embedTransport.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 import { applyTheme } from "./theme.ts";
 
+let transport: EmbedTransport | null = null;
 let parentOrigin: string | null = null;
 /** What the T3 Code that said hello offers beyond navigation. */
 let features: ReadonlyArray<EmbedFeature> = [];
 const parentListeners = new Set<() => void>();
 const messageListeners = new Set<(message: EmbedParentMessage) => void>();
 let removeAddToChat: (() => void) | null = null;
+
+/**
+ * True when T3 Code hosts this page (framed, or in the mobile app), known
+ * from the start; features still wait for its hello.
+ */
+export function isEmbedded(): boolean {
+  return transport !== null;
+}
+
+/** True inside the T3 Code mobile app, which has no web-only dialogs such as Copy to Claude Docs. */
+export function isNativeEmbed(): boolean {
+  return transport?.kind === "native";
+}
 
 /** True once T3 Code has said hello, so features that need it can show. */
 export function hasEmbedParent(): boolean {
@@ -31,9 +45,9 @@ export function subscribeEmbedParent(listener: () => void): () => void {
   return () => parentListeners.delete(listener);
 }
 
-/** Sends to the T3 Code window that said hello; a no-op outside T3 Code. */
+/** Sends to the T3 Code that said hello; a no-op outside T3 Code. */
 export function postToEmbedParent(message: EmbedFrameMessage): void {
-  if (parentOrigin) window.parent.postMessage(message, parentOrigin);
+  if (transport && parentOrigin) transport.post(message, parentOrigin);
 }
 
 const embedFeatures = () => (parentOrigin === null ? null : features);
@@ -61,17 +75,17 @@ function installAddToChat(enabled: boolean): void {
 }
 
 /**
- * Lets T3 Code drive this app from its Docs panel. The browser already refuses
- * framing by origins outside FRAME_ANCESTORS; messages are still checked
- * against the same list, and replies go only to the origin that said hello.
+ * Lets T3 Code drive this app: from the Docs panel that frames it on web and
+ * desktop, or from the mobile app's WebView. See `embedTransport`.
  */
 export function startEmbedBridge(): void {
-  if (window.parent === window) return;
   const sources = (
     document.querySelector(`meta[name="${EMBED_ORIGINS_META}"]`)?.getAttribute("content") ?? ""
   )
     .split(" ")
     .filter(Boolean);
+  transport = embedTransport(window, sources);
+  if (!transport) return;
 
   const postLocation = () => {
     const path = window.location.pathname;
@@ -85,14 +99,13 @@ export function startEmbedBridge(): void {
     });
   };
 
-  window.addEventListener("message", (event: MessageEvent) => {
-    if (event.source !== window.parent || !isAllowedEmbedOrigin(event.origin, sources)) return;
-    const message = parseParentMessage(event.data);
+  transport.listen((data, origin) => {
+    const message = parseParentMessage(data);
     if (!message) return;
     if (message.type === "t3-docs:hello") {
       const next = message.features ?? [];
-      const changed = parentOrigin !== event.origin || next.join(" ") !== features.join(" ");
-      parentOrigin = event.origin;
+      const changed = parentOrigin !== origin || next.join(" ") !== features.join(" ");
+      parentOrigin = origin;
       features = next;
       installAddToChat(next.includes("add-to-chat"));
       if (changed) for (const listener of parentListeners) listener();

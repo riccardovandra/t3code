@@ -6,7 +6,8 @@ import {
   answerLocalDocsRequest,
   LOCAL_FILE_HANDLERS,
   type LocalDocsContext,
-} from "./localDocsBridge";
+  unsupportedLocalDocsReply,
+} from "./docsCloudLocalHost.ts";
 
 function context(options: { canWrite?: boolean; truncated?: boolean } = {}) {
   const disk = new Map([["docs/plan.md", "# Plan\n"]]);
@@ -123,6 +124,22 @@ describe("LOCAL_FILE_HANDLERS", () => {
       ok: false,
       error: "No such file: docs/gone.md",
     });
+  });
+
+  it("answers a request kind it cannot parse with an error, not silence", () => {
+    expect(
+      unsupportedLocalDocsReply({
+        type: "t3-docs:local-request",
+        requestId: "r3",
+        request: { kind: "file.import", path: "docs/new.md" },
+      }),
+    ).toEqual({
+      type: "t3-docs:local-response",
+      requestId: "r3",
+      ok: false,
+      error: "This version of T3 Code cannot do that.",
+    });
+    expect(unsupportedLocalDocsReply({ type: "t3-docs:theme" })).toBeNull();
   });
 
   it("answers a kind it has no handler for with an error", async () => {

@@ -147,6 +147,14 @@
       "types": "./src/docsCloud.ts",
       "default": "./src/docsCloud.ts"
     },
+    "./docs-cloud-local-host": {
+      "types": "./src/docsCloudLocalHost.ts",
+      "default": "./src/docsCloudLocalHost.ts"
+    },
+    "./docs-cloud-local-comments": {
+      "types": "./src/docsCloudLocalComments.ts",
+      "default": "./src/docsCloudLocalComments.ts"
+    },
     "./mcp-servers": {
       "types": "./src/mcpServers.ts",
       "default": "./src/mcpServers.ts"

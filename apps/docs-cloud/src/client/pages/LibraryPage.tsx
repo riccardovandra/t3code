@@ -10,6 +10,7 @@ import {
 } from "../../shared/home.ts";
 import { DOC_STATUS_LABEL, DOC_STATUSES, type DocStatus } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
+import { isEmbedded } from "../embedBridge.ts";
 import { useEmbedProject } from "../embedContext.ts";
 import { DocCard, DocRow, type DocActions, type MoveTarget } from "../home/DocCard.tsx";
 import {
@@ -89,7 +90,7 @@ export function LibraryPage() {
   const userId = me?.user.id ?? "";
   const admin = isAdmin(userId);
   const embedProject = useEmbedProject();
-  const embedded = window.parent !== window;
+  const embedded = isEmbedded();
   const embedKey =
     embedProject === null ? null : (embedProject.key ?? titleProjectKey(embedProject.name));
   const localFiles = useLocalFilesAvailable() === true;

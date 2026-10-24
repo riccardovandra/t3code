@@ -63,6 +63,7 @@ export function DocsCloudTabNotice(props: {
             setNotice(null);
             navigation.navigate("DocsCloud", {
               environmentId: String(threadRef.environmentId),
+              threadId: String(threadRef.threadId),
               path: notice.path,
               title: notice.tabTitle,
             });

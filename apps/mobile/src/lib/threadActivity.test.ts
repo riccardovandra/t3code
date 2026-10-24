@@ -196,6 +196,20 @@ describe("buildThreadFeed", () => {
     });
   });
 
+  it("shows a project file an agent opened with docs_open as a doc entry", () => {
+    const doc = { docPath: "docs/launch-plan.md", title: "Launch plan" };
+    const open: OrchestrationV2TurnItem = {
+      ...base("docs-open", "2026-06-20T00:00:02.000Z", 1),
+      type: "dynamic_tool",
+      toolName: "mcp__t3-code__docs_open",
+      input: {},
+      output: { content: [{ type: "text", text: JSON.stringify({ doc }) }] },
+    };
+    const feed = buildThreadFeed([projected(open, 0)]);
+    expect(feed.map((entry) => entry.type)).toEqual(["docs-cloud"]);
+    expect(feed[0]).toMatchObject({ doc });
+  });
+
   it.each([false, true])(
     "keeps answered questions outside settled work (attachments only: %s)",
     (attachmentsOnly) => {
