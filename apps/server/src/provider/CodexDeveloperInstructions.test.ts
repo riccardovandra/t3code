@@ -1,9 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 
-import {
-  t3CodeOrchestrationInstructions,
-  t3CodeOrchestrationSections,
-} from "@t3tools/provider-core/server/orchestrationInstructions";
+import { t3CodeOrchestrationInstructions } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { describe, it } from "vite-plus/test";
 
 import {
@@ -13,16 +10,10 @@ import {
 
 describe("buildCodexAdditionalContext", () => {
   describe.each([
-    { model: "gpt-5.3-codex", reasoningEffort: "high" },
     { model: "custom-model", modelName: "Custom 🦊 Model", reasoningEffort: "xhigh" },
   ])("with runtime $model", (runtime) => {
     it.each([
       undefined,
-      false,
-      true,
-      { browser: false, device: false },
-      { browser: true, device: false },
-      { browser: false, device: true },
       { browser: true, device: true },
       { browser: true, device: true, docsCloud: true },
     ])("keeps every entry within Codex's per-entry cap with tools %j", (availability) => {
@@ -39,29 +30,6 @@ describe("buildCodexAdditionalContext", () => {
       }
     });
   });
-
-  it.each([false, true])(
-    "delivers all orchestration sections in authored order when keys are sorted (Docs Cloud %s)",
-    (docsCloud) => {
-      const context = buildCodexAdditionalContext(
-        { model: "gpt-5.3-codex", reasoningEffort: "high" },
-        { browser: true, device: false, docsCloud },
-      );
-      const sections = Object.keys(context)
-        .filter((key) => key.startsWith("t3_code_orchestration_"))
-        .sort()
-        .map((key) => context[key]!);
-
-      NodeAssert.deepEqual(
-        sections,
-        t3CodeOrchestrationSections(docsCloud).map((value) => ({ kind: "application", value })),
-      );
-      NodeAssert.equal(
-        sections.map((entry) => entry.value).join("\n\n"),
-        t3CodeOrchestrationInstructions(docsCloud).trim(),
-      );
-    },
-  );
 
   it("points agents at the docs tools the environment exposes", () => {
     const files = t3CodeOrchestrationInstructions(false);

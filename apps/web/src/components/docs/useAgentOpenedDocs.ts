@@ -1,4 +1,5 @@
-import type { OrchestrationV2ProjectedTurnItem, ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ThreadStructureVisibleTurnItem } from "@t3tools/client-runtime/state/shell";
 import { docsCloudToolEvent } from "@t3tools/client-runtime/docs-cloud";
 import { docOpenFromToolItem } from "@t3tools/shared/toolOutput";
 import { useEffect, useRef } from "react";
@@ -19,7 +20,7 @@ type AgentDocEvent =
  */
 export function useAgentOpenedDocs(
   threadRef: ScopedThreadRef | null,
-  visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+  visibleTurnItems: ReadonlyArray<ThreadStructureVisibleTurnItem>,
   agentName: string,
 ) {
   const baseUrl = useDocsCloudBaseUrl(threadRef?.environmentId ?? null);
