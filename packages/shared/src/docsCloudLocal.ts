@@ -26,7 +26,7 @@ const MAX_REQUEST_ID_LENGTH = 100;
 const MAX_ERROR_LENGTH = 1_000;
 const MAX_FILES = 2_000;
 /** Above the server's read cap, so any file it serves whole can be saved back. */
-export const MAX_LOCAL_MARKDOWN_LENGTH = 5_000_000;
+const MAX_LOCAL_MARKDOWN_LENGTH = 5_000_000;
 
 /** A markdown file in the project, by its workspace-relative path. */
 export interface LocalDocSummary {
@@ -113,6 +113,7 @@ export function isLocalDocPath(path: unknown): path is string {
         segment !== "." &&
         segment !== ".." &&
         // Control characters and backslashes have no place in a docs path.
+        // oxlint-disable-next-line no-control-regex
         !/[\\\u0000-\u001f\u007f]/.test(segment),
     )
   );

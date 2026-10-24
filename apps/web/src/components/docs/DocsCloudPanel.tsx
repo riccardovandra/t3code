@@ -12,7 +12,7 @@ import {
 import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
-import { useContext, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
@@ -126,16 +126,21 @@ export function DocsCloudPanel(props: {
   const registry = useContext(RegistryContext);
   const canWriteFiles = useEnvironmentScope(threadRef.environmentId, AuthFilesystemWriteScope);
   const { workspaceRoot, projectId } = props;
-  const localDocs = useMemo((): LocalDocsContext | null => {
-    if (projectId === null || workspaceRoot === undefined) return null;
-    const scope = { environmentId: threadRef.environmentId, projectId, cwd: workspaceRoot };
-    return { ...scope, canWrite: canWriteFiles, files: localDocsFiles(registry, scope) };
-  }, [registry, threadRef.environmentId, projectId, workspaceRoot, canWriteFiles]);
+  const localScope =
+    projectId === null || workspaceRoot === undefined
+      ? null
+      : { environmentId: threadRef.environmentId, projectId, cwd: workspaceRoot };
+  const localDocs: LocalDocsContext | null = localScope && {
+    ...localScope,
+    canWrite: canWriteFiles,
+    files: localDocsFiles(registry, localScope),
+  };
+  const servesFiles = localDocs !== null;
   const features = [
     ...(startWork ? ["start-work"] : []),
     "add-to-chat",
     "send-to",
-    ...(localDocs ? [LOCAL_FILES_FEATURE] : []),
+    ...(servesFiles ? [LOCAL_FILES_FEATURE] : []),
   ];
   const featureKey = features.join(" ");
   const helloFeatures = useRef<string | null>(null);
@@ -144,11 +149,9 @@ export function DocsCloudPanel(props: {
     postToFrame({ type: "t3-docs:hello", features });
   };
   // A frame already loaded hears about features that arrive later, e.g. the checkout.
-  const resendHello = useEffectEvent(() => {
-    if (helloFeatures.current !== featureKey) sendHello();
-  });
+  const resendHello = useEffectEvent(sendHello);
   useEffect(() => {
-    if (frameReady) resendHello();
+    if (frameReady && helloFeatures.current !== featureKey) resendHello();
   }, [featureKey, frameReady]);
 
   const onLocalRequest = useEffectEvent((data: unknown): boolean => {
@@ -168,10 +171,10 @@ export function DocsCloudPanel(props: {
   useEffect(() => {
     if (runCompletion === seenCompletion.current) return;
     seenCompletion.current = runCompletion;
-    if (localDocs !== null) {
+    if (servesFiles) {
       frame.current?.contentWindow?.postMessage({ type: LOCAL_FILES_CHANGED_TYPE }, origin);
     }
-  }, [runCompletion, localDocs, origin]);
+  }, [runCompletion, servesFiles, origin]);
 
   const onFrameRequest = useEffectEvent((data: unknown) => {
     const request = parseDocsCloudFrameRequest(data, origin);
