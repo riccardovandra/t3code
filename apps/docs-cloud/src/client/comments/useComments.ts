@@ -1,22 +1,48 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
 import type { Comment, RoomMessage } from "../../shared/protocol.ts";
-import { api } from "../api.ts";
+import {
+  cloudCommentSource,
+  type CommentCapabilities,
+  type CommentSource,
+  type CommentUpdate,
+} from "./commentSource.ts";
 
 type CommentMessage = Extract<RoomMessage, { type: `comment.${string}` }>;
 
 export const isCommentMessage = (message: RoomMessage): message is CommentMessage =>
   message.type.startsWith("comment.");
 
-/**
- * A doc's comments, kept current from REST responses and DocRoom pushes. Every
- * message is an idempotent upsert or delete, so our own echoes apply harmlessly.
- */
+/** A cloud doc's comments, kept current from REST responses and DocRoom pushes. */
 export function useComments(docId: string) {
-  const [comments, setComments] = useState<ReadonlyMap<string, Comment>>(new Map());
+  return useCommentSource(useMemo(() => cloudCommentSource(docId), [docId]));
+}
 
-  const upsert = useCallback((comment: Comment) => {
+/**
+ * A page's comments from any source. Every update is an idempotent upsert,
+ * delete or full replacement, so our own echoes apply harmlessly.
+ */
+export function useCommentSource(source: CommentSource) {
+  const [comments, setComments] = useState<ReadonlyMap<string, Comment>>(new Map());
+  const [capabilities, setCapabilities] = useState<CommentCapabilities | null>(null);
+
+  const update = useCallback((change: CommentUpdate) => {
+    if (change.kind === "replace") {
+      setComments(new Map(change.comments.map((comment) => [comment.id, comment])));
+      setCapabilities(change.capabilities);
+      return;
+    }
+    if (change.kind === "remove") {
+      setComments((current) => {
+        if (!change.ids.some((id) => current.has(id))) return current;
+        const next = new Map(current);
+        for (const id of change.ids) next.delete(id);
+        return next;
+      });
+      return;
+    }
+    const { comment } = change;
     setComments((current) => {
       const existing = current.get(comment.id);
       if (existing && existing.updatedAt > comment.updatedAt) return current;
@@ -24,26 +50,16 @@ export function useComments(docId: string) {
     });
   }, []);
 
-  const remove = useCallback((ids: ReadonlyArray<string>) => {
-    setComments((current) => {
-      if (!ids.some((id) => current.has(id))) return current;
-      const next = new Map(current);
-      for (const id of ids) next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const load = useCallback(async () => {
-    const loaded = await api.comments(docId);
-    setComments(new Map(loaded.comments.map((comment) => [comment.id, comment])));
-  }, [docId]);
+  const load = useCallback(async () => update(await source.load()), [source, update]);
 
   const apply = useCallback(
-    (message: CommentMessage) => {
-      if (message.type === "comment.deleted") remove(message.commentIds);
-      else upsert(message.comment);
-    },
-    [remove, upsert],
+    (message: CommentMessage) =>
+      update(
+        message.type === "comment.deleted"
+          ? { kind: "remove", ids: message.commentIds }
+          : { kind: "upsert", comment: message.comment },
+      ),
+    [update],
   );
 
   const actions = {
@@ -52,23 +68,20 @@ export function useComments(docId: string) {
       anchor: DocAnchor,
       body: string,
       structured: StructuredAnchor | null = null,
+      sendToAgent = false,
     ) => {
-      const { comment } = await api.createComment(tabId, {
-        ...anchor,
-        body,
-        ...(structured ? { anchor: structured } : {}),
-      });
-      upsert(comment);
-      return comment;
+      const created = await source.create({ tabId, anchor, body, structured, sendToAgent });
+      update(created.update);
+      return created.comment;
     },
-    reply: async (commentId: string, body: string) =>
-      upsert((await api.replyComment(commentId, body)).comment),
+    reply: async (commentId: string, body: string, sendToAgent = false) =>
+      update(await source.reply(commentId, body, sendToAgent)),
     setResolved: async (commentId: string, resolved: boolean) =>
-      upsert((await api.setCommentResolved(commentId, resolved)).comment),
-    delete: async (commentId: string) => remove((await api.deleteComment(commentId)).commentIds),
+      update(await source.setResolved(commentId, resolved)),
+    delete: async (commentId: string) => update(await source.delete(commentId)),
   };
 
-  return { comments, load, apply, actions };
+  return { comments, capabilities, load, apply, actions };
 }
 
-export type CommentActions = ReturnType<typeof useComments>["actions"];
+export type CommentActions = ReturnType<typeof useCommentSource>["actions"];

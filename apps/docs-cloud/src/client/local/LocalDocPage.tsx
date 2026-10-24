@@ -1,22 +1,36 @@
 import { docTitleFromPath } from "@t3tools/shared/docPaths";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+import type { DocAnchor } from "../../shared/anchors.ts";
+import type { Comment } from "../../shared/protocol.ts";
+import { groupThreads, type CommentThread } from "../../shared/threads.ts";
+import { CommentMargin, DRAFT_COMMENT_ID } from "../comments/CommentMargin.tsx";
+import { ResolvedComments } from "../comments/ResolvedComments.tsx";
+import { hasAddToChatHandler, subscribeAddToChat } from "../comments/addToChat.ts";
+import { useCommentSource } from "../comments/useComments.ts";
+import { selectionAnchor, useEditorComments } from "../comments/useEditorComments.ts";
+import { useMediaQuery } from "../comments/useMediaQuery.ts";
+import { SelectionToolbar } from "../editor/SelectionToolbar.tsx";
 
 import { HomeLink } from "../home/HomeLink.tsx";
 import { OutlineRail } from "../doc/OutlineRail.tsx";
 import { useColumnWidth } from "../doc/toolbar/columnWidth.ts";
 import { DocToolbar } from "../doc/toolbar/DocToolbar.tsx";
+import { CommentIcon } from "../doc/toolbar/icons.tsx";
 import { useStableCallback } from "../doc/useStableCallback.ts";
 import { TabEditor } from "../editor/TabEditor.tsx";
 import { useMe } from "../me.ts";
 import { navigate } from "../router.ts";
 import { DocSaver } from "./docSaver.ts";
 import { localDocSource, type DocSnapshot, type DocSource } from "./docSource.ts";
-import { hostClient, useLocalFilesAvailable } from "./hostClient.ts";
+import { hostClient, useLocalCommentsAvailable, useLocalFilesAvailable } from "./hostClient.ts";
+import { localCommentSource } from "./localCommentSource.ts";
 import { LocalRequestError } from "./localClient.ts";
 
 const NO_TABS: ReadonlyArray<never> = [];
 const noop = () => undefined;
+const quietly = (promise: Promise<unknown>) => void promise.catch(() => undefined);
 const refuseImage = () => Promise.reject(new Error("Images cannot be added to project files."));
 
 /** A T3 Code project file, on the local route. Only T3 Code can serve one. */
@@ -124,6 +138,101 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
   );
   const title = docTitleFromPath(props.path);
 
+  // Comments on the file live on the T3 server; the host answers for them.
+  const commentsAvailable = useLocalCommentsAvailable();
+  const commentSource = useMemo(() => localCommentSource(hostClient, props.path), [props.path]);
+  const comments = useCommentSource(commentSource);
+  const loadComments = useStableCallback(
+    () =>
+      void comments.load().catch((cause: unknown) => {
+        if (cause instanceof LocalRequestError) setNotice(`Comments: ${cause.message}`);
+      }),
+  );
+  useEffect(() => {
+    if (!commentsAvailable) return;
+    loadComments();
+    return commentSource.subscribe(loadComments);
+  }, [commentsAvailable, commentSource, loadComments]);
+  const canComment = commentsAvailable && !!comments.capabilities?.comment;
+  const canSendToAgent = canComment && !!comments.capabilities?.sendToAgent;
+  const canAddToChat = useSyncExternalStore(subscribeAddToChat, hasAddToChatHandler) && canComment;
+
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DocAnchor | null>(null);
+  const [docBody, setDocBody] = useState<HTMLDivElement | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(true);
+  const narrow = useMediaQuery("(max-width: 1279px)");
+  const threads = useMemo(() => groupThreads(comments.comments.values()), [comments.comments]);
+  const openThreads = useMemo(
+    () => threads.filter((thread) => thread.root.resolvedAt === null),
+    [threads],
+  );
+  const resolvedThreads = threads.filter((thread) => thread.root.resolvedAt !== null);
+  const anchors = useMemo(
+    () => [
+      ...openThreads.map(({ root }) => ({
+        id: root.id,
+        quote: root.quote,
+        prefix: root.prefix,
+        suffix: root.suffix,
+      })),
+      ...(draft ? [{ id: DRAFT_COMMENT_ID, ...draft }] : []),
+    ],
+    [openThreads, draft],
+  );
+
+  const startComment = () => {
+    const anchor = canComment && editor ? selectionAnchor(editor) : null;
+    if (!anchor) return;
+    setCommentsOpen(true);
+    setDraft(anchor);
+    setActiveCommentId(DRAFT_COMMENT_ID);
+  };
+
+  const tops = useEditorComments(editor, {
+    anchors,
+    activeId: activeCommentId,
+    container: docBody,
+    onClick: setActiveCommentId,
+    onShortcut: startComment,
+    // A project file's comments anchor to quotes only, as T3 Code stores them.
+    onCellComment: noop,
+  });
+
+  const commentFailed = (cause: unknown) => {
+    setNotice(
+      cause instanceof LocalRequestError
+        ? `Could not update the comment: ${cause.message}`
+        : "Could not update the comment. Try again.",
+    );
+    throw cause;
+  };
+
+  const addToChat = (root: Comment) =>
+    void hostClient
+      .request({ kind: "comment.chat", path: props.path, commentId: root.id })
+      .then(
+        () => setNotice("Added to the chat. Send your message there when you are ready."),
+        commentFailed,
+      )
+      .catch(noop);
+
+  const handlersFor = (thread: CommentThread) =>
+    canComment
+      ? {
+          offerSendToAgent: canSendToAgent,
+          onReply: (body: string, sendToAgent: boolean) =>
+            comments.actions.reply(thread.root.id, body, sendToAgent).catch(commentFailed),
+          onResolve: () => {
+            setActiveCommentId(null);
+            quietly(comments.actions.setResolved(thread.root.id, true).catch(commentFailed));
+          },
+          onDelete: (commentId: string) =>
+            quietly(comments.actions.delete(commentId).catch(commentFailed)),
+          ...(canAddToChat ? { onAddToChat: () => addToChat(thread.root) } : {}),
+        }
+      : {};
+
   return (
     <div className={`doc-page column-${width}`}>
       <div className="doc-chrome">
@@ -140,6 +249,22 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
             <span className="local-doc-status" aria-live="polite">
               {saving ? "Saving…" : null}
             </span>
+            {commentsAvailable ? (
+              <button
+                type="button"
+                className="comments-toggle"
+                aria-pressed={commentsOpen}
+                aria-label={
+                  openThreads.length > 0 ? `Comments, ${openThreads.length} open` : "Comments"
+                }
+                onClick={() => setCommentsOpen((open) => !open)}
+              >
+                <CommentIcon />
+                {openThreads.length > 0 ? (
+                  <span className="comments-dot" aria-hidden="true" />
+                ) : null}
+              </button>
+            ) : null}
           </div>
         </header>
         <div className="doc-toolbar">
@@ -158,6 +283,19 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
             onMove={noop}
             onDelete={noop}
           />
+          {canComment ? (
+            <div className="doc-toolbar-aside">
+              <ResolvedComments
+                threads={resolvedThreads}
+                onReopen={(commentId) =>
+                  quietly(comments.actions.setResolved(commentId, false).catch(commentFailed))
+                }
+                onDelete={(commentId) =>
+                  quietly(comments.actions.delete(commentId).catch(commentFailed))
+                }
+              />
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="doc-layout">
@@ -184,12 +322,19 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
             </div>
           ) : null}
           {snapshot ? (
-            // S2's comment margin sits beside the column here, as in DocPage.
-            <div className="doc-body comments-hidden">
+            <div
+              className={
+                commentsAvailable && commentsOpen ? "doc-body" : "doc-body comments-hidden"
+              }
+              ref={setDocBody}
+            >
               <div className="doc-column">
                 <div className="doc-head">
                   <h1 className="doc-head-title">{title}</h1>
                 </div>
+                {editor && canComment && draft === null ? (
+                  <SelectionToolbar editor={editor} canEdit={editable} onComment={startComment} />
+                ) : null}
                 <TabEditor
                   markdown={snapshot.markdown}
                   revision={revision}
@@ -203,6 +348,34 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
                   onEditor={setEditor}
                 />
               </div>
+              {commentsAvailable && commentsOpen ? (
+                <CommentMargin
+                  threads={openThreads}
+                  tops={tops}
+                  activeId={activeCommentId}
+                  narrow={narrow}
+                  selectionTop={null}
+                  draftOpen={draft !== null}
+                  offerAddToChat={canAddToChat}
+                  offerSendToAgent={canSendToAgent}
+                  onStartComment={noop}
+                  onSubmitDraft={async (body, toChat, toAgent) => {
+                    if (!draft) return;
+                    const comment = await comments.actions
+                      .create(props.path, draft, body, null, toAgent)
+                      .catch(commentFailed);
+                    setDraft(null);
+                    setActiveCommentId(comment.id);
+                    if (toChat) addToChat(comment);
+                  }}
+                  onCancelDraft={() => {
+                    setDraft(null);
+                    setActiveCommentId(null);
+                  }}
+                  onActivate={setActiveCommentId}
+                  handlersFor={handlersFor}
+                />
+              ) : null}
             </div>
           ) : null}
         </main>

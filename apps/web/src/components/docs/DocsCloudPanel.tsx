@@ -1,9 +1,11 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { AuthFilesystemWriteScope, type ProjectId, type ScopedThreadRef } from "@t3tools/contracts";
 import {
+  LOCAL_COMMENTS_CHANGED_TYPE,
+  LOCAL_COMMENTS_FEATURE,
   LOCAL_FILES_CHANGED_TYPE,
   LOCAL_FILES_FEATURE,
   localDocPathFromAppPath,
@@ -41,6 +43,12 @@ import {
   type LocalDocsContext,
 } from "./localDocsBridge";
 import { localDocsFiles } from "./localDocsFiles";
+import {
+  localCommentHandlers,
+  localDocCommentsApi,
+  useAgentRunCompletions,
+  useAgentThreadIds,
+} from "./localDocComments";
 
 interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -136,11 +144,23 @@ export function DocsCloudPanel(props: {
     files: localDocsFiles(registry, localScope),
   };
   const servesFiles = localDocs !== null;
+  // Comments on those files stay on the T3 server, as the old Docs panel kept them.
+  const canComment = useAtomValue(
+    serverEnvironment.createDocComment.permissionAtom(threadRef.environmentId),
+  );
+  const [agentThreadIds, reportAgentThreads] = useAgentThreadIds();
+  const commentHandlers = localCommentHandlers({
+    api: localDocCommentsApi(registry, threadRef.environmentId),
+    canComment,
+    sendFromThreadId: shell === null ? null : threadRef.threadId,
+    addToChat: (comment) => addReviewComment(props.composerDraftTarget, comment),
+    onAgentThreads: reportAgentThreads,
+  });
   const features = [
     ...(startWork ? ["start-work"] : []),
     "add-to-chat",
     "send-to",
-    ...(servesFiles ? [LOCAL_FILES_FEATURE] : []),
+    ...(servesFiles ? [LOCAL_FILES_FEATURE, LOCAL_COMMENTS_FEATURE] : []),
   ];
   const featureKey = features.join(" ");
   const helloFeatures = useRef<string | null>(null);
@@ -158,11 +178,23 @@ export function DocsCloudPanel(props: {
     const request = parseLocalRequestMessage(data);
     if (request === null) return false;
     if (localDocs === null) return true;
-    void answerLocalDocsRequest(request, LOCAL_FILE_HANDLERS, localDocs).then(postToFrame);
+    void answerLocalDocsRequest(
+      request,
+      { ...LOCAL_FILE_HANDLERS, ...commentHandlers },
+      localDocs,
+    ).then(postToFrame);
     return true;
   });
 
-  // An agent turn may have edited the files; the frame reloads what it shows.
+  // An agent turn may have edited the files or answered comments; the frame
+  // reloads what it shows. Doc agent threads answer comments too.
+  const postLocalChanges = () => {
+    if (!servesFiles) return;
+    frame.current?.contentWindow?.postMessage({ type: LOCAL_FILES_CHANGED_TYPE }, origin);
+    frame.current?.contentWindow?.postMessage({ type: LOCAL_COMMENTS_CHANGED_TYPE }, origin);
+  };
+  useAgentRunCompletions(registry, threadRef.environmentId, agentThreadIds, postLocalChanges);
+  const notifyRunCompleted = useEffectEvent(postLocalChanges);
   const latestRun = useQuietThreadShell(threadRef)?.latestRun ?? null;
   const runCompletion = latestRun?.completedAt
     ? `${latestRun.runId}:${latestRun.completedAt}`
@@ -171,10 +203,8 @@ export function DocsCloudPanel(props: {
   useEffect(() => {
     if (runCompletion === seenCompletion.current) return;
     seenCompletion.current = runCompletion;
-    if (servesFiles) {
-      frame.current?.contentWindow?.postMessage({ type: LOCAL_FILES_CHANGED_TYPE }, origin);
-    }
-  }, [runCompletion, servesFiles, origin]);
+    notifyRunCompleted();
+  }, [runCompletion]);
 
   const onFrameRequest = useEffectEvent((data: unknown) => {
     const request = parseDocsCloudFrameRequest(data, origin);

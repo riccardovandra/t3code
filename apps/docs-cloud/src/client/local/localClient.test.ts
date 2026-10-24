@@ -87,4 +87,16 @@ describe("createLocalClient", () => {
     host.deliver({ type: "t3-docs:local-files-changed" });
     expect(changed).toHaveBeenCalledOnce();
   });
+
+  it("passes on the host's comments-changed notice to comment listeners only", () => {
+    const host = fakeBridge();
+    const client = createLocalClient(host.bridge);
+    const files = vi.fn();
+    const comments = vi.fn();
+    client.onFilesChanged(files);
+    client.onCommentsChanged(comments);
+    host.deliver({ type: "t3-docs:local-comments-changed" });
+    expect(comments).toHaveBeenCalledOnce();
+    expect(files).not.toHaveBeenCalled();
+  });
 });

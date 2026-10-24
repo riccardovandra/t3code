@@ -5,9 +5,14 @@
  * reaches the Docs Cloud worker.
  *
  * Frame -> host: `local-request` (a request id and one request).
- * Host -> frame: `local-response` (the same id, a result or an error) and
+ * Host -> frame: `local-response` (the same id, a result or an error),
  * `local-files-changed` (files may have changed on disk, e.g. after an agent
- * turn). The host offers this with the `local-files` feature in its hello.
+ * turn) and `local-comments-changed` (an agent may have replied to or resolved
+ * a comment). The host offers files with the `local-files` feature in its
+ * hello, and comments on them with `local-comments`.
+ *
+ * Comments on project files live on the T3 server, not in Docs Cloud; the
+ * frame shows them with the same margin as a cloud doc's.
  *
  * Both sides parse strictly, since either page may be older or newer than the
  * other. A request kind is added by extending `LocalDocRequest`,
@@ -16,15 +21,23 @@
 import { DOCS_ROOT, isMarkdownPath } from "./docPaths.ts";
 
 export const LOCAL_FILES_FEATURE = "local-files";
+export const LOCAL_COMMENTS_FEATURE = "local-comments";
 
 export const LOCAL_REQUEST_TYPE = "t3-docs:local-request";
 export const LOCAL_RESPONSE_TYPE = "t3-docs:local-response";
 export const LOCAL_FILES_CHANGED_TYPE = "t3-docs:local-files-changed";
+export const LOCAL_COMMENTS_CHANGED_TYPE = "t3-docs:local-comments-changed";
 
 const MAX_PATH_LENGTH = 512;
 const MAX_REQUEST_ID_LENGTH = 100;
 const MAX_ERROR_LENGTH = 1_000;
 const MAX_FILES = 2_000;
+const MAX_COMMENTS = 5_000;
+const MAX_COMMENT_ID_LENGTH = 64;
+// The T3 server's limits for a comment.
+const MAX_COMMENT_BODY_LENGTH = 10_000;
+export const MAX_LOCAL_QUOTE_LENGTH = 2_000;
+export const MAX_LOCAL_CONTEXT_LENGTH = 200;
 /** Above the server's read cap, so any file it serves whole can be saved back. */
 const MAX_LOCAL_MARKDOWN_LENGTH = 5_000_000;
 
@@ -43,6 +56,34 @@ export interface LocalDocFile {
   readonly readOnlyReason: string | null;
 }
 
+/**
+ * One comment or reply on a project file, flattened: a reply names its root in
+ * `parentId` and carries no quote. Times are epoch milliseconds.
+ */
+export interface LocalDocComment {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly quote: string;
+  readonly prefix: string;
+  readonly suffix: string;
+  readonly body: string;
+  readonly author: "user" | "agent";
+  /** Set on a resolved root. */
+  readonly resolvedAt: number | null;
+  readonly createdAt: number;
+}
+
+/** A file's comments as the host has them now; every comment request answers with this. */
+export interface LocalDocComments {
+  readonly comments: ReadonlyArray<LocalDocComment>;
+  /** False when this connection may only read comments. */
+  readonly canComment: boolean;
+  /** True when a comment can be sent to the conversation's doc agent. */
+  readonly canSendToAgent: boolean;
+}
+
+type CommentTarget = { readonly path: string; readonly commentId: string };
+
 export type LocalDocRequest =
   | { readonly kind: "files.list" }
   | { readonly kind: "file.read"; readonly path: string }
@@ -52,7 +93,27 @@ export type LocalDocRequest =
       readonly markdown: string;
       /** The version the edit started from; a different file on disk is a conflict. */
       readonly baseVersion: string;
-    };
+    }
+  | { readonly kind: "comments.list"; readonly path: string }
+  | {
+      readonly kind: "comment.create";
+      readonly path: string;
+      readonly quote: string;
+      readonly prefix: string;
+      readonly suffix: string;
+      readonly body: string;
+      /** Deliver it to the conversation's doc agent, which acts on it and replies. */
+      readonly sendToAgent: boolean;
+    }
+  | ({
+      readonly kind: "comment.reply";
+      readonly body: string;
+      readonly sendToAgent: boolean;
+    } & CommentTarget)
+  | ({ readonly kind: "comment.resolve"; readonly resolved: boolean } & CommentTarget)
+  | ({ readonly kind: "comment.delete" } & CommentTarget)
+  /** Puts the thread in the conversation's composer, as "Add to chat" does for a cloud comment. */
+  | ({ readonly kind: "comment.chat" } & CommentTarget);
 
 export type LocalDocRequestKind = LocalDocRequest["kind"];
 
@@ -62,6 +123,13 @@ export interface LocalDocResults {
   readonly "file.write":
     | { readonly status: "saved"; readonly version: string }
     | { readonly status: "conflict"; readonly file: LocalDocFile };
+  readonly "comments.list": LocalDocComments;
+  /** `commentId` is the new thread's root. */
+  readonly "comment.create": LocalDocComments & { readonly commentId: string };
+  readonly "comment.reply": LocalDocComments;
+  readonly "comment.resolve": LocalDocComments;
+  readonly "comment.delete": LocalDocComments;
+  readonly "comment.chat": { readonly added: true };
 }
 
 export interface LocalRequestMessage {
@@ -89,6 +157,11 @@ export interface LocalFilesChangedMessage {
   readonly type: typeof LOCAL_FILES_CHANGED_TYPE;
 }
 
+/** The open file's comments may have changed; the frame lists them again. */
+export interface LocalCommentsChangedMessage {
+  readonly type: typeof LOCAL_COMMENTS_CHANGED_TYPE;
+}
+
 type Fields = Record<string, unknown>;
 const isObject = (value: unknown): value is Fields =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -96,6 +169,13 @@ const isText = (value: unknown, max: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= max;
 const isMarkdown = (value: unknown): value is string =>
   typeof value === "string" && value.length <= MAX_LOCAL_MARKDOWN_LENGTH;
+const isContext = (value: unknown): value is string =>
+  typeof value === "string" && value.length <= MAX_LOCAL_CONTEXT_LENGTH;
+const isCommentId = (value: unknown): value is string => isText(value, MAX_COMMENT_ID_LENGTH);
+const isBody = (value: unknown): value is string =>
+  isText(value, MAX_COMMENT_BODY_LENGTH) && value.trim().length > 0;
+const isTime = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /**
  * Only markdown under the project's docs folder crosses the bridge, so a
@@ -151,7 +231,53 @@ const REQUEST_PARSERS: {
           baseVersion: fields.baseVersion,
         }
       : null,
+  "comments.list": (fields) =>
+    isLocalDocPath(fields.path) ? { kind: "comments.list", path: fields.path } : null,
+  "comment.create": (fields) =>
+    isLocalDocPath(fields.path) &&
+    isText(fields.quote, MAX_LOCAL_QUOTE_LENGTH) &&
+    fields.quote.trim().length > 0 &&
+    isContext(fields.prefix) &&
+    isContext(fields.suffix) &&
+    isBody(fields.body) &&
+    typeof fields.sendToAgent === "boolean"
+      ? {
+          kind: "comment.create",
+          path: fields.path,
+          quote: fields.quote,
+          prefix: fields.prefix,
+          suffix: fields.suffix,
+          body: fields.body,
+          sendToAgent: fields.sendToAgent,
+        }
+      : null,
+  "comment.reply": (fields) => {
+    const target = parseCommentTarget(fields);
+    return target && isBody(fields.body) && typeof fields.sendToAgent === "boolean"
+      ? { kind: "comment.reply", ...target, body: fields.body, sendToAgent: fields.sendToAgent }
+      : null;
+  },
+  "comment.resolve": (fields) => {
+    const target = parseCommentTarget(fields);
+    return target && typeof fields.resolved === "boolean"
+      ? { kind: "comment.resolve", ...target, resolved: fields.resolved }
+      : null;
+  },
+  "comment.delete": (fields) => {
+    const target = parseCommentTarget(fields);
+    return target && { kind: "comment.delete", ...target };
+  },
+  "comment.chat": (fields) => {
+    const target = parseCommentTarget(fields);
+    return target && { kind: "comment.chat", ...target };
+  },
 };
+
+function parseCommentTarget(fields: Fields): CommentTarget | null {
+  return isLocalDocPath(fields.path) && isCommentId(fields.commentId)
+    ? { path: fields.path, commentId: fields.commentId }
+    : null;
+}
 
 const isRequestKind = (kind: unknown): kind is LocalDocRequestKind =>
   typeof kind === "string" && Object.hasOwn(REQUEST_PARSERS, kind);
@@ -190,6 +316,42 @@ function parseFile(value: unknown): LocalDocFile | null {
   };
 }
 
+function parseComment(value: unknown): LocalDocComment | null {
+  if (!isObject(value) || !isCommentId(value.id)) return null;
+  if (value.parentId !== null && !isCommentId(value.parentId)) return null;
+  if (!isMarkdown(value.quote) || !isMarkdown(value.prefix) || !isMarkdown(value.suffix)) {
+    return null;
+  }
+  if (typeof value.body !== "string" || value.body.length > MAX_COMMENT_BODY_LENGTH) return null;
+  if (value.author !== "user" && value.author !== "agent") return null;
+  if (value.resolvedAt !== null && !isTime(value.resolvedAt)) return null;
+  if (!isTime(value.createdAt)) return null;
+  return {
+    id: value.id,
+    parentId: value.parentId,
+    quote: value.quote,
+    prefix: value.prefix,
+    suffix: value.suffix,
+    body: value.body,
+    author: value.author,
+    resolvedAt: value.resolvedAt,
+    createdAt: value.createdAt,
+  };
+}
+
+function parseComments(value: unknown): LocalDocComments | null {
+  if (!isObject(value) || !Array.isArray(value.comments)) return null;
+  if (typeof value.canComment !== "boolean" || typeof value.canSendToAgent !== "boolean") {
+    return null;
+  }
+  // One malformed comment is dropped rather than hiding the rest.
+  const comments = value.comments
+    .map(parseComment)
+    .filter((comment): comment is LocalDocComment => comment !== null)
+    .slice(0, MAX_COMMENTS);
+  return { comments, canComment: value.canComment, canSendToAgent: value.canSendToAgent };
+}
+
 const RESULT_PARSERS: {
   readonly [K in LocalDocRequestKind]: (value: unknown) => LocalDocResults[K] | null;
 } = {
@@ -213,6 +375,17 @@ const RESULT_PARSERS: {
     const file = value.status === "conflict" ? parseFile(value.file) : null;
     return file ? { status: "conflict", file } : null;
   },
+  "comments.list": parseComments,
+  "comment.create": (value) => {
+    const comments = parseComments(value);
+    return comments && isObject(value) && isCommentId(value.commentId)
+      ? { ...comments, commentId: value.commentId }
+      : null;
+  },
+  "comment.reply": parseComments,
+  "comment.resolve": parseComments,
+  "comment.delete": parseComments,
+  "comment.chat": (value) => (isObject(value) && value.added === true ? { added: true } : null),
 };
 
 /** A response's result when it is what a request of this kind answers with, else null. */
