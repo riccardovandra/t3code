@@ -9,10 +9,12 @@ export interface Env {
   /** Comma-separated; every address signs in as the one admin user, who owns all pre-sharing data. */
   readonly OWNER_EMAILS: string;
   readonly EMAIL_FROM: string;
-  /** Where the app is served, such as `https://docs.upliftedconsulting.com`. Local dev overrides it. */
+  /** Where the app is served, such as `https://docs.example.com`. Local dev overrides it. */
   readonly PUBLIC_ORIGIN: string;
   /** CSP host-sources (space-separated) allowed to frame the app: the T3 Code clients. */
   readonly FRAME_ANCESTORS?: string;
+  /** Optional page the admin's home links back to. Unset hides the link. */
+  readonly HUB_URL?: string;
   /** Unset in local dev: sign-in codes are logged to the console instead. */
   readonly RESEND_API_KEY?: string;
 }
