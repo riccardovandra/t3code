@@ -1305,7 +1305,13 @@ function renderFeedEntry(
   }
 
   if (entry.type === "docs-cloud") {
-    return <DocsCloudCard environmentId={props.environmentId} doc={entry.doc} />;
+    return (
+      <DocsCloudCard
+        environmentId={props.environmentId}
+        threadId={props.threadId}
+        doc={entry.doc}
+      />
+    );
   }
 
   if (entry.type === "work-toggle") {

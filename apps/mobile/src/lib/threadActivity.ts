@@ -68,7 +68,9 @@ import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
 import {
   compactDynamicToolOutput,
+  type DocReference,
   type DocsCloudReference,
+  docOpenFromToolItem,
   htmlRenderFromToolItem,
   mcpAppFromToolItem,
 } from "@t3tools/shared/toolOutput";
@@ -199,7 +201,8 @@ type RawThreadFeedEntry =
       readonly id: string;
       readonly createdAt: string;
       readonly runId: RunId | null;
-      readonly doc: DocsCloudReference;
+      /** A doc an agent created in Docs Cloud, or a project file under docs/ it opened. */
+      readonly doc: DocsCloudReference | DocReference;
     };
 
 export type ThreadFeedEntry = ThreadFeedEntryContent & {
@@ -2149,13 +2152,16 @@ export function buildThreadFeed(
       item.type === "dynamic_tool" && item.status === "completed"
         ? docsCloudToolResult(item)
         : null;
-    if (cloudDoc?.kind === "doc-created") {
+    const projectDoc =
+      item.type === "dynamic_tool" && cloudDoc === null ? docOpenFromToolItem(item) : null;
+    const doc = projectDoc ?? (cloudDoc?.kind === "doc-created" ? cloudDoc.ref : null);
+    if (doc !== null) {
       const entry: RawThreadFeedEntry = {
         type: "docs-cloud",
         id: `docs-cloud:${row.visibility}:${row.sourceThreadId}:${row.sourceItemId}`,
         createdAt,
         runId: item.runId,
-        doc: cloudDoc.ref,
+        doc,
       };
       projectedEntriesCache.set(row, { attemptId, entry });
       entries.push(entry);

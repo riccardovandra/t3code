@@ -2,14 +2,12 @@ import type { DocComment, EnvironmentId, ProjectId, ThreadId } from "@t3tools/co
 import type { LocalRequestMessage } from "@t3tools/shared/docsCloudLocal";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ReviewCommentContext } from "~/reviewCommentContext";
-
-import { answerLocalDocsRequest, type LocalDocsContext } from "./localDocsBridge";
 import {
   localCommentHandlers,
   type LocalCommentsOptions,
   type LocalDocCommentsApi,
-} from "./localDocComments";
+} from "./docsCloudLocalComments.ts";
+import { answerLocalDocsRequest, type LocalDocsContext } from "./docsCloudLocalHost.ts";
 
 const projectId = "project-1" as ProjectId;
 const conversation = "thread-main" as ThreadId;
@@ -42,7 +40,7 @@ const oldPanelComment: DocComment = {
 function fakeServer(options: Partial<LocalCommentsOptions> = {}) {
   const store = new Map<string, Array<DocComment>>([["docs/plan.md", [oldPanelComment]]]);
   const calls: Array<[string, unknown]> = [];
-  const chat: Array<ReviewCommentContext> = [];
+  const chat: Array<[string, string]> = [];
   const agentThreads: Array<ReadonlyArray<ThreadId>> = [];
   const api: LocalDocCommentsApi = {
     list: async (_project, path) => store.get(path) ?? [],
@@ -70,7 +68,7 @@ function fakeServer(options: Partial<LocalCommentsOptions> = {}) {
     api,
     canComment: true,
     sendFromThreadId: conversation,
-    addToChat: (comment) => chat.push(comment),
+    addToChat: (path, thread) => chat.push([path, thread.id]),
     onAgentThreads: (ids) => agentThreads.push(ids),
     ...options,
   });
@@ -220,17 +218,14 @@ describe("localCommentHandlers", () => {
     expect(server.calls).toEqual([]);
   });
 
-  it("adds a thread to the chat with what the agent needs to answer it", async () => {
+  it("adds the whole thread to the chat, and refuses where there is no chat", async () => {
     const server = fakeServer();
     const added = await server.ask({ kind: "comment.chat", path: "docs/plan.md", commentId: "c1" });
     expect(added).toMatchObject({ ok: true, result: { added: true } });
-    expect(server.chat).toEqual([
-      expect.objectContaining({
-        filePath: "docs/plan.md",
-        sectionTitle: "Doc comment c1 (reply with docs_comment_reply)",
-        text: "Can we make it Thursday?",
-        diff: "ships Friday",
-      }),
-    ]);
+    expect(server.chat).toEqual([["docs/plan.md", "c1"]]);
+    const noChat = fakeServer({ addToChat: null });
+    expect(
+      await noChat.ask({ kind: "comment.chat", path: "docs/plan.md", commentId: "c2" }),
+    ).toMatchObject({ ok: false, error: "There is no chat to add this to." });
   });
 });

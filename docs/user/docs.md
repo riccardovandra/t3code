@@ -34,4 +34,4 @@ Rich tables track work in a doc: each column is text, a status (a coloured chip 
 
 The panel loads Docs Cloud directly in your browser, so it works the same over remote connections. Browsers that block cookies inside embedded pages, such as Safari, may not keep you signed in there; use **Open in browser** in the panel header instead.
 
-On mobile, **Docs** in a thread's header opens your Docs Cloud library, and tapping a doc card in the conversation opens that doc. Sign in inside that screen the first time. Links to other sites open in your browser. Project files are not on mobile yet.
+On mobile, **Docs** in a thread's header opens your Docs Cloud library with the thread's project files, and tapping a doc card in the conversation opens that doc or file. You edit and comment on project files there as on desktop, and **Add to chat** puts a comment in the thread's draft. Sign in inside that screen the first time. Links to other sites open in your browser.

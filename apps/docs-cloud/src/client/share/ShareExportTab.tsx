@@ -5,6 +5,7 @@ import { copyMarkdown, download } from "../doc/ExportMenu.tsx";
 import { readyWidgetsForPrint } from "../editor/widget/WidgetView.ts";
 import {
   hasEmbedParent,
+  isNativeEmbed,
   postToEmbedParent,
   subscribeEmbedParent,
   subscribeParentMessages,
@@ -284,24 +285,26 @@ export function ShareExportTab(props: {
                 onClick={sendToNotion}
               />
             ) : null}
-            <Row
-              badge={<Badge label="C" />}
-              title="Claude Docs"
-              description="Recreate this doc in Claude Docs"
-              action={<OpenIcon />}
-              onClick={() =>
-                run(async () => {
-                  // The agent reads the doc from the server, so pending edits go first.
-                  await flush();
-                  postToEmbedParent({
-                    type: "t3-docs:copy-to-claude-doc",
-                    docId,
-                    title,
-                    url: docUrl,
-                  });
-                })
-              }
-            />
+            {isNativeEmbed() ? null : (
+              <Row
+                badge={<Badge label="C" />}
+                title="Claude Docs"
+                description="Recreate this doc in Claude Docs"
+                action={<OpenIcon />}
+                onClick={() =>
+                  run(async () => {
+                    // The agent reads the doc from the server, so pending edits go first.
+                    await flush();
+                    postToEmbedParent({
+                      type: "t3-docs:copy-to-claude-doc",
+                      docId,
+                      title,
+                      url: docUrl,
+                    });
+                  })
+                }
+              />
+            )}
           </ul>
         </>
       ) : null}

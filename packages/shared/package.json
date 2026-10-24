@@ -135,6 +135,10 @@
       "types": "./src/docsCloudLocal.ts",
       "import": "./src/docsCloudLocal.ts"
     },
+    "./docsCloudNative": {
+      "types": "./src/docsCloudNative.ts",
+      "import": "./src/docsCloudNative.ts"
+    },
     "./docsCloudProjects": {
       "types": "./src/docsCloudProjects.ts",
       "import": "./src/docsCloudProjects.ts"

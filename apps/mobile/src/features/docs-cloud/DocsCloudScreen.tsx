@@ -1,5 +1,7 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { localDocPathFromAppPath } from "@t3tools/shared/docsCloudLocal";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -11,15 +13,19 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { mobileWebViewThemeColors } from "../../lib/htmlRenderTheme";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { serverEnvironment } from "../../state/server";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { docsCloudNavigation, docsCloudUrl } from "./docsCloudNavigation";
 import { useDocsCloudBaseUrl } from "./useDocsCloudBaseUrl";
+import { useDocsCloudHost } from "./useDocsCloudHost";
 
 type DocsCloudScreenProps = StaticScreenProps<{
   readonly environmentId: string;
   /** An app path such as `/d/<docId>/<tabId>`; the library when omitted. */
   readonly path?: string;
   readonly title?: string;
+  /** The conversation it opened from; its project's docs/ files then show beside the cloud docs. */
+  readonly threadId?: string;
 }>;
 
 /**
@@ -30,12 +36,20 @@ type DocsCloudScreenProps = StaticScreenProps<{
 export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const baseUrl = useDocsCloudBaseUrl(EnvironmentId.make(route.params.environmentId));
+  const environmentId = EnvironmentId.make(route.params.environmentId);
+  const baseUrl = useDocsCloudBaseUrl(environmentId);
   const startUrl = baseUrl === null ? null : docsCloudUrl(baseUrl, route.params.path ?? "/");
   const [page, setPage] = useState<{ readonly url: string; readonly title: string } | null>(null);
   const currentUrl = page?.url ?? startUrl;
   const title = page?.title || route.params.title || "Docs";
   const webView = useRef<WebView<object>>(null);
+  const host = useDocsCloudHost({
+    webView,
+    baseUrl,
+    environmentId,
+    threadId: route.params.threadId ? ThreadId.make(route.params.threadId) : null,
+  });
+  const canConnect = useAtomValue(serverEnvironment.upsertMcpServer.permissionAtom(environmentId));
   // Docs Cloud reads `window.t3DocsTheme` on load and takes later changes as a
   // `t3-docs:theme` message posted from the page itself.
   const { themeId, themeAppearance, themeVariables, systemColorsActive } =
@@ -66,17 +80,17 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
         <Text className="flex-1 text-base font-semibold text-foreground" numberOfLines={1}>
           {title}
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open in browser"
-          disabled={currentUrl === null}
-          hitSlop={8}
-          onPress={() => {
-            if (currentUrl !== null) void WebBrowser.openBrowserAsync(currentUrl);
-          }}
-        >
-          <SymbolView name="safari" size={18} tintColor="gray" />
-        </Pressable>
+        {/* A project file only opens inside T3 Code, which serves it. */}
+        {currentUrl !== null && localDocPathFromAppPath(new URL(currentUrl).pathname) === null ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open in browser"
+            hitSlop={8}
+            onPress={() => void WebBrowser.openBrowserAsync(currentUrl)}
+          >
+            <SymbolView name="safari" size={18} tintColor="gray" />
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close"
@@ -88,9 +102,29 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
       </View>
       <View className="flex-1" style={{ paddingBottom: insets.bottom }}>
         {baseUrl === null || startUrl === null ? (
-          <Text className="m-6 text-sm text-foreground-muted">
-            Docs Cloud is not set up on this environment. Add it in Settings, MCP servers.
-          </Text>
+          <View className="m-6 gap-2">
+            <Text className="text-base font-semibold text-foreground">Connect Docs Cloud</Text>
+            <Text className="text-sm text-foreground-muted">
+              {canConnect
+                ? "Docs opens in Docs Cloud, with this project's markdown files beside your docs. Connect it in Settings, MCP servers, to read, edit and comment on them here."
+                : "Docs opens in Docs Cloud, which this environment has not connected. Ask its owner to connect it in Settings."}
+            </Text>
+            {canConnect ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  navigation.navigate("SettingsSheet", {
+                    screen: "SettingsContent",
+                    params: { screen: "SettingsMcpServers" },
+                  })
+                }
+              >
+                <Text className="text-sm font-semibold text-primary">
+                  Open MCP servers settings
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : (
           <WebView
             ref={webView}
@@ -100,6 +134,7 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
             allowsBackForwardNavigationGestures
             setSupportMultipleWindows={false}
             startInLoadingState
+            onMessage={host.onMessage}
             onShouldStartLoadWithRequest={(request) => {
               // Frames inside a Docs Cloud page are its own business; the screen only guards its top level.
               if (request.isTopFrame === false) return true;

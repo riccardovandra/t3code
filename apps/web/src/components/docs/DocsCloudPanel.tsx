@@ -1,4 +1,9 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
+import {
+  answerLocalDocsRequest,
+  LOCAL_FILE_HANDLERS,
+  type LocalDocsContext,
+} from "@t3tools/client-runtime/docs-cloud-local-host";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
@@ -37,11 +42,6 @@ import {
   toThreadRef,
   useStartWorkFromDoc,
 } from "./docsCloudWork";
-import {
-  answerLocalDocsRequest,
-  LOCAL_FILE_HANDLERS,
-  type LocalDocsContext,
-} from "./localDocsBridge";
 import { localDocsFiles } from "./localDocsFiles";
 import {
   localCommentHandlers,

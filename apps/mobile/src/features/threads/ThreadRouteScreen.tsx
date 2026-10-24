@@ -744,7 +744,11 @@ function ThreadRouteContent(
     onRunProjectScript: handleRunProjectScript,
     onOpenDocsCloud:
       docsCloudBaseUrl !== null && environmentIdRaw
-        ? () => navigation.navigate("DocsCloud", { environmentId: environmentIdRaw })
+        ? () =>
+            navigation.navigate("DocsCloud", {
+              environmentId: environmentIdRaw,
+              ...(selectedThread ? { threadId: String(selectedThread.id) } : {}),
+            })
         : undefined,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
