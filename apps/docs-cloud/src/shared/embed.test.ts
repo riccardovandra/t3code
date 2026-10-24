@@ -75,11 +75,10 @@ describe("parseParentMessage", () => {
     });
   });
 
-  it("validates comment results and ignores unknown types", () => {
+  it("ignores unknown types, including the retired comment-sent", () => {
     expect(
       parseParentMessage({ type: "t3-docs:comment-sent", requestId: "r-1", error: null }),
-    ).toEqual({ type: "t3-docs:comment-sent", requestId: "r-1", error: null });
-    expect(parseParentMessage({ type: "t3-docs:comment-sent", requestId: "r-1" })).toBeNull();
+    ).toBeNull();
     expect(parseParentMessage({ type: "t3-docs:other" })).toBeNull();
     expect(parseParentMessage("t3-docs:hello")).toBeNull();
   });
@@ -94,8 +93,13 @@ describe("parseParentMessage", () => {
     const failed = { ...sent, error: "Connect Notion in Settings → MCP Servers." };
     expect(parseParentMessage(failed)).toEqual(failed);
     expect(
-      parseParentMessage({ type: "t3-docs:hello", features: ["send-to", "send-to-agent"] }),
-    ).toEqual({ type: "t3-docs:hello", features: ["send-to-agent", "send-to"] });
+      parseParentMessage({ type: "t3-docs:hello", features: ["send-to", "add-to-chat"] }),
+    ).toEqual({ type: "t3-docs:hello", features: ["add-to-chat", "send-to"] });
+    // An older T3 Code's feature is dropped, so its comment button never shows.
+    expect(parseParentMessage({ type: "t3-docs:hello", features: ["send-to-agent"] })).toEqual({
+      type: "t3-docs:hello",
+      features: [],
+    });
   });
 
   it("takes the theme appearance and only literal colours for known roles", () => {

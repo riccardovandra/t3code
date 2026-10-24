@@ -148,21 +148,26 @@ export interface DocsCloudStartWork {
   readonly url: string;
 }
 
-export interface DocsCloudCommentEntry {
-  readonly id: string;
-  readonly author: "user" | "agent";
-  readonly body: string;
-}
+/** The table cell or diagram label a Docs Cloud comment is on. */
+export type DocsCloudCommentAnchor =
+  | {
+      readonly kind: "cell";
+      readonly blockId: string;
+      readonly rowId: string;
+      readonly colId: string;
+    }
+  | { readonly kind: "label"; readonly blockId: string; readonly textId: string };
 
-export interface DocsCloudCommentSend {
-  readonly requestId: string;
+/** A Docs Cloud comment to add to the open conversation's composer. */
+export interface DocsCloudCommentForChat {
   readonly docId: string;
   readonly tabId: string;
   readonly docTitle: string;
   readonly url: string;
   readonly commentId: string;
   readonly quote: string;
-  readonly entries: ReadonlyArray<DocsCloudCommentEntry>;
+  readonly body: string;
+  readonly anchor: DocsCloudCommentAnchor | null;
 }
 
 /** Copy the doc into another app; T3 Code answers with `sent-to` and the same requestId. */
@@ -183,7 +188,7 @@ export type DocsCloudFrameRequest =
     }
   | ({ readonly type: "t3-docs:open-thread" } & DocsCloudThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & DocsCloudThreadRef)
-  | ({ readonly type: "t3-docs:send-comment" } & DocsCloudCommentSend)
+  | ({ readonly type: "t3-docs:add-comment-to-chat" } & DocsCloudCommentForChat)
   | ({ readonly type: "t3-docs:send-to" } & DocsCloudSendToRequest);
 
 const DOCS_CLOUD_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -201,6 +206,28 @@ const isRef = (value: unknown): value is DocsCloudThreadRef => {
     ref.threadId !== ""
   );
 };
+
+const ANCHOR_ID = /^[A-Za-z0-9_:.-]{1,128}$/;
+const isAnchorId = (value: unknown): value is string =>
+  typeof value === "string" && ANCHOR_ID.test(value);
+
+/** The anchor when absent or well formed; undefined when present but malformed. */
+function parseCommentAnchor(value: unknown): DocsCloudCommentAnchor | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object") return undefined;
+  const anchor = value as Record<string, unknown>;
+  if (anchor.kind === "cell") {
+    return isAnchorId(anchor.blockId) && isAnchorId(anchor.rowId) && isAnchorId(anchor.colId)
+      ? { kind: "cell", blockId: anchor.blockId, rowId: anchor.rowId, colId: anchor.colId }
+      : undefined;
+  }
+  if (anchor.kind === "label") {
+    return isAnchorId(anchor.blockId) && isAnchorId(anchor.textId)
+      ? { kind: "label", blockId: anchor.blockId, textId: anchor.textId }
+      : undefined;
+  }
+  return undefined;
+}
 
 /** True when `url` is the doc's own page (optionally at a tab) on the Docs Cloud origin. */
 function isDocUrl(
@@ -260,29 +287,23 @@ export function parseDocsCloudFrameRequest(
             threadId: message.threadId,
           }
         : null;
-    case "t3-docs:send-comment": {
-      const { requestId, docId, tabId, docTitle, url, commentId, quote, entries } = message;
-      if (!isId(requestId) || !isId(docId) || !isId(tabId) || !isId(commentId)) return null;
-      if (!isText(docTitle, 500) || !isText(quote, 2_000)) return null;
-      if (!isDocUrl(url, origin, docId, tabId)) return null;
-      if (!Array.isArray(entries) || entries.length === 0 || entries.length > 200) return null;
-      const parsed: Array<DocsCloudCommentEntry> = [];
-      for (const entry of entries as Array<Record<string, unknown>>) {
-        if (typeof entry !== "object" || entry === null || !isId(entry.id)) return null;
-        if (entry.author !== "user" && entry.author !== "agent") return null;
-        if (!isText(entry.body, 10_000)) return null;
-        parsed.push({ id: entry.id, author: entry.author, body: entry.body });
-      }
+    case "t3-docs:add-comment-to-chat": {
+      const { docId, tabId, docTitle, url, commentId, quote, body } = message;
+      if (!isId(docId) || !isId(tabId) || !isId(commentId)) return null;
+      if (!isText(docTitle, 500) || !isText(quote, 2_000) || !isText(body, 10_000)) return null;
+      if (body.trim() === "" || !isDocUrl(url, origin, docId, tabId)) return null;
+      const anchor = parseCommentAnchor(message.anchor);
+      if (anchor === undefined) return null;
       return {
         type: message.type,
-        requestId,
         docId,
         tabId,
-        docTitle,
+        docTitle: docTitle.trim() || "Untitled",
         url,
         commentId,
         quote,
-        entries: parsed,
+        body,
+        anchor,
       };
     }
     case "t3-docs:send-to": {

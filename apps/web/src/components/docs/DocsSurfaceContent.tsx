@@ -2,6 +2,7 @@ import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contrac
 import { CloudIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
 
+import type { DraftId } from "~/composerDraftStore";
 import { docsSurfaceSource, type RightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
 import { Button } from "../ui/button";
@@ -19,6 +20,7 @@ export function DocsSurfaceContent(props: {
   readonly surface: Extract<RightPanelSurface, { kind: "docs" }>;
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
+  readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly projectId: ProjectId | null;
   readonly workspaceRoot: string | undefined;
 }) {
@@ -36,6 +38,7 @@ export function DocsSurfaceContent(props: {
           key={baseUrl}
           baseUrl={baseUrl}
           threadRef={threadRef}
+          composerDraftTarget={props.composerDraftTarget}
           projectId={props.projectId}
           path={surface.cloudPath}
           onShowFiles={hasFiles ? () => panels().selectDoc(threadRef, surface.docPath) : null}

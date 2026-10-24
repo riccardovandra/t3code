@@ -1,5 +1,9 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
-import { PullRequestContextMetadata, type PullRequestReviewPosition } from "@t3tools/contracts";
+import {
+  DocsCloudCommentContextMetadata,
+  PullRequestContextMetadata,
+  type PullRequestReviewPosition,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import { isLineInFileDiff } from "./components/pullRequest/pullRequestDiff.logic";
@@ -25,6 +29,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
   pullRequest: Schema.optional(PullRequestContextMetadata),
+  docsCloud: Schema.optional(DocsCloudCommentContextMetadata),
 });
 
 export interface ReviewCommentContext {
@@ -40,6 +45,7 @@ export interface ReviewCommentContext {
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
   readonly pullRequest?: PullRequestContextMetadata | undefined;
+  readonly docsCloud?: DocsCloudCommentContextMetadata | undefined;
 }
 
 interface DiffReviewLine {
@@ -80,6 +86,31 @@ export function buildFileReviewComment(input: {
     text: input.text.trim(),
     diff: selectedLines.join("\n"),
     fenceLanguage: inferReviewCommentFenceLanguage(input.filePath),
+  };
+}
+
+/**
+ * A Docs Cloud comment as composer context. The doc's URL stands where a file
+ * path would, and the quoted passage where a file's lines would; `docsCloud`
+ * carries the ids the agent needs to reply in the doc. The same comment added
+ * twice replaces itself.
+ */
+export function buildDocsCloudReviewComment(
+  input: DocsCloudCommentContextMetadata & { readonly quote: string; readonly body: string },
+): ReviewCommentContext {
+  const { quote, body, ...docsCloud } = input;
+  return {
+    id: `docs-cloud-${input.commentId}`,
+    sectionId: `docs-cloud:${input.docId}/${input.tabId}`,
+    sectionTitle: "Docs Cloud comment",
+    filePath: input.url,
+    startIndex: 0,
+    endIndex: 0,
+    rangeLabel: input.docTitle.trim() || "Untitled",
+    text: body.trim(),
+    diff: quote,
+    fenceLanguage: "text",
+    docsCloud,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   type ElementContextDetails,
   type EnvironmentId,
   type KnownComposerContextRecord,
+  type ReviewCommentContextRecord,
   type ThreadContextRecord,
 } from "@t3tools/contracts";
 
@@ -210,6 +211,38 @@ function formatElementDetails(element: ElementContextDetails): string[] {
   return lines;
 }
 
+/**
+ * A Docs Cloud comment for the agent: where it is, what it says, and how to
+ * close the loop in the doc. Docs Cloud keeps the thread, so the agent replies
+ * and resolves there rather than in chat.
+ */
+export function formatDocsCloudCommentForAgent(
+  record: Pick<ReviewCommentContextRecord, "text" | "diff">,
+  docsCloud: NonNullable<ReviewCommentContextRecord["docsCloud"]>,
+): string {
+  const lines = [
+    `Docs Cloud comment on ${JSON.stringify(docsCloud.docTitle)}`,
+    `url: ${docsCloud.url}`,
+    `docId: ${docsCloud.docId}`,
+    `tabId: ${docsCloud.tabId}`,
+    `commentId: ${docsCloud.commentId}`,
+  ];
+  const anchor = docsCloud.anchor;
+  if (anchor?.kind === "cell") {
+    lines.push(
+      `on table cell: blockId=${anchor.blockId} rowId=${anchor.rowId} colId=${anchor.colId}`,
+    );
+  } else if (anchor?.kind === "label") {
+    lines.push(`on diagram label: blockId=${anchor.blockId} textId=${anchor.textId}`);
+  }
+  if (record.diff.trim()) lines.push("quote:", indent(record.diff.trim()));
+  if (record.text.trim()) lines.push("comment:", indent(record.text.trim()));
+  lines.push(
+    `Act on it with the docs-cloud tools: read the tab with read_doc (docId and tabId above) and change it with edit_tab${anchor === undefined ? "" : anchor.kind === "cell" ? " or update_table_cell" : " or edit_diagram_label"}. Then reply_comment (commentId above) saying briefly what changed or answering the question, and resolve_comment once it is handled.`,
+  );
+  return lines.join("\n");
+}
+
 function formatComposerContextProviderPayload(record: KnownComposerContextRecord): string {
   switch (record.kind) {
     case "image":
@@ -249,6 +282,7 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
       return lines.join("\n");
     }
     case "review-comment": {
+      if (record.docsCloud) return formatDocsCloudCommentForAgent(record, record.docsCloud);
       const lines = [
         `file: ${record.filePath}`,
         `range: ${record.rangeLabel} (${record.startIndex}-${record.endIndex})`,

@@ -175,9 +175,8 @@ const sameTops = (a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>
 
 /**
  * Wires comment anchors into the live editor. Returns where each anchored
- * comment's passage starts and where the current selection starts, both in
- * pixels from the top of `container`; a comment missing from `tops` has lost
- * its passage.
+ * comment's passage starts, in pixels from the top of `container`; a comment
+ * missing from `tops` has lost its passage.
  */
 export function useEditorComments(
   editor: Editor | null,
@@ -186,13 +185,12 @@ export function useEditorComments(
     readonly activeId: string | null;
     readonly container: HTMLElement | null;
   },
-): { readonly tops: ReadonlyMap<string, number>; readonly selectionTop: number | null } {
+): ReadonlyMap<string, number> {
   const latest = useRef(props);
   useLayoutEffect(() => {
     latest.current = props;
   });
   const [tops, setTops] = useState<ReadonlyMap<string, number>>(new Map());
-  const [selectionTop, setSelectionTop] = useState<number | null>(null);
   const { container } = props;
 
   useEffect(() => {
@@ -220,26 +218,17 @@ export function useEditorComments(
         }
       }
       setTops((current) => (sameTops(current, next) ? current : next));
-      const { from, empty } = editor.state.selection;
-      setSelectionTop(
-        empty || !editor.isFocused ? null : Math.round(editor.view.coordsAtPos(from).top - origin),
-      );
     };
     // Measuring reads layout, so it runs after the view has updated the DOM.
     const schedule = () => queueMicrotask(measure);
     editor.registerPlugin(createCommentsPlugin(() => latest.current, schedule));
     showAnchors(editor, latest.current);
-    editor.on("focus", schedule);
-    editor.on("blur", schedule);
     const observer = new ResizeObserver(schedule);
     observer.observe(container);
     return () => {
       observer.disconnect();
-      editor.off("focus", schedule);
-      editor.off("blur", schedule);
       if (!editor.isDestroyed) editor.unregisterPlugin(commentsKey);
       setTops(new Map());
-      setSelectionTop(null);
     };
   }, [editor, container]);
 
@@ -248,5 +237,5 @@ export function useEditorComments(
     if (editor && !editor.isDestroyed) showAnchors(editor, { anchors, activeId });
   }, [editor, anchors, activeId]);
 
-  return { tops, selectionTop };
+  return tops;
 }

@@ -22,8 +22,6 @@ import {
   DocCommentDeleteInput,
   DocCommentMutationResult,
   DocCommentReplyInput,
-  DocsCloudCommentSendInput,
-  DocsCloudCommentSendResult,
   DocCommentSetResolvedInput,
   DocCommentsListInput,
   DocCommentsResult,
@@ -592,7 +590,6 @@ export const WS_METHODS = {
   docsListComments: "docs.listComments",
   docsCreateComment: "docs.createComment",
   docsReplyComment: "docs.replyComment",
-  docsSendCloudComment: "docs.sendCloudComment",
   docsSetCommentResolved: "docs.setCommentResolved",
   docsDeleteComment: "docs.deleteComment",
   docsCloudListImports: "docsCloud.listImports",
@@ -1999,11 +1996,6 @@ const WsDocsReplyCommentRpc = Rpc.make(WS_METHODS.docsReplyComment, {
   success: DocCommentMutationResult,
   error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
 });
-const WsDocsSendCloudCommentRpc = Rpc.make(WS_METHODS.docsSendCloudComment, {
-  payload: DocsCloudCommentSendInput,
-  success: DocsCloudCommentSendResult,
-  error: Schema.Union([DocsError, EnvironmentAuthorizationError]),
-});
 const WsDocsSetCommentResolvedRpc = Rpc.make(WS_METHODS.docsSetCommentResolved, {
   payload: DocCommentSetResolvedInput,
   success: DocCommentMutationResult,
@@ -2201,7 +2193,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsDocsListCommentsRpc,
   WsDocsCreateCommentRpc,
   WsDocsReplyCommentRpc,
-  WsDocsSendCloudCommentRpc,
   WsDocsSetCommentResolvedRpc,
   WsDocsDeleteCommentRpc,
   WsDocsCloudListImportsRpc,

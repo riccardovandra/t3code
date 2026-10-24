@@ -7,7 +7,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
+import { buildDocsCloudReviewComment } from "~/reviewCommentContext";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProject, useThreadShell } from "~/state/entities";
 import { useEnvironment } from "~/state/environments";
@@ -49,6 +51,8 @@ function isLocationMessage(value: unknown): value is EmbedLocationMessage {
 export function DocsCloudPanel(props: {
   readonly baseUrl: string;
   readonly threadRef: ScopedThreadRef;
+  /** The composer draft that "Add to chat" puts comments in. */
+  readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly projectId: ProjectId | null;
   readonly path: string | undefined;
   readonly onShowFiles: (() => void) | null;
@@ -90,10 +94,7 @@ export function DocsCloudPanel(props: {
   const [frameReady, setFrameReady] = useState(false);
   const navigate = useNavigate();
   const startWork = useStartWorkFromDoc(threadRef.environmentId, props.projectId);
-  const sendComment = useAtomCommand(
-    serverEnvironment.sendDocsCloudComment,
-    "send Docs Cloud comment to agent",
-  );
+  const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   // Failures go back to the frame, which shows them beside the button.
   const sendTo = useAtomCommand(serverEnvironment.sendDocsCloudTo, {
     label: "send Docs Cloud doc to another app",
@@ -125,20 +126,11 @@ export function DocsCloudPanel(props: {
       case "t3-docs:thread-linked":
         clearPendingDocLink(toThreadRef(request), request.docId);
         return;
-      case "t3-docs:send-comment": {
-        const { type: _type, ...comment } = request;
-        void sendComment({
-          environmentId: threadRef.environmentId,
-          input: { ...comment, fromThreadId: threadRef.threadId },
-        }).then((result) =>
-          postToFrame({
-            type: "t3-docs:comment-sent",
-            requestId: request.requestId,
-            error:
-              result._tag === "Success"
-                ? null
-                : "The comment could not be sent to the agent. Try again.",
-          }),
+      case "t3-docs:add-comment-to-chat": {
+        const { type: _type, anchor, ...comment } = request;
+        addReviewComment(
+          props.composerDraftTarget,
+          buildDocsCloudReviewComment({ ...comment, ...(anchor === null ? {} : { anchor }) }),
         );
         return;
       }
@@ -245,8 +237,8 @@ export function DocsCloudPanel(props: {
             {
               type: "t3-docs:hello",
               features: startWork
-                ? ["start-work", "send-to-agent", "send-to"]
-                : ["send-to-agent", "send-to"],
+                ? ["start-work", "add-to-chat", "send-to"]
+                : ["add-to-chat", "send-to"],
             },
             origin,
           );

@@ -8,9 +8,8 @@ import {
   type EmbedFrameMessage,
   type EmbedParentMessage,
 } from "../shared/embed.ts";
-import { isAgentAuthor } from "../shared/threads.ts";
 import { api } from "./api.ts";
-import { setSendToAgentHandler } from "./comments/sendToAgent.ts";
+import { setAddToChatHandler } from "./comments/addToChat.ts";
 import { setEmbedProject } from "./embedContext.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 import { applyTheme } from "./theme.ts";
@@ -20,7 +19,7 @@ let parentOrigin: string | null = null;
 let features: ReadonlyArray<EmbedFeature> = [];
 const parentListeners = new Set<() => void>();
 const messageListeners = new Set<(message: EmbedParentMessage) => void>();
-let removeSendToAgent: (() => void) | null = null;
+let removeAddToChat: (() => void) | null = null;
 
 /** True once T3 Code has said hello, so features that need it can show. */
 export function hasEmbedParent(): boolean {
@@ -44,7 +43,7 @@ export function useEmbedFeatures(): ReadonlyArray<EmbedFeature> | null {
   return useSyncExternalStore(subscribeEmbedParent, embedFeatures);
 }
 
-/** Parent messages a page reacts to (`threads`, `comment-sent`). */
+/** Parent messages a page reacts to (`threads`, `sent-to`). */
 export function subscribeParentMessages(
   listener: (message: EmbedParentMessage) => void,
 ): () => void {
@@ -52,25 +51,11 @@ export function subscribeParentMessages(
   return () => messageListeners.delete(listener);
 }
 
-function installSendToAgent(enabled: boolean): void {
-  removeSendToAgent?.();
-  removeSendToAgent = enabled
-    ? setSendToAgentHandler(({ docId, docTitle, tabId, thread, url }) =>
-        postToEmbedParent({
-          type: "t3-docs:send-comment",
-          requestId: crypto.randomUUID(),
-          docId,
-          tabId,
-          docTitle,
-          url,
-          commentId: thread.root.id,
-          quote: thread.root.quote,
-          entries: [thread.root, ...thread.replies].map((comment) => ({
-            id: comment.id,
-            author: isAgentAuthor(comment.author) ? "agent" : "user",
-            body: comment.body,
-          })),
-        }),
+function installAddToChat(enabled: boolean): void {
+  removeAddToChat?.();
+  removeAddToChat = enabled
+    ? setAddToChatHandler((comment) =>
+        postToEmbedParent({ type: "t3-docs:add-comment-to-chat", ...comment }),
       )
     : null;
 }
@@ -108,7 +93,7 @@ export function startEmbedBridge(): void {
       const changed = parentOrigin !== event.origin || next.join(" ") !== features.join(" ");
       parentOrigin = event.origin;
       features = next;
-      installSendToAgent(next.includes("send-to-agent"));
+      installAddToChat(next.includes("add-to-chat"));
       if (changed) for (const listener of parentListeners) listener();
       postLocation();
       return;

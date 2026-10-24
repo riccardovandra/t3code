@@ -5,7 +5,7 @@
  * `location`; `features` lists what this T3 Code can do for the doc),
  * `navigate` (an app path such as `/d/:docId/:tabId`), `link-thread` (record a
  * thread started from a doc), `threads` (which linked threads it can open, with
- * their current titles), `comment-sent` (how a sent comment went), `context`
+ * their current titles), `context`
  * (the T3 Code project the panel belongs to, by key and name, after hello and
  * on change), `theme` (T3 Code's appearance and resolved palette, after hello
  * and on change; the mobile app sends the same message to the top-level page)
@@ -13,14 +13,16 @@
  * Frame -> parent: `location` after hello and on every route change,
  * `copy-to-claude-doc` (recreate the doc in Claude Docs), `start-work`,
  * `resolve-threads`, `open-thread`, `thread-linked` (the link-thread record is
- * stored), `send-comment` and `send-to` (copy the doc into Notion through
- * T3 Code's MCP hub). Frame actions are only offered once a parent has
- * said hello. Every message is additive: an older peer ignores unknown types.
+ * stored), `add-comment-to-chat` (put a comment in the open conversation's
+ * composer) and `send-to` (copy the doc into Notion through T3 Code's MCP
+ * hub). Frame actions are only offered once a parent has said hello and listed
+ * the feature. Every message is additive: an older peer ignores unknown types.
  */
 import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
+import type { StructuredAnchor } from "./anchors.ts";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
-export type EmbedFeature = "start-work" | "send-to-agent" | "send-to";
+export type EmbedFeature = "start-work" | "add-to-chat" | "send-to";
 
 /** Apps T3 Code can copy a doc into. */
 export type EmbedSendTarget = "notion";
@@ -54,12 +56,6 @@ export type EmbedParentMessage =
   | {
       readonly type: "t3-docs:threads";
       readonly threads: ReadonlyArray<EmbedThreadRef & { readonly title: string }>;
-    }
-  | {
-      readonly type: "t3-docs:comment-sent";
-      readonly requestId: string;
-      /** Null when it reached the agent, else a message for the user. */
-      readonly error: string | null;
     }
   | {
       readonly type: "t3-docs:context";
@@ -101,11 +97,19 @@ export interface EmbedCopyToClaudeDocMessage {
   readonly url: string;
 }
 
-/** One message of a comment thread, oldest first. */
-export interface EmbedCommentEntry {
-  readonly id: string;
-  readonly author: "user" | "agent";
+/** A comment for the agent in the conversation the Docs panel sits beside. */
+export interface EmbedCommentForChat {
+  readonly docId: string;
+  readonly tabId: string;
+  readonly docTitle: string;
+  /** Opens the doc at the comment's tab. */
+  readonly url: string;
+  /** The thread's root comment. */
+  readonly commentId: string;
+  readonly quote: string;
   readonly body: string;
+  /** The cell or diagram label the comment is on, when it is not on a passage. */
+  readonly anchor: StructuredAnchor | null;
 }
 
 export type EmbedFrameMessage =
@@ -130,19 +134,9 @@ export type EmbedFrameMessage =
   | { readonly type: "t3-docs:resolve-threads"; readonly threads: ReadonlyArray<EmbedThreadRef> }
   | ({ readonly type: "t3-docs:open-thread" } & EmbedThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & EmbedThreadRef)
-  | {
-      readonly type: "t3-docs:send-comment";
-      readonly requestId: string;
-      readonly docId: string;
-      readonly tabId: string;
-      readonly docTitle: string;
-      readonly url: string;
-      readonly commentId: string;
-      readonly quote: string;
-      readonly entries: ReadonlyArray<EmbedCommentEntry>;
-    };
+  | ({ readonly type: "t3-docs:add-comment-to-chat" } & EmbedCommentForChat);
 
-const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "send-to-agent", "send-to"];
+const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "add-to-chat", "send-to"];
 
 type Fields = Record<string, unknown>;
 const isObject = (value: unknown): value is Fields =>
@@ -220,10 +214,6 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
               )
               .map(({ environmentId, threadId, title }) => ({ environmentId, threadId, title })),
           }
-        : null;
-    case "t3-docs:comment-sent":
-      return isText(data.requestId) && (data.error === null || isText(data.error, 1_000))
-        ? { type: data.type, requestId: data.requestId, error: data.error }
         : null;
     case "t3-docs:context": {
       if (data.projectName !== null && !isText(data.projectName, 1_000)) return null;

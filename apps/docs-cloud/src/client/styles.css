@@ -1048,6 +1048,49 @@ span.tab-row-toggle {
   font-size: 0.8rem;
 }
 
+.comment-add-to-chat {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.comment-add-to-chat input {
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+/* The menu over a text selection. */
+.selection-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 0.2rem;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
+  z-index: 30;
+}
+
+.selection-toolbar .toolbar-separator {
+  margin: 0 0.15rem;
+}
+
+.selection-toolbar-glyph {
+  display: inline-block;
+  min-width: 1ch;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.selection-toolbar-menu {
+  min-width: 10rem;
+}
+
 .button.small {
   padding: 0.25rem 0.6rem;
   font-size: 0.8rem;

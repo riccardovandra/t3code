@@ -5,8 +5,6 @@ import {
   type DocCommentMutationResult,
   type DocCommentReplyInput,
   DocsError,
-  type DocsCloudCommentSendInput,
-  type DocsCloudCommentSendResult,
   MessageId,
   type OrchestrationV2ThreadShell,
   type ProjectId,
@@ -33,11 +31,6 @@ const HISTORY_BUDGET = 4_000;
  * thread per (conversation, doc), created on first use, that acts on it and
  * answers with docs_comment_reply. Agents comment through DocCommentsService
  * directly, so they never trigger a delivery.
- *
- * `sendCloudComment` does the same for a Docs Cloud comment thread. Docs Cloud
- * stores the comment itself, so nothing is saved here: the thread is routed to
- * the conversation's doc agent for that Docs Cloud doc, which answers with the
- * docs-cloud reply_comment tool.
  */
 export class DocCommentDelivery extends Context.Service<
   DocCommentDelivery,
@@ -48,9 +41,6 @@ export class DocCommentDelivery extends Context.Service<
     readonly reply: (
       input: DocCommentReplyInput,
     ) => Effect.Effect<DocCommentMutationResult, DocsError>;
-    readonly sendCloudComment: (
-      input: DocsCloudCommentSendInput,
-    ) => Effect.Effect<DocsCloudCommentSendResult, DocsError>;
   }
 >()("t3/docs/DocCommentDelivery") {}
 
@@ -97,30 +87,6 @@ const deliveryMessage = (thread: DocComment, entryId: string): string => {
 const rolePreface = (docPath: string): string =>
   `You are the doc agent for ${docPath} in this project. The user reviews this doc in T3 Code's Docs panel and sends you comments from it. Address each comment by editing the file, then reply in its thread with docs_comment_reply. Keep replies short.`;
 
-/** The newest message is the one to act on; the rest is context. */
-const cloudDeliveryMessage = (input: DocsCloudCommentSendInput): string => {
-  const entry = input.entries.at(-1)!;
-  const earlier = historyLines(input.entries.slice(0, -1));
-  return [
-    "[Docs Cloud comment sent to agent]",
-    `Doc: ${JSON.stringify(input.docTitle)} ${input.url}`,
-    `Docs Cloud doc id: ${input.docId}, tab id: ${input.tabId}`,
-    `Comment thread: ${input.commentId}`,
-    `Quoted text: "${input.quote}"`,
-    "",
-    entry.body,
-    ...(earlier.length === 0 ? [] : ["", "Earlier in this thread:", ...earlier]),
-    "",
-    `If the comment asks for a change, read the tab with the docs-cloud read_doc tool (docId: ${input.docId}, tabId: ${input.tabId}) and change it with edit_tab. Then reply in the comment thread with reply_comment (commentId: ${input.commentId}) saying briefly what you changed, or answer the question there. Do not resolve threads the user wrote in unless asked.`,
-  ].join("\n");
-};
-
-const cloudRolePreface = (input: DocsCloudCommentSendInput): string =>
-  `You are the doc agent for the Docs Cloud doc ${JSON.stringify(input.docTitle)} (${input.url}). The user reviews it in T3 Code's Docs panel and sends you comments from it. Address each comment with the docs-cloud MCP tools, then reply in its thread with reply_comment. Keep replies short.`;
-
-/** Docs Cloud docs share the doc agent table with project docs under this prefix. */
-const cloudDocKey = (docId: string) => `docs-cloud:${docId}`;
-
 const docAgentTitle = (docPath: string): string => {
   const name = docPath.split("/").at(-1)!.replace(/\.md$/i, "").trim();
   return `Doc: ${name === "" ? docPath : name}`;
@@ -162,7 +128,6 @@ const make = Effect.gen(function* () {
   const resolveDocAgent = Effect.fn("DocCommentDelivery.resolveDocAgent")(function* (
     parent: OrchestrationV2ThreadShell,
     docPath: string,
-    title: string = docAgentTitle(docPath),
   ) {
     const [row] = yield* sql<{ readonly thread_id: string }>`
         SELECT thread_id FROM doc_agent_threads
@@ -190,7 +155,7 @@ const make = Effect.gen(function* () {
       threadId,
       projectId: parent.projectId,
       parentThreadId: parent.id,
-      title,
+      title: docAgentTitle(docPath),
       modelSelection: parent.modelSelection,
       runtimeMode: parent.runtimeMode,
       interactionMode: parent.interactionMode,
@@ -260,40 +225,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const sendCloudComment: DocCommentDelivery["Service"]["sendCloudComment"] = Effect.fn(
-    "DocCommentDelivery.sendCloudComment",
-  )(function* (input) {
-    const parent = yield* threads.getThreadShell(input.fromThreadId).pipe(
-      Effect.tapError((cause) =>
-        Effect.logWarning("Docs Cloud comment thread lookup failed", { cause }),
-      ),
-      Effect.mapError(() => new DocsError({ reason: "persistence" })),
-    );
-    if (parent === null) return yield* Effect.fail(new DocsError({ reason: "thread_not_found" }));
-    const name = input.docTitle.trim();
-    const agent = yield* resolveDocAgent(
-      parent,
-      cloudDocKey(input.docId),
-      `Doc: ${name === "" ? "Docs Cloud doc" : name}`,
-    );
-    const message = cloudDeliveryMessage(input);
-    yield* threads
-      .sendToThread({
-        projectId: parent.projectId,
-        commandId: CommandId.make(`command:docs-cloud-comment:${input.requestId}`),
-        messageId: MessageId.make(`message:docs-cloud-comment:${input.requestId}`),
-        threadId: agent.threadId,
-        text: agent.created ? `${cloudRolePreface(input)}\n\n${message}` : message,
-        attachments: [],
-        mode: "auto",
-        createdBy: "user",
-        creationSource: "web",
-      })
-      .pipe(deliveryFailed("Docs Cloud comment delivery failed"));
-    return { threadId: agent.threadId };
-  });
-
-  return DocCommentDelivery.of({ create, reply, sendCloudComment });
+  return DocCommentDelivery.of({ create, reply });
 });
 
 export const layer = Layer.effect(DocCommentDelivery, make);
