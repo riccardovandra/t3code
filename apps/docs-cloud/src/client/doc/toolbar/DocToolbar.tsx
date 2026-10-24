@@ -68,16 +68,19 @@ export const DocToolbar = memo(function DocToolbar(
 
   return (
     <div className="doc-toolbar-tools" role="toolbar" aria-label="Doc toolbar">
-      <TabSwitcher
-        tabs={props.tabs}
-        activeTabId={props.activeTabId}
-        manage={props.editable}
-        onSelect={props.onSelect}
-        onCreate={props.onCreate}
-        onRename={props.onRename}
-        onMove={props.onMove}
-        onDelete={props.onDelete}
-      />
+      {/* A cloud doc always has a tab; a project file has none to switch. */}
+      {props.tabs.length > 0 ? (
+        <TabSwitcher
+          tabs={props.tabs}
+          activeTabId={props.activeTabId}
+          manage={props.editable}
+          onSelect={props.onSelect}
+          onCreate={props.onCreate}
+          onRename={props.onRename}
+          onMove={props.onMove}
+          onDelete={props.onDelete}
+        />
+      ) : null}
       {props.editable ? (
         <>
           {tool("diagram", "Draw a diagram", <DrawIcon />)}

@@ -1,19 +1,27 @@
 import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import { RegistryContext } from "@effect/atom-react";
+import { AuthFilesystemWriteScope, type ProjectId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  LOCAL_FILES_CHANGED_TYPE,
+  LOCAL_FILES_FEATURE,
+  localDocPathFromAppPath,
+  parseLocalRequestMessage,
+} from "@t3tools/shared/docsCloudLocal";
 import { docsCloudProjectKey } from "@t3tools/shared/docsCloudProjects";
 import { useNavigate } from "@tanstack/react-router";
 import { ExternalLinkIcon, FolderIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
 import { buildDocsCloudReviewComment } from "~/reviewCommentContext";
 import { useRightPanelStore } from "~/rightPanelStore";
-import { useProject, useThreadShell } from "~/state/entities";
+import { useProject, useQuietThreadShell, useThreadShell } from "~/state/entities";
 import { useEnvironment } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
+import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { buildThreadRouteParams } from "~/threadRoutes";
 
@@ -27,6 +35,12 @@ import {
   toThreadRef,
   useStartWorkFromDoc,
 } from "./docsCloudWork";
+import {
+  answerLocalDocsRequest,
+  LOCAL_FILE_HANDLERS,
+  type LocalDocsContext,
+} from "./localDocsBridge";
+import { localDocsFiles } from "./localDocsFiles";
 
 interface EmbedLocationMessage {
   readonly type: "t3-docs:location";
@@ -54,6 +68,8 @@ export function DocsCloudPanel(props: {
   /** The composer draft that "Add to chat" puts comments in. */
   readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly projectId: ProjectId | null;
+  /** The thread's checkout; with a project, Docs Cloud can open its files under docs/. */
+  readonly workspaceRoot: string | undefined;
   readonly path: string | undefined;
   readonly onShowFiles: (() => void) | null;
 }) {
@@ -104,6 +120,61 @@ export function DocsCloudPanel(props: {
 
   const postToFrame = (message: Record<string, unknown>) =>
     frame.current?.contentWindow?.postMessage(message, origin);
+
+  // The project's markdown files, read and written here over the environment
+  // connection. Their text goes only to the frame, never to the Docs Cloud worker.
+  const registry = useContext(RegistryContext);
+  const canWriteFiles = useEnvironmentScope(threadRef.environmentId, AuthFilesystemWriteScope);
+  const { workspaceRoot, projectId } = props;
+  const localScope =
+    projectId === null || workspaceRoot === undefined
+      ? null
+      : { environmentId: threadRef.environmentId, projectId, cwd: workspaceRoot };
+  const localDocs: LocalDocsContext | null = localScope && {
+    ...localScope,
+    canWrite: canWriteFiles,
+    files: localDocsFiles(registry, localScope),
+  };
+  const servesFiles = localDocs !== null;
+  const features = [
+    ...(startWork ? ["start-work"] : []),
+    "add-to-chat",
+    "send-to",
+    ...(servesFiles ? [LOCAL_FILES_FEATURE] : []),
+  ];
+  const featureKey = features.join(" ");
+  const helloFeatures = useRef<string | null>(null);
+  const sendHello = () => {
+    helloFeatures.current = featureKey;
+    postToFrame({ type: "t3-docs:hello", features });
+  };
+  // A frame already loaded hears about features that arrive later, e.g. the checkout.
+  const resendHello = useEffectEvent(sendHello);
+  useEffect(() => {
+    if (frameReady && helloFeatures.current !== featureKey) resendHello();
+  }, [featureKey, frameReady]);
+
+  const onLocalRequest = useEffectEvent((data: unknown): boolean => {
+    const request = parseLocalRequestMessage(data);
+    if (request === null) return false;
+    if (localDocs === null) return true;
+    void answerLocalDocsRequest(request, LOCAL_FILE_HANDLERS, localDocs).then(postToFrame);
+    return true;
+  });
+
+  // An agent turn may have edited the files; the frame reloads what it shows.
+  const latestRun = useQuietThreadShell(threadRef)?.latestRun ?? null;
+  const runCompletion = latestRun?.completedAt
+    ? `${latestRun.runId}:${latestRun.completedAt}`
+    : null;
+  const seenCompletion = useRef(runCompletion);
+  useEffect(() => {
+    if (runCompletion === seenCompletion.current) return;
+    seenCompletion.current = runCompletion;
+    if (servesFiles) {
+      frame.current?.contentWindow?.postMessage({ type: LOCAL_FILES_CHANGED_TYPE }, origin);
+    }
+  }, [runCompletion, servesFiles, origin]);
 
   const onFrameRequest = useEffectEvent((data: unknown) => {
     const request = parseDocsCloudFrameRequest(data, origin);
@@ -160,6 +231,7 @@ export function DocsCloudPanel(props: {
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== origin || event.source !== frame.current?.contentWindow) return;
+      if (onLocalRequest(event.data)) return;
       const copy = parseCopyToClaudeDocMessage(event.data, origin);
       if (copy) {
         setCopyRequest(copy);
@@ -209,16 +281,19 @@ export function DocsCloudPanel(props: {
             Project files
           </Button>
         ) : null}
-        <Button
-          size="icon-xs"
-          variant="ghost-muted"
-          aria-label="Open in browser"
-          onClick={() =>
-            window.open(`${origin}${reported.current ?? path ?? "/"}`, "_blank", "noopener")
-          }
-        >
-          <ExternalLinkIcon />
-        </Button>
+        {/* A project file only opens inside T3 Code, which serves it. */}
+        {localDocPathFromAppPath(path ?? "/") === null ? (
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label="Open in browser"
+            onClick={() =>
+              window.open(`${origin}${reported.current ?? path ?? "/"}`, "_blank", "noopener")
+            }
+          >
+            <ExternalLinkIcon />
+          </Button>
+        ) : null}
       </div>
       <iframe
         ref={frame}
@@ -233,15 +308,7 @@ export function DocsCloudPanel(props: {
         onLoad={() => {
           reported.current = null;
           setFrameReady(false);
-          frame.current?.contentWindow?.postMessage(
-            {
-              type: "t3-docs:hello",
-              features: startWork
-                ? ["start-work", "add-to-chat", "send-to"]
-                : ["add-to-chat", "send-to"],
-            },
-            origin,
-          );
+          sendHello();
           postToFrame({ type: "t3-docs:context", projectName, projectKey });
           postToFrame({ type: "t3-docs:theme", appearance, colors });
         }}

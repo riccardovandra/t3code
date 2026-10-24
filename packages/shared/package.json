@@ -131,6 +131,10 @@
       "types": "./src/docPaths.ts",
       "import": "./src/docPaths.ts"
     },
+    "./docsCloudLocal": {
+      "types": "./src/docsCloudLocal.ts",
+      "import": "./src/docsCloudLocal.ts"
+    },
     "./docsCloudProjects": {
       "types": "./src/docsCloudProjects.ts",
       "import": "./src/docsCloudProjects.ts"

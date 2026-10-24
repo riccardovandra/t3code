@@ -44,6 +44,8 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../home/Menu.tsx";
 import { AccountMenu } from "../home/AccountMenu.tsx";
 import { HubLink } from "../home/HubLink.tsx";
 import { TitleDialog } from "../home/TitleDialog.tsx";
+import { useLocalFilesAvailable } from "../local/hostClient.ts";
+import { LocalFilesSection } from "../local/LocalFilesSection.tsx";
 import {
   NoProjectBadge,
   ProjectBadge,
@@ -90,6 +92,7 @@ export function LibraryPage() {
   const embedded = window.parent !== window;
   const embedKey =
     embedProject === null ? null : (embedProject.key ?? titleProjectKey(embedProject.name));
+  const localFiles = useLocalFilesAvailable() === true;
 
   const [library, setLibrary] = useState<HomeLibrary | null>(null);
   const [failed, setFailed] = useState(false);
@@ -440,6 +443,8 @@ export function LibraryPage() {
           <span className="home-new-label">Docs</span>
         </button>
       </section>
+
+      {localFiles ? <LocalFilesSection query={trimmedQuery} /> : null}
 
       {results.length === 0 ? (
         <EmptyState

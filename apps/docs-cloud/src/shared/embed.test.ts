@@ -13,6 +13,26 @@ describe("parseParentMessage", () => {
     ).toEqual({ type: "t3-docs:hello", features: ["start-work"] });
   });
 
+  it("knows the local-files feature and the local messages", () => {
+    expect(
+      parseParentMessage({ type: "t3-docs:hello", features: ["local-files", "add-to-chat"] }),
+    ).toEqual({ type: "t3-docs:hello", features: ["add-to-chat", "local-files"] });
+    expect(parseParentMessage({ type: "t3-docs:local-files-changed", paths: 3 })).toEqual({
+      type: "t3-docs:local-files-changed",
+    });
+    expect(
+      parseParentMessage({
+        type: "t3-docs:local-response",
+        requestId: "r1",
+        ok: false,
+        error: "No access",
+      }),
+    ).toEqual({ type: "t3-docs:local-response", requestId: "r1", ok: false, error: "No access" });
+    expect(
+      parseParentMessage({ type: "t3-docs:local-response", requestId: "r1", ok: "yes" }),
+    ).toBeNull();
+  });
+
   it("accepts app paths only for navigate", () => {
     expect(parseParentMessage({ type: "t3-docs:navigate", path: "/d/doc-1" })).toEqual({
       type: "t3-docs:navigate",

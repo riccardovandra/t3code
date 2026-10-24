@@ -17,12 +17,24 @@
  * composer) and `send-to` (copy the doc into Notion through T3 Code's MCP
  * hub). Frame actions are only offered once a parent has said hello and listed
  * the feature. Every message is additive: an older peer ignores unknown types.
+ *
+ * With `local-files`, the frame also opens the T3 project's markdown files:
+ * `local-request` (frame -> parent), `local-response` and `local-files-changed`
+ * (parent -> frame), defined in `@t3tools/shared/docsCloudLocal`.
  */
 import { normalizeProjectKey } from "@t3tools/shared/docsCloudProjects";
 import type { StructuredAnchor } from "./anchors.ts";
+import {
+  LOCAL_FILES_CHANGED_TYPE,
+  LOCAL_RESPONSE_TYPE,
+  parseLocalResponseMessage,
+  type LocalFilesChangedMessage,
+  type LocalRequestMessage,
+  type LocalResponseMessage,
+} from "@t3tools/shared/docsCloudLocal";
 import { THEME_COLOR_ROLES, type ThemeColorRole } from "@t3tools/shared/themePalettes";
 
-export type EmbedFeature = "start-work" | "add-to-chat" | "send-to";
+export type EmbedFeature = "start-work" | "add-to-chat" | "send-to" | "local-files";
 
 /** Apps T3 Code can copy a doc into. */
 export type EmbedSendTarget = "notion";
@@ -72,6 +84,8 @@ export type EmbedParentMessage =
       /** Null when it worked, else a message for the user. */
       readonly error: string | null;
     }
+  | LocalResponseMessage
+  | LocalFilesChangedMessage
   | EmbedThemeMessage;
 
 export {
@@ -87,6 +101,8 @@ export interface EmbedLocationMessage {
   readonly path: string;
   readonly docId: string | null;
   readonly tabId: string | null;
+  /** The project file a local route shows, so T3 Code can tell it from a cloud doc. */
+  readonly localPath: string | null;
 }
 
 export interface EmbedCopyToClaudeDocMessage {
@@ -134,9 +150,15 @@ export type EmbedFrameMessage =
   | { readonly type: "t3-docs:resolve-threads"; readonly threads: ReadonlyArray<EmbedThreadRef> }
   | ({ readonly type: "t3-docs:open-thread" } & EmbedThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & EmbedThreadRef)
-  | ({ readonly type: "t3-docs:add-comment-to-chat" } & EmbedCommentForChat);
+  | ({ readonly type: "t3-docs:add-comment-to-chat" } & EmbedCommentForChat)
+  | LocalRequestMessage;
 
-const FEATURES: ReadonlyArray<EmbedFeature> = ["start-work", "add-to-chat", "send-to"];
+const FEATURES: ReadonlyArray<EmbedFeature> = [
+  "start-work",
+  "add-to-chat",
+  "send-to",
+  "local-files",
+];
 
 type Fields = Record<string, unknown>;
 const isObject = (value: unknown): value is Fields =>
@@ -234,6 +256,10 @@ export function parseParentMessage(data: unknown): EmbedParentMessage | null {
         : null;
     case "t3-docs:theme":
       return parseThemeMessage(data);
+    case LOCAL_RESPONSE_TYPE:
+      return parseLocalResponseMessage(data);
+    case LOCAL_FILES_CHANGED_TYPE:
+      return { type: LOCAL_FILES_CHANGED_TYPE };
     default:
       return null;
   }

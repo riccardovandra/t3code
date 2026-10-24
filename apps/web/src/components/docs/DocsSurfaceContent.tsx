@@ -40,6 +40,7 @@ export function DocsSurfaceContent(props: {
           threadRef={threadRef}
           composerDraftTarget={props.composerDraftTarget}
           projectId={props.projectId}
+          workspaceRoot={props.workspaceRoot}
           path={surface.cloudPath}
           onShowFiles={hasFiles ? () => panels().selectDoc(threadRef, surface.docPath) : null}
         />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "./api.ts";
+import { LocalDocPage } from "./local/LocalDocPage.tsx";
 import { setMe, useMe } from "./me.ts";
 import { DocPage } from "./pages/DocPage.tsx";
 import { LibraryPage } from "./pages/LibraryPage.tsx";
@@ -31,6 +32,7 @@ export function App() {
       {route.name === "doc" ? (
         <DocPage key={route.docId} docId={route.docId} tabId={route.tabId} />
       ) : null}
+      {route.name === "local" ? <LocalDocPage key={route.path} path={route.path} /> : null}
     </div>
   );
 }
