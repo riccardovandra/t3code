@@ -31,15 +31,19 @@ describe("buildCodexAdditionalContext", () => {
     });
   });
 
-  it("points agents at the docs tools the environment exposes", () => {
+  it("points agents at the docs tools the session has", () => {
     const files = t3CodeOrchestrationInstructions(false);
     const cloud = t3CodeOrchestrationInstructions(true);
 
-    NodeAssert.match(files, /`docs_create`/);
     NodeAssert.doesNotMatch(files, /`create_doc`/);
+    NodeAssert.match(files, /cannot write files, put it in your reply/);
     NodeAssert.match(cloud, /`create_doc`/);
     NodeAssert.match(cloud, /skeleton first/);
-    NodeAssert.doesNotMatch(cloud, /`docs_(create|open|read|list|comment_\w+)`/);
+    for (const instructions of [files, cloud]) {
+      NodeAssert.match(instructions, /`docs_open`/);
+      NodeAssert.match(instructions, /`docs_comment_reply`/);
+      NodeAssert.doesNotMatch(instructions, /`docs_create`/);
+    }
   });
 });
 

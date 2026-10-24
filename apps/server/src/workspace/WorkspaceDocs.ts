@@ -5,11 +5,10 @@
  *
  * @module WorkspaceDocs
  */
-import { docTitleFromPath, isMarkdownPath, nextDocPath } from "@t3tools/shared/docPaths";
+import { docTitleFromPath, isMarkdownPath } from "@t3tools/shared/docPaths";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
@@ -19,13 +18,11 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 export const WORKSPACE_DOCS_LIST_LIMIT = 200;
 // Bounds a walk through a folder that is not really a docs folder.
 const MAX_FOLDERS_VISITED = 500;
-// Every probe means an existing doc; give up long before this becomes a scan.
-const MAX_CREATE_ATTEMPTS = 100;
 
 export class WorkspaceDocsError extends Schema.TaggedError<WorkspaceDocsError>()(
   "WorkspaceDocsError",
   {
-    reason: Schema.Literals(["invalid_path", "not_found", "exists", "failed"]),
+    reason: Schema.Literals(["invalid_path", "not_found", "failed"]),
     path: Schema.String,
     cause: Schema.optional(Schema.Defect()),
   },
@@ -36,8 +33,6 @@ export class WorkspaceDocsError extends Schema.TaggedError<WorkspaceDocsError>()
         return `'${this.path}' is not a path inside the project.`;
       case "not_found":
         return `No doc exists at '${this.path}'.`;
-      case "exists":
-        return `Could not find a free file name for a doc in '${this.path}'.`;
       case "failed":
         return `The doc at '${this.path}' could not be accessed.`;
     }
@@ -67,19 +62,11 @@ export class WorkspaceDocs extends Context.Service<
       WorkspaceDoc & { readonly markdown: string; readonly truncated: boolean },
       WorkspaceDocsError
     >;
-    /** Writes a new doc named after `title`, never overwriting an existing file. */
-    readonly create: (input: {
-      readonly cwd: string;
-      readonly folder: string;
-      readonly title: string;
-      readonly markdown?: string | undefined;
-    }) => Effect.Effect<WorkspaceDoc, WorkspaceDocsError>;
   }
 >()("t3/workspace/WorkspaceDocs") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const entries = yield* WorkspaceEntries.WorkspaceEntries;
   const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -155,44 +142,7 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  const create: WorkspaceDocs["Service"]["create"] = Effect.fn("WorkspaceDocs.create")(
-    function* (input) {
-      const folder = yield* relativeWithinRoot(input.cwd, input.folder);
-      const title = input.title.trim();
-      const taken = new Set<string>();
-      for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
-        const docPath = nextDocPath(folder, title, taken);
-        const { entries: metadata } = yield* files.getMetadata({
-          paths: [path.join(input.cwd, docPath)],
-        });
-        if (metadata[0] != null) {
-          taken.add(docPath.toLowerCase());
-          continue;
-        }
-        yield* files
-          .writeFile({
-            cwd: input.cwd,
-            relativePath: docPath,
-            contents: input.markdown ?? `# ${title}\n`,
-          })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new WorkspaceDocsError({
-                  reason:
-                    cause._tag === "WorkspaceFileSystemOperationError" ? "failed" : "invalid_path",
-                  path: docPath,
-                  cause,
-                }),
-            ),
-          );
-        return { docPath, title };
-      }
-      return yield* new WorkspaceDocsError({ reason: "exists", path: folder });
-    },
-  );
-
-  return WorkspaceDocs.of({ list, read, create });
+  return WorkspaceDocs.of({ list, read });
 });
 
 export const layer = Layer.effect(WorkspaceDocs, make);

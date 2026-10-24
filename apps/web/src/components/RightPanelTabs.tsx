@@ -92,6 +92,7 @@ import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { docTitleFromPath } from "@t3tools/shared/docPaths";
+import { localDocPathFromAppPath } from "@t3tools/shared/docsCloudLocal";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
@@ -581,10 +582,10 @@ function surfaceTitle(
   switch (surface.kind) {
     case "ai-pm":
       return "AI PM";
-    case "docs":
-      return surface.source !== "cloud" && surface.docPath
-        ? docTitleFromPath(surface.docPath)
-        : "Docs";
+    case "docs": {
+      const localPath = surface.cloudPath ? localDocPathFromAppPath(surface.cloudPath) : null;
+      return localPath ? docTitleFromPath(localPath) : "Docs";
+    }
     case "diff":
       return "Diff";
     case "files":

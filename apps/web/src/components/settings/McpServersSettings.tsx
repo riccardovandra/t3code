@@ -242,7 +242,7 @@ function DocsCloudSettings({
   const turnOff = async () => {
     if (!config) return;
     const confirmed = await requestConfirmDialog(
-      "Turn off Docs Cloud? New threads lose its tools, the Docs panel goes back to project files, and the stored token is deleted. Your docs stay in Docs Cloud.",
+      "Turn off Docs Cloud? New threads lose its tools, the Docs panel asks to connect Docs Cloud again, and the stored token is deleted. Your docs stay in Docs Cloud.",
       { variant: "destructive" },
     );
     if (!confirmed) return;

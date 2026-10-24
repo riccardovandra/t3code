@@ -352,6 +352,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
   docs_list: tool(["List", "Listing", "Listed", "docs"], "docs"),
   docs_read: tool(["Read", "Reading", "Read", "a doc"], "docs"),
+  // Retired tool, kept so earlier threads still label its calls.
   docs_create: tool(["Create", "Creating", "Created", "a doc"], "docs"),
   docs_open: tool(["Open", "Opening", "Opened", "a doc"], "docs"),
   docs_list_comments: tool(["Read", "Reading", "Read", "doc comments"], "docs-comments"),

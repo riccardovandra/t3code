@@ -318,6 +318,11 @@ const docsToolkitLayer = (servers: ReadonlyArray<McpServerEntry>) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-mcp-docs-" });
+      yield* fileSystem.makeDirectory(`${checkout}/docs`);
+      yield* fileSystem.writeFileString(
+        `${checkout}/docs/launch-plan.md`,
+        "# Launch plan\n\nShip it.\n",
+      );
       return McpHttpServer.layerDocsToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(
@@ -360,29 +365,28 @@ const docsToolkitLayer = (servers: ReadonlyArray<McpServerEntry>) =>
     }),
   ).pipe(Layer.provide(NodeServices.layer));
 
-it.effect("returns a created doc that Codex and Claude tool rows both carry", () =>
+it.effect("returns an opened doc that Codex and Claude tool rows both carry", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
-      .callTool({ name: "docs_create", arguments: { title: "Launch plan" } })
+      .callTool({ name: "docs_open", arguments: { docPath: "docs/launch-plan.md" } })
       .pipe(
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
       );
-    const doc = { docPath: "docs/launch-plan.md", title: "Launch plan", excerpt: "" };
+    const doc = { docPath: "docs/launch-plan.md", title: "launch plan", excerpt: "Ship it." };
     for (const [toolName, output] of [
-      ["t3-code.docs_create", result.structuredContent],
-      ["mcp__t3-code__docs_create", result.content],
+      ["t3-code.docs_open", result.structuredContent],
+      ["mcp__t3-code__docs_open", result.content],
     ] as const) {
       expect(docOpenFromToolItem({ toolName, status: "completed", output })).toEqual(doc);
     }
   }).pipe(Effect.provide(docsToolkitLayer([]))),
 );
 
-const LOCAL_DOCS_TOOLS = [
+const PROJECT_FILE_DOCS_TOOLS = [
   "docs_list",
   "docs_read",
-  "docs_create",
   "docs_open",
   "docs_list_comments",
   "docs_comment_create",
@@ -402,25 +406,17 @@ const callDocsTool = (name: string) =>
     );
   });
 
-it.effect("hides the local docs tools while Docs Cloud is connected", () =>
-  Effect.gen(function* () {
-    for (const name of LOCAL_DOCS_TOOLS) {
-      expect(yield* callDocsTool(name)).toBe(`Tool '${name}' not found`);
-    }
-    for (const name of ["docs_cloud_project", "docs_cloud_import"]) {
-      expect(yield* callDocsTool(name)).not.toMatch(/not found/);
-    }
-  }).pipe(Effect.provide(docsToolkitLayer([hubServer("docs-cloud", true)]))),
-);
-
+// Docs Cloud shows the project's files too, so their tools stay in every configuration.
 it.effect.each([
+  ["Docs Cloud connected", [hubServer("docs-cloud", true)]],
   ["no Docs Cloud entry", [hubServer("linear", true)]],
   ["a disabled Docs Cloud entry", [hubServer("docs-cloud", false)]],
-] as const)("keeps the local docs tools with %s", ([, servers]) =>
+] as const)("lists the same docs tools with %s", ([, servers]) =>
   Effect.gen(function* () {
-    for (const name of LOCAL_DOCS_TOOLS) {
+    for (const name of [...PROJECT_FILE_DOCS_TOOLS, "docs_cloud_project", "docs_cloud_import"]) {
       expect(yield* callDocsTool(name)).not.toMatch(/not found/);
     }
+    expect(yield* callDocsTool("docs_create")).toBe("Tool 'docs_create' not found");
   }).pipe(Effect.provide(docsToolkitLayer(servers))),
 );
 

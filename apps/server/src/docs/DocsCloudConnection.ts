@@ -1,8 +1,4 @@
-/**
- * Whether this environment's MCP hub connects agents to Docs Cloud. While it
- * does, Docs Cloud replaces the project's markdown docs for agents, so the
- * local `docs_*` tools are hidden.
- */
+/** Whether this environment's MCP hub connects agents to Docs Cloud. */
 import type { McpServerListResult } from "@t3tools/contracts";
 import { DOCS_CLOUD_MCP_SERVER_NAME } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as Context from "effect/Context";
@@ -21,8 +17,6 @@ const docsCloudConnected = ({ servers }: McpServerListResult): boolean =>
 export class DocsCloudConnection extends Context.Service<
   DocsCloudConnection,
   {
-    /** Synchronous because MCP tool visibility is decided per request without effects. */
-    readonly isConnected: () => boolean;
     /** Emits the new value each time the connection is set up or removed. */
     readonly changes: Stream.Stream<boolean>;
   }
@@ -49,10 +43,7 @@ const make = Effect.gen(function* () {
     }),
     Effect.forkScoped,
   );
-  return DocsCloudConnection.of({
-    isConnected: () => connected,
-    changes: Stream.fromPubSub(changed),
-  });
+  return DocsCloudConnection.of({ changes: Stream.fromPubSub(changed) });
 });
 
 export const layer = Layer.effect(DocsCloudConnection, make);

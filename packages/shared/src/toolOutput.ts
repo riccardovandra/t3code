@@ -55,6 +55,7 @@ export interface DocReference {
   readonly excerpt?: string;
 }
 
+// docs_create is retired; earlier threads still show the docs it created.
 const DOC_OPEN_TOOL_NAMES: ReadonlySet<string> = new Set(["docs_create", "docs_open"]);
 
 /** The tab a Docs Cloud tool result points at; `docTitle` is present when it names the doc too. */

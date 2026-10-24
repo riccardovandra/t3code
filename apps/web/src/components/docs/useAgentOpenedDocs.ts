@@ -5,8 +5,7 @@ import { docOpenFromToolItem } from "@t3tools/shared/toolOutput";
 import { useEffect, useRef } from "react";
 
 import { toastManager } from "../ui/toast";
-import { openDocsCloudInPanel, useDocsCloudBaseUrl } from "./docsCloud";
-import { openDocInPanel } from "./DocTimelineCard";
+import { openDocsCloudInPanel, openLocalDocInPanel, useDocsCloudBaseUrl } from "./docsCloud";
 
 type AgentDocEvent =
   | { readonly kind: "file"; readonly docPath: string }
@@ -64,7 +63,8 @@ export function useAgentOpenedDocs(
       });
     }
     const latest = fresh.findLast((entry) => entry.event.kind !== "tab-added")?.event;
-    if (latest?.kind === "file") openDocInPanel(threadRef, latest.docPath, { maximized: false });
+    if (latest?.kind === "file")
+      openLocalDocInPanel(threadRef, latest.docPath, { maximized: false });
     else if (latest?.kind === "doc-created") {
       openDocsCloudInPanel(threadRef, latest.path, { maximized: false });
     }

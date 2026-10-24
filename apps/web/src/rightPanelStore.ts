@@ -4,6 +4,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { isLocalDocPath, localDocAppPath } from "@t3tools/shared/docsCloudLocal";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -51,10 +52,7 @@ export type RightPanelSurface =
   | {
       id: "docs";
       kind: "docs";
-      docPath?: string;
-      /** Which docs the panel shows; unset means Docs Cloud when it is configured. */
-      source?: "files" | "cloud";
-      /** The Docs Cloud app path, such as `/d/:docId/:tabId`. */
+      /** The Docs Cloud app path, such as `/d/:docId/:tabId` or `/local/docs/plan.md`. */
       cloudPath?: string;
     }
   | { id: "diff"; kind: "diff" }
@@ -144,7 +142,6 @@ interface RightPanelStoreState {
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
   selectAiPmProject: (ref: ScopedThreadRef, projectId: string | undefined) => void;
-  selectDoc: (ref: ScopedThreadRef, docPath: string | undefined) => void;
   /** Shows Docs Cloud at `cloudPath`; `automatic` records where the embedded app navigated. */
   selectDocsCloud: (
     ref: ScopedThreadRef,
@@ -469,15 +466,23 @@ function normalizeRevealLine(line: number | undefined): number | null {
 }
 
 /**
- * Which docs a Docs surface shows. An unset source means Docs Cloud when it is
- * configured; Project files need a thread with a project folder.
+ * The Docs Cloud path a persisted Docs surface opens at. Surfaces saved by the
+ * removed file-based Docs panel carry `source: "files"` and a `docPath`; those
+ * open the same file inside Docs Cloud.
  */
-export function docsSurfaceSource(
-  surface: Extract<RightPanelSurface, { kind: "docs" }>,
-  options: { readonly cloudConfigured: boolean; readonly hasFiles: boolean },
-): "cloud" | "files" | null {
-  if (options.cloudConfigured && (surface.source !== "files" || !options.hasFiles)) return "cloud";
-  return options.hasFiles ? "files" : null;
+export function persistedDocsCloudPath(surface: {
+  readonly source?: unknown;
+  readonly docPath?: unknown;
+  readonly cloudPath?: unknown;
+}): string | undefined {
+  const cloudPath =
+    typeof surface.cloudPath === "string" && surface.cloudPath.startsWith("/")
+      ? surface.cloudPath
+      : undefined;
+  const onFiles = surface.source === "files" || (surface.source === undefined && !cloudPath);
+  if (!onFiles) return cloudPath;
+  // Without an open doc the old panel showed its file list, now Docs Cloud's home.
+  return isLocalDocPath(surface.docPath) ? localDocAppPath(surface.docPath) : undefined;
 }
 
 export function migratePersistedRightPanelState(persistedState: unknown): {
@@ -502,20 +507,12 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     const kind = (surface as { kind?: string }).kind;
                     if (kind === "plan" || kind === "agents") return [];
                     if (surface.kind === "docs") {
+                      const cloudPath = persistedDocsCloudPath(surface);
                       return [
                         {
                           id: "docs",
                           kind: "docs",
-                          ...(typeof surface.docPath === "string"
-                            ? { docPath: surface.docPath }
-                            : {}),
-                          ...(surface.source === "files" || surface.source === "cloud"
-                            ? { source: surface.source }
-                            : {}),
-                          ...(typeof surface.cloudPath === "string" &&
-                          surface.cloudPath.startsWith("/")
-                            ? { cloudPath: surface.cloudPath }
-                            : {}),
+                          ...(cloudPath === undefined ? {} : { cloudPath }),
                         },
                       ];
                     }
@@ -724,21 +721,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               const existing = current.surfaces.find((surface) => surface.kind === "preview");
               return upsertSurface(current, existing ?? browserSurface(null));
             }
-            if (kind === "docs") {
-              // Every Docs entry point lands on the default source, Docs Cloud when it
-              // is configured; Project files stay one switch away.
-              return upsertSurface(
-                {
-                  ...current,
-                  surfaces: current.surfaces.map((surface) => {
-                    if (surface.kind !== "docs" || surface.source === undefined) return surface;
-                    const { source: _source, ...rest } = surface;
-                    return rest;
-                  }),
-                },
-                singletonSurface(kind),
-              );
-            }
             return upsertSurface(current, singletonSurface(kind));
           }),
         ),
@@ -756,32 +738,17 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }),
           })),
         ),
-      selectDoc: (ref, docPath) =>
-        set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => ({
-            ...current,
-            surfaces: current.surfaces.map((surface) => {
-              if (surface.kind !== "docs") return surface;
-              const { docPath: _docPath, ...rest } = surface;
-              return { ...rest, source: "files", ...(docPath === undefined ? {} : { docPath }) };
-            }),
-          })),
-        ),
       selectDocsCloud: (ref, cloudPath, automatic = false) =>
         set((state) =>
           (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
             const docs = current.surfaces.find((surface) => surface.kind === "docs");
-            if (docs && docs.source === "cloud" && docs.cloudPath === cloudPath) return current;
+            if (docs && docs.cloudPath === cloudPath) return current;
             return {
               ...current,
               surfaces: current.surfaces.map((surface) => {
                 if (surface.kind !== "docs") return surface;
                 const { cloudPath: _cloudPath, ...rest } = surface;
-                return {
-                  ...rest,
-                  source: "cloud",
-                  ...(cloudPath === undefined ? {} : { cloudPath }),
-                };
+                return { ...rest, ...(cloudPath === undefined ? {} : { cloudPath }) };
               }),
             };
           }),
