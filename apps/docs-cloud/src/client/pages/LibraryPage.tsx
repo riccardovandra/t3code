@@ -42,6 +42,7 @@ import {
 } from "../home/icons.tsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "../home/Menu.tsx";
 import { AccountMenu } from "../home/AccountMenu.tsx";
+import { HubLink } from "../home/HubLink.tsx";
 import { TitleDialog } from "../home/TitleDialog.tsx";
 import {
   NoProjectBadge,
@@ -265,6 +266,7 @@ export function LibraryPage() {
   return (
     <main className="home">
       <div className="home-title-row">
+        <HubLink />
         <h1 className="home-title">Docs</h1>
         <ProjectSwitcher scope={scope} projects={projects} onChange={chooseScope} />
         <AccountMenu />
