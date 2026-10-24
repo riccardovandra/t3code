@@ -1,4 +1,4 @@
-import { LOCAL_FILES_FEATURE } from "@t3tools/shared/docsCloudLocal";
+import { LOCAL_COMMENTS_FEATURE, LOCAL_FILES_FEATURE } from "@t3tools/shared/docsCloudLocal";
 
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
 import { createLocalClient } from "./localClient.ts";
@@ -14,4 +14,9 @@ export function useLocalFilesAvailable(): boolean | null {
   const features = useEmbedFeatures();
   if (features === null) return window.parent === window ? false : null;
   return features.includes(LOCAL_FILES_FEATURE);
+}
+
+/** Whether the T3 Code window also keeps comments on its project files. */
+export function useLocalCommentsAvailable(): boolean {
+  return !!useEmbedFeatures()?.includes(LOCAL_COMMENTS_FEATURE);
 }

@@ -1,4 +1,5 @@
 import {
+  LOCAL_COMMENTS_CHANGED_TYPE,
   LOCAL_FILES_CHANGED_TYPE,
   LOCAL_REQUEST_TYPE,
   LOCAL_RESPONSE_TYPE,
@@ -21,6 +22,8 @@ export interface LocalClient {
   ) => Promise<LocalDocResults[K]>;
   /** The host's notice that project files may have changed on disk. */
   readonly onFilesChanged: (listener: () => void) => () => void;
+  /** The host's notice that comments on project files may have changed, e.g. an agent replied. */
+  readonly onCommentsChanged: (listener: () => void) => () => void;
 }
 
 interface Pending {
@@ -37,6 +40,7 @@ export function createLocalClient(bridge: {
 }): LocalClient {
   const pending = new Map<string, Pending>();
   const changeListeners = new Set<() => void>();
+  const commentListeners = new Set<() => void>();
   let unsubscribe: (() => void) | null = null;
   let counter = 0;
 
@@ -44,6 +48,10 @@ export function createLocalClient(bridge: {
     unsubscribe ??= bridge.subscribe((message) => {
       if (message.type === LOCAL_FILES_CHANGED_TYPE) {
         for (const listener of changeListeners) listener();
+        return;
+      }
+      if (message.type === LOCAL_COMMENTS_CHANGED_TYPE) {
+        for (const listener of commentListeners) listener();
         return;
       }
       if (message.type !== LOCAL_RESPONSE_TYPE) return;
@@ -85,6 +93,11 @@ export function createLocalClient(bridge: {
       listen();
       changeListeners.add(listener);
       return () => changeListeners.delete(listener);
+    },
+    onCommentsChanged: (listener) => {
+      listen();
+      commentListeners.add(listener);
+      return () => commentListeners.delete(listener);
     },
   };
 }
