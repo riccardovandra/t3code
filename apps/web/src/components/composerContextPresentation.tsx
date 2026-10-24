@@ -25,6 +25,7 @@ import {
   previewAnnotationContextLabel,
   reviewCommentContextId,
   reviewCommentContextLabel,
+  reviewCommentKindLabel,
   terminalContextReference,
   uploadedAttachmentContextRecord,
 } from "~/lib/composerContextRecords";
@@ -287,7 +288,10 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
-          <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
+          <ReadOnlySourcePreview
+            name={comment.docsCloud ? "quote.txt" : "review.diff"}
+            text={comment.diff}
+          />
         </div>
       ) : null}
     </div>
@@ -407,7 +411,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
           <ContextChip
             icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
             label={reviewCommentContextLabel(entry.record)}
-            kindLabel={isPullRequest ? pullRequestContextKindLabel(entry.record) : "Review comment"}
+            kindLabel={reviewCommentKindLabel(entry.record)}
             details={<ComposerReviewCommentDetails comment={entry.record} />}
             detailsMode={definition.capabilities.details}
             kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}

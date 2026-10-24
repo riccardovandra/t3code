@@ -78,6 +78,34 @@ export const PullRequestContextMetadata = Schema.Struct({
 });
 export type PullRequestContextMetadata = typeof PullRequestContextMetadata.Type;
 
+const DocsCloudAnchorId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
+
+/** A Docs Cloud comment riding as a review comment, so its agent can reply and resolve it. */
+export const DocsCloudCommentContextMetadata = Schema.Struct({
+  docId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  tabId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  commentId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  docTitle: ShortString,
+  url: ShortString,
+  /** The table cell or diagram label the comment is on, when it is not on a passage. */
+  anchor: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("cell"),
+        blockId: DocsCloudAnchorId,
+        rowId: DocsCloudAnchorId,
+        colId: DocsCloudAnchorId,
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("label"),
+        blockId: DocsCloudAnchorId,
+        textId: DocsCloudAnchorId,
+      }),
+    ]),
+  ),
+});
+export type DocsCloudCommentContextMetadata = typeof DocsCloudCommentContextMetadata.Type;
+
 const recordBase = {
   version: Schema.Literal(1),
   contextId: ComposerContextId,
@@ -187,6 +215,7 @@ export const ReviewCommentContextRecord = Schema.Struct({
   diff: BoundedString(COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
   fenceLanguage: Schema.optionalKey(BoundedString(64)),
   pullRequest: Schema.optionalKey(PullRequestContextMetadata),
+  docsCloud: Schema.optionalKey(DocsCloudCommentContextMetadata),
 }).check(Schema.makeFilter((record) => record.endIndex >= record.startIndex));
 export type ReviewCommentContextRecord = typeof ReviewCommentContextRecord.Type;
 

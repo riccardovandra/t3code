@@ -183,16 +183,16 @@ describe("parseDocsCloudFrameRequest", () => {
     title: "Importer plan",
     url: `${BASE}/d/doc-1/tab-1`,
   };
-  const sendComment = {
-    type: "t3-docs:send-comment",
-    requestId: "8b0c4f3e-1d2a-4c5b-9e6f-7a8b9c0d1e2f",
+  const addComment = {
+    type: "t3-docs:add-comment-to-chat",
     docId: "doc-1",
     tabId: "tab-1",
     docTitle: "Importer plan",
     url: `${BASE}/d/doc-1/tab-1`,
     commentId: "comment-1",
     quote: "phase two",
-    entries: [{ id: "comment-1", author: "user", body: "Split this" }],
+    body: "Split this",
+    anchor: null,
   };
 
   it("accepts a send-to request for the doc's own page and refuses others", () => {
@@ -217,7 +217,15 @@ describe("parseDocsCloudFrameRequest", () => {
     expect(
       parseDocsCloudFrameRequest({ ...startWork, tabId: null, url: `${BASE}/d/doc-1` }, BASE),
     ).toMatchObject({ tabId: null });
-    expect(parseDocsCloudFrameRequest(sendComment, BASE)).toEqual(sendComment);
+    expect(parseDocsCloudFrameRequest(addComment, BASE)).toEqual(addComment);
+    const cell = { kind: "cell", blockId: "requests", rowId: "r1", colId: "status" };
+    expect(parseDocsCloudFrameRequest({ ...addComment, anchor: cell }, BASE)).toEqual({
+      ...addComment,
+      anchor: cell,
+    });
+    // A frame that omits the anchor means a passage.
+    const { anchor: _anchor, ...withoutAnchor } = addComment;
+    expect(parseDocsCloudFrameRequest(withoutAnchor, BASE)).toEqual(addComment);
     expect(
       parseDocsCloudFrameRequest(
         { type: "t3-docs:open-thread", environmentId: "env-1", threadId: "thread-1" },
@@ -246,7 +254,7 @@ describe("parseDocsCloudFrameRequest", () => {
       "not a url",
     ]) {
       expect(parseDocsCloudFrameRequest({ ...startWork, url }, BASE)).toBeNull();
-      expect(parseDocsCloudFrameRequest({ ...sendComment, url }, BASE)).toBeNull();
+      expect(parseDocsCloudFrameRequest({ ...addComment, url }, BASE)).toBeNull();
     }
   });
 
@@ -254,12 +262,13 @@ describe("parseDocsCloudFrameRequest", () => {
     expect(parseDocsCloudFrameRequest(null, BASE)).toBeNull();
     expect(parseDocsCloudFrameRequest({ type: "t3-docs:unknown" }, BASE)).toBeNull();
     expect(parseDocsCloudFrameRequest({ ...startWork, docId: "../x" }, BASE)).toBeNull();
-    expect(parseDocsCloudFrameRequest({ ...sendComment, entries: [] }, BASE)).toBeNull();
+    expect(parseDocsCloudFrameRequest({ ...addComment, body: "  " }, BASE)).toBeNull();
     expect(
-      parseDocsCloudFrameRequest(
-        { ...sendComment, entries: [{ id: "c", author: "system", body: "x" }] },
-        BASE,
-      ),
+      parseDocsCloudFrameRequest({ ...addComment, anchor: { kind: "cell", blockId: "t" } }, BASE),
+    ).toBeNull();
+    // The retired send-comment request is ignored rather than acted on.
+    expect(
+      parseDocsCloudFrameRequest({ ...addComment, type: "t3-docs:send-comment" }, BASE),
     ).toBeNull();
     expect(
       parseDocsCloudFrameRequest({ type: "t3-docs:open-thread", environmentId: "env-1" }, BASE),

@@ -9,6 +9,8 @@ import {
 import * as Schema from "effect/Schema";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 
+import { buildDocsCloudReviewComment } from "~/reviewCommentContext";
+
 import {
   formatInlineContextReference,
   removeInlineContextReference,
@@ -25,6 +27,7 @@ import {
   resolveUserMessageContext,
   selectedMessageContextFragment,
   reviewCommentContextRecord,
+  reviewCommentFromRecord,
   terminalContextRecord,
   terminalContextReference,
   terminalContextDraftFromRecord,
@@ -342,6 +345,42 @@ describe("composerContextRecords", () => {
     });
     expect(legacy.text).toBe("hi\n\n[T line 1](t3-context://v1/terminal/legacy_terminal_1)");
     expect(legacy.recordsById.get("legacy_terminal_1")?.kind).toBe("terminal");
+  });
+});
+
+describe("Docs Cloud comments", () => {
+  const comment = buildDocsCloudReviewComment({
+    docId: "doc-1",
+    tabId: "tab-1",
+    commentId: "comment-1",
+    docTitle: "Importer plan",
+    url: "https://docs.test/d/doc-1/tab-1",
+    quote: "the first   thing we would do before anything else ships",
+    body: " Split this ",
+  });
+
+  it("labels the chip by doc and quote and survives the wire with its ids", () => {
+    const record = reviewCommentContextRecord(comment);
+    expect(record.label).toBe("Importer plan · “the first thing we would do before anyt…”");
+    expect(record.text).toBe("Split this");
+    const [decoded] = decodeMessageContext({ version: 1, records: [record] }).records;
+    expect(decoded).toMatchObject({ docsCloud: { commentId: "comment-1", docId: "doc-1" } });
+    expect(reviewCommentFromRecord(record)).toEqual(comment);
+  });
+
+  it("is one chip per comment, so adding it again replaces it", () => {
+    const again = buildDocsCloudReviewComment({
+      docId: "doc-1",
+      tabId: "tab-1",
+      commentId: "comment-1",
+      docTitle: "Importer plan",
+      url: "https://docs.test/d/doc-1/tab-1",
+      quote: "x",
+      body: "Edited",
+    });
+    expect(reviewCommentContextRecord(again).contextId).toBe(
+      reviewCommentContextRecord(comment).contextId,
+    );
   });
 });
 

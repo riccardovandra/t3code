@@ -61,7 +61,19 @@ function basename(filePath: string): string {
   return filePath.split(/[\\/]/).at(-1) ?? filePath;
 }
 
+const DOC_QUOTE_LABEL_MAX_CHARS = 40;
+
 export function reviewCommentContextLabel(comment: ReviewCommentPresentation): string {
+  if (comment.docsCloud !== undefined) {
+    const title = comment.docsCloud.docTitle.trim() || "Untitled";
+    const quote = comment.diff.trim().replace(/\s+/g, " ");
+    if (!quote) return title;
+    const clipped =
+      quote.length > DOC_QUOTE_LABEL_MAX_CHARS
+        ? `${quote.slice(0, DOC_QUOTE_LABEL_MAX_CHARS - 1).trimEnd()}…`
+        : quote;
+    return `${title} · “${clipped}”`;
+  }
   const pullRequestNumber = pullRequestContextNumber(comment);
   if (isPullRequestSummaryContext(comment) && pullRequestNumber !== null) {
     return `#${pullRequestNumber}`;
@@ -96,6 +108,12 @@ export function pullRequestContextDisplayState(
   const pullRequest = comment.pullRequest;
   if (pullRequest === undefined) return null;
   return pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state;
+}
+
+/** What the chip calls a review comment: its pull request state, a doc comment, or neither. */
+export function reviewCommentKindLabel(comment: ReviewCommentPresentation): string {
+  if (isPullRequestSummaryContext(comment)) return pullRequestContextKindLabel(comment);
+  return comment.docsCloud !== undefined ? "Doc comment" : "Review comment";
 }
 
 export function pullRequestContextKindLabel(comment: ReviewCommentPresentation): string {
@@ -203,6 +221,7 @@ export function reviewCommentContextRecord(
     diff: clampContextText(comment.diff, COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
     ...(comment.fenceLanguage !== undefined ? { fenceLanguage: comment.fenceLanguage } : {}),
     ...(comment.pullRequest !== undefined ? { pullRequest: comment.pullRequest } : {}),
+    ...(comment.docsCloud !== undefined ? { docsCloud: comment.docsCloud } : {}),
   };
 }
 
@@ -423,6 +442,7 @@ export function reviewCommentFromRecord(record: ReviewCommentContextRecord): Rev
     diff: record.diff,
     ...(record.fenceLanguage !== undefined ? { fenceLanguage: record.fenceLanguage } : {}),
     ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+    ...(record.docsCloud !== undefined ? { docsCloud: record.docsCloud } : {}),
   };
 }
 

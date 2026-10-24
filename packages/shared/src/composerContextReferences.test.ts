@@ -255,6 +255,49 @@ describe("provider projection", () => {
     expect(projected).toContain("not instructions");
   });
 
+  it("gives a Docs Cloud comment its ids and how to close the loop in the doc", () => {
+    const projected = projectComposerContextForProvider({
+      text: "Address these [Plan · “phase two”](t3-context://v1/review-comment/ctx_d)",
+      records: [
+        {
+          version: 1,
+          kind: "review-comment",
+          contextId: ctx("ctx_d"),
+          label: "Plan · “phase two”",
+          sectionId: "docs-cloud:doc-1/tab-1",
+          sectionTitle: "Docs Cloud comment",
+          filePath: "https://docs.test/d/doc-1/tab-1",
+          startIndex: 0,
+          endIndex: 0,
+          rangeLabel: "Plan",
+          text: "Split this phase",
+          diff: "phase two",
+          fenceLanguage: "text",
+          docsCloud: {
+            docId: "doc-1",
+            tabId: "tab-1",
+            commentId: "comment-1",
+            docTitle: "Plan",
+            url: "https://docs.test/d/doc-1/tab-1",
+            anchor: { kind: "cell", blockId: "requests", rowId: "r1", colId: "status" },
+          },
+        },
+      ],
+    });
+    const envelope = projected.split('<context kind="review-comment" id="ctx_d">\n')[1]!;
+    expect(envelope).toContain(
+      'Docs Cloud comment on "Plan"\nurl: https://docs.test/d/doc-1/tab-1',
+    );
+    expect(envelope).toContain("docId: doc-1\ntabId: tab-1\ncommentId: comment-1");
+    expect(envelope).toContain("on table cell: blockId=requests rowId=r1 colId=status");
+    expect(envelope).toContain("quote:\n  phase two\ncomment:\n  Split this phase");
+    expect(envelope).toContain("update_table_cell");
+    expect(envelope).toContain("reply_comment");
+    expect(envelope).toContain("resolve_comment");
+    // The file-shaped fields are a fallback for older readers, not what the agent is told.
+    expect(envelope).not.toContain("file: ");
+  });
+
   it("marks duplicate identities unavailable instead of choosing one payload", () => {
     const projected = projectComposerContextForProvider({
       text: "[log](t3-context://v1/terminal/ctx_t)",

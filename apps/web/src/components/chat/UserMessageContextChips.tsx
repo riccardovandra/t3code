@@ -41,6 +41,7 @@ import {
   pullRequestContextDisplayState,
   pullRequestContextKindLabel,
   reviewCommentContextLabel,
+  reviewCommentKindLabel,
 } from "~/lib/composerContextRecords";
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { ContextChip, ContextChipLabel, type ContextChipKind } from "../ContextChip";
@@ -438,7 +439,7 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
         }
         const isPullRequest = isPullRequestSummaryContext(record);
         const label = reviewCommentContextLabel(record);
-        const kindLabel = isPullRequest ? pullRequestContextKindLabel(record) : "Review comment";
+        const kindLabel = reviewCommentKindLabel(record);
         const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
         if (isPullRequest && record.pullRequest !== undefined) {
           return (
@@ -472,6 +473,7 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
                   ? { fenceLanguage: record.fenceLanguage }
                   : {}),
                 ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+                ...(record.docsCloud !== undefined ? { docsCloud: record.docsCloud } : {}),
               }}
             />
           </UserMessageContextPopover>

@@ -49,7 +49,6 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 
   [WS_METHODS.docsCreateComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsReplyComment]: AuthOrchestrationOperateScope,
-  [WS_METHODS.docsSendCloudComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsSetCommentResolved]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsDeleteComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsCloudImport]: AuthOrchestrationOperateScope,

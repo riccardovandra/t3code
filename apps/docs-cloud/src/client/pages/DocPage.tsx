@@ -12,6 +12,7 @@ import {
 import type { DocRole, UserSummary } from "../../shared/access.ts";
 import type { DocAnchor, StructuredAnchor } from "../../shared/anchors.ts";
 import {
+  type Comment,
   type DocStatus,
   type DocSummary,
   type DocThreadLink,
@@ -23,10 +24,10 @@ import { api, ApiError, clientId } from "../api.ts";
 import { CommentMargin, DRAFT_COMMENT_ID } from "../comments/CommentMargin.tsx";
 import { ResolvedComments } from "../comments/ResolvedComments.tsx";
 import {
-  hasSendToAgentHandler,
-  sendThreadToAgent,
-  subscribeSendToAgent,
-} from "../comments/sendToAgent.ts";
+  addCommentToChat,
+  hasAddToChatHandler,
+  subscribeAddToChat,
+} from "../comments/addToChat.ts";
 import { isCommentMessage, useComments } from "../comments/useComments.ts";
 import { selectionAnchor, useEditorComments } from "../comments/useEditorComments.ts";
 import { useMediaQuery } from "../comments/useMediaQuery.ts";
@@ -43,6 +44,7 @@ import { useStableCallback } from "../doc/useStableCallback.ts";
 import { TabSaver } from "../doc/tabSaver.ts";
 import { applyPlacements, orderTabs, removeTabs } from "../doc/tabTree.ts";
 import { useDocRoom } from "../doc/useDocRoom.ts";
+import { SelectionToolbar } from "../editor/SelectionToolbar.tsx";
 import { TabEditor } from "../editor/TabEditor.tsx";
 import { WIDGET_PICK_EVENT, type WidgetPickDetail } from "../editor/widget/WidgetView.ts";
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
@@ -244,7 +246,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   } | null>(null);
   const [docBody, setDocBody] = useState<HTMLDivElement | null>(null);
   const narrow = useMediaQuery("(max-width: 1279px)");
-  const canSendToAgent = useSyncExternalStore(subscribeSendToAgent, hasSendToAgentHandler);
+  const canAddToChat = useSyncExternalStore(subscribeAddToChat, hasAddToChatHandler);
 
   const threads = useMemo(() => groupThreads(comments.comments.values()), [comments.comments]);
   const openThreads = useMemo(
@@ -333,7 +335,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     setActiveCommentId(DRAFT_COMMENT_ID);
   };
 
-  const { tops, selectionTop } = useEditorComments(editor, {
+  const tops = useEditorComments(editor, {
     anchors,
     activeId: activeCommentId,
     container: docBody,
@@ -351,20 +353,23 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   };
   const quietly = (promise: Promise<unknown>) => void promise.catch(() => undefined);
 
+  const addToChat = (root: Comment) => {
+    addCommentToChat({
+      docId: props.docId,
+      tabId: root.tabId,
+      docTitle: doc?.title ?? "",
+      url: `${window.location.origin}${docPath(props.docId, root.tabId)}`,
+      commentId: root.id,
+      quote: root.quote,
+      body: root.body,
+      anchor: root.anchor,
+    });
+    setNotice("Added to the chat. Send your message there when you are ready.");
+  };
+
   const handlersFor = (thread: CommentThread) => ({
     ...(abilities.comment ? commentHandlers(thread) : {}),
-    ...(canSendToAgent && abilities.comment
-      ? {
-          onSendToAgent: () =>
-            sendThreadToAgent({
-              docId: props.docId,
-              docTitle: doc?.title ?? "",
-              tabId: thread.root.tabId,
-              thread,
-              url: `${window.location.origin}${docPath(props.docId, thread.root.tabId)}`,
-            }),
-        }
-      : {}),
+    ...(canAddToChat && abilities.comment ? { onAddToChat: () => addToChat(thread.root) } : {}),
   });
 
   const commentHandlers = (thread: CommentThread) => ({
@@ -385,8 +390,6 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
       subscribeParentMessages((message) => {
         if (message.type === "t3-docs:threads") {
           setOpenable(new Map(message.threads.map((thread) => [threadKey(thread), thread.title])));
-        } else if (message.type === "t3-docs:comment-sent") {
-          setNotice(message.error ?? "Sent to the agent. Its reply will appear in the thread.");
         }
       }),
     [],
@@ -647,6 +650,13 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
             >
               <div className="doc-column">
                 <DocHead title={doc.title} createdAt={doc.createdAt} owner={owner} />
+                {editor && abilities.comment && draftAnchor === null ? (
+                  <SelectionToolbar
+                    editor={editor}
+                    canEdit={abilities.edit}
+                    onComment={startComment}
+                  />
+                ) : null}
                 <TabEditor
                   key={activeTab.id}
                   markdown={activeTab.markdown}
@@ -664,20 +674,18 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
                   tops={tops}
                   activeId={activeCommentId}
                   narrow={narrow}
-                  selectionTop={abilities.comment ? (selectionTop ?? labelPick?.top ?? null) : null}
+                  selectionTop={abilities.comment ? (labelPick?.top ?? null) : null}
                   draftOpen={draftAnchor !== null}
-                  onStartComment={
-                    selectionTop === null && labelPick
-                      ? () => startLabelComment(labelPick.anchor)
-                      : startComment
-                  }
-                  onSubmitDraft={async (body) => {
+                  offerAddToChat={canAddToChat}
+                  onStartComment={() => labelPick && startLabelComment(labelPick.anchor)}
+                  onSubmitDraft={async (body, toChat) => {
                     if (!draft) return;
                     const comment = await comments.actions
                       .create(draft.tabId, draft.anchor, body, draft.structured)
                       .catch(commentFailed);
                     setDraft(null);
                     setActiveCommentId(comment.id);
+                    if (toChat) addToChat(comment);
                   }}
                   onCancelDraft={() => {
                     setDraft(null);

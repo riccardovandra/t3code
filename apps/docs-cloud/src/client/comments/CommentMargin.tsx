@@ -17,11 +17,16 @@ export function CommentMargin(props: {
   readonly tops: ReadonlyMap<string, number>;
   readonly activeId: string | null;
   readonly narrow: boolean;
-  /** Where the editor's selection starts, while there is one to comment on. */
+  /**
+   * Where to offer "Comment" in the margin, for picks the selection toolbar
+   * does not cover (diagram labels).
+   */
   readonly selectionTop: number | null;
   readonly draftOpen: boolean;
+  /** Offers "Add to chat" on the draft, for a T3 Code that can take it. */
+  readonly offerAddToChat: boolean;
   readonly onStartComment: () => void;
-  readonly onSubmitDraft: (body: string) => Promise<unknown>;
+  readonly onSubmitDraft: (body: string, addToChat: boolean) => Promise<unknown>;
   readonly onCancelDraft: () => void;
   readonly onActivate: (id: string | null) => void;
   readonly handlersFor: (thread: CommentThread) => ThreadHandlers;
@@ -82,6 +87,7 @@ export function CommentMargin(props: {
           placeholder="Add a comment"
           submitLabel="Comment"
           autoFocus
+          offerAddToChat={props.offerAddToChat}
           onSubmit={props.onSubmitDraft}
           onCancel={props.onCancelDraft}
         />

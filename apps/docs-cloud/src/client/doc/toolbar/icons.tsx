@@ -88,3 +88,25 @@ export const SparkIcon = () => (
     />
   </svg>
 );
+
+export const CodeIcon = () => (
+  <Icon>
+    <path d="M5.5 4L2 8l3.5 4M10.5 4L14 8l-3.5 4" />
+  </Icon>
+);
+
+export const ListIcon = () => (
+  <Icon>
+    <path d="M6 4h8M6 8h8M6 12h8" />
+    <circle cx="2.8" cy="4" r=".6" />
+    <circle cx="2.8" cy="8" r=".6" />
+    <circle cx="2.8" cy="12" r=".6" />
+  </Icon>
+);
+
+export const LinkIcon = () => (
+  <Icon>
+    <path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.3-2.3a2.6 2.6 0 0 0-3.7-3.7l-.9.9" />
+    <path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.2 9.1a2.6 2.6 0 0 0 3.7 3.7l.9-.9" />
+  </Icon>
+);

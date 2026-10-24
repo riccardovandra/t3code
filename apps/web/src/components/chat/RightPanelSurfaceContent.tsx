@@ -104,6 +104,7 @@ export function RightPanelSurfaceContent(props: {
           surface={surface}
           environmentId={props.environmentId}
           threadRef={threadRef}
+          composerDraftTarget={props.composerDraftTarget}
           projectId={props.pullRequest.projectId}
           workspaceRoot={props.files.workspaceRoot || undefined}
         />

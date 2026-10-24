@@ -41,22 +41,27 @@ function CommentEntry(props: { readonly comment: Comment; readonly onDelete?: ()
   );
 }
 
-/** A textarea that submits on Cmd/Ctrl+Enter and cancels on Escape. */
+/**
+ * A textarea that submits on Cmd/Ctrl+Enter and cancels on Escape. With
+ * `offerAddToChat`, an "Add to chat" box (ticked by default) rides along.
+ */
 export function CommentComposer(props: {
   readonly placeholder: string;
   readonly submitLabel: string;
   readonly autoFocus?: boolean;
-  readonly onSubmit: (body: string) => Promise<unknown>;
+  readonly offerAddToChat?: boolean;
+  readonly onSubmit: (body: string, addToChat: boolean) => Promise<unknown>;
   readonly onCancel?: () => void;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [addToChat, setAddToChat] = useState(true);
   const submit = async () => {
     const text = body.trim();
     if (!text || busy) return;
     setBusy(true);
     try {
-      await props.onSubmit(text);
+      await props.onSubmit(text, !!props.offerAddToChat && addToChat);
       setBody("");
     } catch {
       // The page reports the failure; the text stays so it can be resent.
@@ -89,6 +94,16 @@ export function CommentComposer(props: {
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={onKeyDown}
       />
+      {props.offerAddToChat ? (
+        <label className="comment-add-to-chat">
+          <input
+            type="checkbox"
+            checked={addToChat}
+            onChange={(event) => setAddToChat(event.target.checked)}
+          />
+          Add to chat
+        </label>
+      ) : null}
       <div className="comment-actions">
         <button type="submit" className="button small" disabled={busy || !body.trim()}>
           {props.submitLabel}
@@ -108,8 +123,8 @@ export interface ThreadHandlers {
   readonly onReply?: (body: string) => Promise<unknown>;
   readonly onResolve?: () => void;
   readonly onDelete?: (commentId: string) => void;
-  /** Present only when a "Send to agent" handler is installed. */
-  readonly onSendToAgent?: () => void;
+  /** Present only when T3 Code can add the thread to its chat. */
+  readonly onAddToChat?: () => void;
 }
 
 /** One thread in the margin. Inactive cards stay compact; the active one shows replies and actions. */
@@ -157,9 +172,9 @@ export function CommentCard(
                 Resolve
               </button>
             ) : null}
-            {props.onSendToAgent ? (
-              <button type="button" className="link-button" onClick={props.onSendToAgent}>
-                Send to agent
+            {props.onAddToChat ? (
+              <button type="button" className="link-button" onClick={props.onAddToChat}>
+                Add to chat
               </button>
             ) : null}
             {props.onDelete ? (
