@@ -48,6 +48,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.skillSourcesUpsert]: "skills",
   [WS_METHODS.skillSourcesRemove]: "skills",
   [WS_METHODS.skillLibraryList]: "skills",
+  [WS_METHODS.serverReleaseMirrorPublished]: "server",
   [WS_METHODS.mcpServersListTools]: "mcpServers",
   [WS_METHODS.serverUpdateProvider]: "server",
   [WS_METHODS.providerAuthStart]: "provider",

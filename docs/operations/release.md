@@ -512,6 +512,11 @@ Without `--yes` an interactive shell asks before restarting the background servi
 service keeps its old version until `t3 service restart`. A launcher that is a shell script rather
 than a symlink into `~/.t3/runtime/versions` is not repointed and has to be edited by hand.
 
+A background service started with `T3CODE_RELEASE_BASE_URL` set (for example in a systemd drop-in)
+can instead be updated from a client. Fork versions never reach npm, so the combined update dialog
+asks such a server whether its mirror's `SHA256SUMS` lists the archive for its platform, and skips
+it as "not on its release mirror yet" until `release-fork-cli.yml` has attached it.
+
 Unsigned macOS builds are ad-hoc signed, and Squirrel.Mac rejects updates for a bundle without a
 Team ID. Those builds detect this with `codesign` at install time and swap the bundle themselves
 (`apps/desktop/src/updates/MacSelfInstall.ts`). The download and restart buttons behave the same;
