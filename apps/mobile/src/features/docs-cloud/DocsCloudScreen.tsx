@@ -16,6 +16,7 @@ import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { serverEnvironment } from "../../state/server";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { docsCloudNavigation, docsCloudUrl } from "./docsCloudNavigation";
+import { openSettings } from "../settings/settings-navigation";
 import { useDocsCloudBaseUrl } from "./useDocsCloudBaseUrl";
 import { useDocsCloudHost } from "./useDocsCloudHost";
 
@@ -112,12 +113,7 @@ export function DocsCloudScreen({ route }: DocsCloudScreenProps) {
             {canConnect ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  navigation.navigate("SettingsSheet", {
-                    screen: "SettingsContent",
-                    params: { screen: "SettingsMcpServers" },
-                  })
-                }
+                onPress={() => openSettings(navigation, "SettingsMcpServers")}
               >
                 <Text className="text-sm font-semibold text-primary">
                   Open MCP servers settings

@@ -58,9 +58,7 @@ export function mobileWebViewThemeColors(input: MobileWebViewThemeInput): ThemeC
   return { ...colors, canvas };
 }
 
-/**
- * WebViews cannot load the app's bundled fonts, so renders use system stacks.
- */
+/** WebViews cannot load bundled app fonts; use system stacks. */
 export function mobileHtmlRenderTheme(input: MobileWebViewThemeInput) {
   return htmlRenderTheme(
     mobileWebViewThemeColors(input),

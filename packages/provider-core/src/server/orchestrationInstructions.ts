@@ -7,11 +7,9 @@ export const DOCS_CLOUD_MCP_SERVER_NAME = "docs-cloud";
 export const hasDocsCloud = (servers: ReadonlyArray<{ readonly name: string }>): boolean =>
   servers.some((server) => server.name === DOCS_CLOUD_MCP_SERVER_NAME);
 
-// Adapters pick the Docs section from the session's own hub servers, since
-// those decide whether it has Docs Cloud's tools: a read-only session gets no
-// hub servers even where the environment connects Docs Cloud. The `docs_*`
-// tools for the project's files are listed in every session, so both sections
-// describe them the same way.
+// Adapters pick the Docs section from the session's own hub servers: a read-only session gets
+// none even where the environment connects Docs Cloud. Project-file `docs_*` tools are in every
+// session, so both sections describe them the same way.
 const PROJECT_FILES_PARAGRAPH = `Markdown files under the project's \`docs/\` folder are project files: the user also sees them in the Docs panel, inside Docs Cloud, and comments on them there. \`docs_list\` lists them with their open comment counts, \`docs_read\` returns one with its open comments, \`docs_list_comments\` lists comments across files, and \`docs_open\` shows a file in the Docs panel. Change a file with your file tools. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread with \`docs_comment_resolve\` only when asked or when you started it. \`docs_comment_create\` leaves a comment anchored to a short quote of the file's visible text, without markdown syntax.`;
 
 const NO_CLOUD_DOCS_SECTION = `### Docs
@@ -26,19 +24,15 @@ Docs live in Docs Cloud, which the user reads, edits, and comments on in T3 Code
 
 ${PROJECT_FILES_PARAGRAPH} To turn project files into Docs Cloud docs when asked, use \`docs_cloud_import\`; it copies each file with its open comments, leaves the file in place, and skips files imported before.`;
 
-/**
- * Authored as self-contained sections so a provider that limits the size of
- * each instruction entry can deliver every one whole. Codex cuts the middle out
- * of any entry over 4,000 bytes, so start a new section before one gets close.
- */
+// Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
 export const t3CodeOrchestrationSections = (docsCloud: boolean): ReadonlyArray<string> => [
   `## T3 Code orchestration
 
 The \`t3-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
 
-- A delegated task/subagent is child work owned by the current thread. Use \`orchestrator_capabilities\` to discover the current provider/model IDs from the same live catalog as the composer, including configured custom models. It lists a short set of models per provider; pass \`search\` to find others. Do not treat a native tool's model list as the full list of available subagent models. Prefer native subagent tools for same-provider work only when they support the chosen model and no model options are requested or inherited. Use \`delegate_task\` with that provider instance and model when native tools cannot, including for same-provider work. Also use \`delegate_task\` for cross-provider or explicitly T3-owned child tasks. For a child task that needs a separate checkout, use \`delegate_task\` with \`isolation:"worktree"\` across any provider or model. It starts from the parent local commit and runs project setup; uncommitted edits are not copied. Retain each returned \`taskId\`, and use \`task_status\` or \`task_cancel\` to manage it. The returned \`childThreadId\` is backing storage for the subagent, not the target for starting another delegated review round.
+- A delegated task/subagent is child work owned by the current thread. Use \`orchestrator_capabilities\` to discover the current provider/model IDs from the same live catalog as the composer, including configured custom models. It lists a short set of models per provider; pass \`search\` to find others. Do not treat a native tool's model list as the full list of available subagent models. Prefer native subagent tools for same-provider work only when they support the chosen model and no model options are requested or inherited. Use \`delegate_task\` with that provider instance and model when native tools cannot, including for same-provider work. Also use \`delegate_task\` for cross-provider or explicitly T3-owned child tasks. For a child task that needs a separate checkout, use \`delegate_task\` with \`isolation:"worktree"\` across any provider or model. It starts from the parent local commit and runs project setup; uncommitted edits are not copied. Retain each returned \`taskId\`, and use \`task_status\` or \`task_cancel\` to manage it.
 - \`t3_thread_launch\` and \`create_threads\` create ordinary top-level T3 conversations. Use them only when the user explicitly asks for separate/new/top-level threads or conversations. Never use them merely because the user said "subagent" or requested parallel delegated work.
-- For every T3 delegated review round, call \`delegate_task\` again. Include the original brief, prior findings, responses, and unresolved objections in each new task prompt. Track each round by its own \`taskId\`. Use a distinct \`clientRequestId\` per round, stable across retries of that round. Do not use \`t3_thread_send\` on \`childThreadId\` to continue a delegated review.`,
+- For independent T3 delegated review rounds, call \`delegate_task\` again. Include the original brief, prior findings, responses, and unresolved objections in each new task prompt. Track each round by its own \`taskId\`. Use a distinct \`clientRequestId\` per round, stable across retries of that round. For a follow-up that needs the same child's conversation, use \`t3_thread_send\` on its \`childThreadId\`.`,
   `- \`schedule_task\` creates persistent recurring work in the app scheduler. Pass \`schedule\` as a structured object, never as JSON text: \`{"type":"interval","everyMs":3600000}\` for an interval, or \`{"type":"fixed_time","timeOfDay":"09:00","weekdays":[1,2,3,4,5]}\` for a wall-clock schedule, or \`{"type":"webhook"}\` to run on each request to the returned \`webhookUrl\` (the run sees the request only through \`{{body.path}}\`-style placeholders in the prompt). By default runs return to the current thread, which suits orchestrating: each trigger arrives here and you delegate or dedupe; set \`bindToCurrentThread=false\` only when the user wants a fresh thread for every run. After scheduling a timer, report the returned cadence and next run time; for a webhook, report its \`webhookUrl\`, or say T3 Connect remote access is needed if it is missing.
 - When you need a secret from the user (a token, API key, or webhook signing secret), call \`request_secret\` so they enter it privately, then pass the returned \`secretRef\` to the tool that needs it, e.g. \`signature.secretRef\` on a webhook task for a sender that signs requests such as GitHub. A \`secretRef\` works once. Never ask for a secret in chat, never invent one, and never repeat one.
 - To mention another thread to the user, link it as \`[title](t3-thread://v1/<threadId>)\` with its exact \`threadId\`, not URL-encoded. T3 Code opens the thread in the app and shows its current title.`,
@@ -104,10 +98,7 @@ export interface T3AcpInstructionState {
   readonly docsCloud: boolean;
 }
 
-/**
- * ACP has no system/developer prompt field, so send T3-owned context in the
- * first user prompt and whenever the available tools or interaction mode change.
- */
+/** ACP lacks system/developer fields; inject context on first prompt and tool/mode changes. */
 export function t3AcpPromptWithInstructions(input: {
   readonly prompt: string;
   readonly state: T3AcpInstructionState;
@@ -136,9 +127,6 @@ export function t3AcpPromptWithInstructions(input: {
   return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
 
-/**
- * Keep the wrapper explicit so it cannot be mistaken for text authored by the user.
- */
 function prependT3OrchestrationInstructions(prompt: string, docsCloud: boolean): string {
   return `<t3_code_orchestration_instructions>${t3CodeOrchestrationInstructions(docsCloud).trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
@@ -37,8 +38,11 @@ const withTrash = <A, E>(
       }),
     );
     const trash = yield* SkillTrash.SkillTrash.pipe(
-      Effect.provide(SkillTrash.layer),
-      Effect.provide(ServerConfig.ServerConfig.layerTest(base, path.join(base, "t3"))),
+      Effect.provide(
+        SkillTrash.layer.pipe(
+          Layer.provide(ServerConfig.ServerConfig.layerTest(base, path.join(base, "t3"))),
+        ),
+      ),
     );
     return yield* body({ trash, folder, link, lock });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));

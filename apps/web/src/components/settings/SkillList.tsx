@@ -2,7 +2,7 @@ import { ChevronDownIcon, ChevronRightIcon, PackageIcon } from "lucide-react";
 import { memo, useState, type MouseEvent } from "react";
 
 import { cn } from "../../lib/utils";
-import { GitHubIcon } from "../Icons";
+import { getSourceControlPresentationForKind } from "../../sourceControlPresentation";
 import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -20,10 +20,9 @@ import {
   type SkillRowDetails,
 } from "./toolsSettings.logic";
 
-/*
- * The Skills list: dense one-line rows grouped by section and by the source a
- * pack was installed from. Adapted from the skills list in #17513.
- */
+const GitHubIcon = getSourceControlPresentationForKind("github").Icon;
+
+/* The Skills list: dense one-line rows grouped by section and by the source a pack was installed from. */
 
 /** Keeps a click on a control inside a clickable row from also opening the row. */
 export const stopRowClick = (event: MouseEvent) => event.stopPropagation();
@@ -67,7 +66,7 @@ const SkillListItem = memo(function SkillListItem({
       >
         <button
           type="button"
-          className="min-w-0 flex-1 cursor-pointer rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 flex-1 cursor-pointer rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
           <span
             className={cn(
@@ -152,7 +151,7 @@ function SourceGroup({
           <button
             type="button"
             aria-expanded={open}
-            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             {github ? (
               <GitHubIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />

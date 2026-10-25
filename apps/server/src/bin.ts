@@ -28,8 +28,7 @@ if (
     const { runSkillsCli } = await import("./cli/skillsCli.ts");
     await runSkillsCli(process.argv.slice(3));
   } else {
-    // Before anything reads stdin: the desktop app's Windows launcher starts
-    // the CLI without one. Never for the fast paths, whose stdin is a pipe.
+    // Windows desktop launches without stdin; attach before reading, except on fast paths using pipes.
     const { attachConsoleStdin } = await import("./cli/consoleStdin.ts");
     attachConsoleStdin();
     const { runCli } = await import("./binCli.ts");
