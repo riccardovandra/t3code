@@ -17,6 +17,9 @@ describe("parseParentMessage", () => {
     expect(
       parseParentMessage({ type: "t3-docs:hello", features: ["local-files", "add-to-chat"] }),
     ).toEqual({ type: "t3-docs:hello", features: ["add-to-chat", "local-files"] });
+    expect(
+      parseParentMessage({ type: "t3-docs:hello", features: ["local-import", "local-create"] }),
+    ).toEqual({ type: "t3-docs:hello", features: ["local-create", "local-import"] });
     expect(parseParentMessage({ type: "t3-docs:local-files-changed", paths: 3 })).toEqual({
       type: "t3-docs:local-files-changed",
     });

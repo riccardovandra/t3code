@@ -25,8 +25,10 @@ import { formatComposerContextReference } from "@t3tools/shared/composerContextR
 import {
   LOCAL_COMMENTS_CHANGED_TYPE,
   LOCAL_COMMENTS_FEATURE,
+  LOCAL_CREATE_FEATURE,
   LOCAL_FILES_CHANGED_TYPE,
   LOCAL_FILES_FEATURE,
+  LOCAL_IMPORT_FEATURE,
   LOCAL_REQUEST_TYPE,
   parseLocalRequestMessage,
 } from "@t3tools/shared/docsCloudLocal";
@@ -108,12 +110,14 @@ export function useDocsCloudHost(props: {
   const canWrite = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const canComment = useAtomValue(serverEnvironment.createDocComment.permissionAtom(environmentId));
   const canSendTo = useAtomValue(serverEnvironment.sendDocsCloudTo.permissionAtom(environmentId));
+  const canImport = useAtomValue(serverEnvironment.importDocsToCloud.permissionAtom(environmentId));
   const cwd = shell?.worktreePath ?? project?.workspaceRoot ?? null;
   const localScope =
     shell === null || cwd === null ? null : { environmentId, projectId: shell.projectId, cwd };
   const localDocs: LocalDocsContext | null = localScope && {
     ...localScope,
     canWrite,
+    canImport,
     files: localDocsFiles(
       appAtomRegistry,
       { server: serverEnvironment, projects: projectEnvironment },
@@ -143,6 +147,8 @@ export function useDocsCloudHost(props: {
     ...(threadId === null ? [] : ["add-to-chat"]),
     ...(canSendTo ? ["send-to"] : []),
     ...(localDocs === null ? [] : [LOCAL_FILES_FEATURE, LOCAL_COMMENTS_FEATURE]),
+    ...(localDocs !== null && canWrite ? [LOCAL_CREATE_FEATURE] : []),
+    ...(localDocs !== null && canImport ? [LOCAL_IMPORT_FEATURE] : []),
   ];
   const featureKey = features.join(" ");
 

@@ -12,11 +12,11 @@ Go to **Settings → MCP Servers → Docs Cloud**, enter its URL and an API toke
 
 The library's home lists **Project files**: the markdown files under the thread's `docs/` folder. Open one to read and edit it with the same toolbar and outline as a Docs Cloud doc. Edits save to the file in the thread's project folder, so they show up in diffs and commits like any other file. When an agent finishes a turn, open files and the list reload. If the file changed on disk since you opened it, your save is refused and the current text loads instead.
 
-Files that use raw HTML, front matter or footnotes open read-only, because the editor cannot save those without changing them; ask the agent to edit them. They are also read-only on a connection that cannot write files. The editor saves italics as `*text*` and lines up table columns, so the first edit to a hand-written file may change that spacing. Images cannot be pasted into project files, and new files are created by asking an agent.
+Files that use raw HTML, front matter or footnotes open read-only, because the editor cannot save those without changing them; ask the agent to edit them. They are also read-only on a connection that cannot write files. The editor saves italics as `*text*` and lines up table columns, so the first edit to a hand-written file may change that spacing. Images cannot be pasted into project files. **New file** beside **Project files** creates one in `docs/`, named after the title you give it; an existing file is never overwritten.
 
 Comments on project files are stored by the environment running the project, not in the file. Every thread and worktree of that project on that environment shares them, but they are not committed to git.
 
-To turn project files into Docs Cloud docs, ask an agent to import them. Each file becomes its own Docs Cloud doc, and open comments come along when their quoted text is still in the doc. Files and their comments stay where they are.
+To turn a project file into a Docs Cloud doc, open it and choose **Move to Docs Cloud**, or ask an agent to import several. The doc goes into the project's Docs Cloud project, and open comments come along when their quoted text is still in the doc. The file and its comments stay where they are. After that the file shows **Open in Docs Cloud**, and **Update** copies the file's current text into the doc again.
 
 ## Agents
 

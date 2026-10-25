@@ -371,6 +371,27 @@ input:focus {
   color: #d97757;
 }
 
+.local-import-button {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.local-import-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.local-import-button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
 .doc-header-actions .share-button {
   border-color: transparent;
   font-size: 0.95rem;

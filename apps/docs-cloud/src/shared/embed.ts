@@ -43,7 +43,9 @@ export type EmbedFeature =
   | "add-to-chat"
   | "send-to"
   | "local-files"
-  | "local-comments";
+  | "local-comments"
+  | "local-create"
+  | "local-import";
 
 /** Apps T3 Code can copy a doc into. */
 export type EmbedSendTarget = "notion";
@@ -169,6 +171,8 @@ const FEATURES: ReadonlyArray<EmbedFeature> = [
   "send-to",
   "local-files",
   "local-comments",
+  "local-create",
+  "local-import",
 ];
 
 type Fields = Record<string, unknown>;

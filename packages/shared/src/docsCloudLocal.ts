@@ -9,7 +9,8 @@
  * `local-files-changed` (files may have changed on disk, e.g. after an agent
  * turn) and `local-comments-changed` (an agent may have replied to or resolved
  * a comment). The host offers files with the `local-files` feature in its
- * hello, and comments on them with `local-comments`.
+ * hello, comments on them with `local-comments`, creating one with
+ * `local-create` and copying one into Docs Cloud with `local-import`.
  *
  * Comments on project files live on the T3 server, not in Docs Cloud; the
  * frame shows them with the same margin as a cloud doc's.
@@ -22,6 +23,8 @@ import { DOCS_ROOT, isMarkdownPath } from "./docPaths.ts";
 
 export const LOCAL_FILES_FEATURE = "local-files";
 export const LOCAL_COMMENTS_FEATURE = "local-comments";
+export const LOCAL_CREATE_FEATURE = "local-create";
+export const LOCAL_IMPORT_FEATURE = "local-import";
 
 export const LOCAL_REQUEST_TYPE = "t3-docs:local-request";
 export const LOCAL_RESPONSE_TYPE = "t3-docs:local-response";
@@ -34,6 +37,8 @@ const MAX_ERROR_LENGTH = 1_000;
 const MAX_FILES = 2_000;
 const MAX_COMMENTS = 5_000;
 const MAX_COMMENT_ID_LENGTH = 64;
+const MAX_CLOUD_DOC_ID_LENGTH = 200;
+const MAX_LOCAL_TITLE_LENGTH = 200;
 // The T3 server's limits for a comment.
 const MAX_COMMENT_BODY_LENGTH = 10_000;
 export const MAX_LOCAL_QUOTE_LENGTH = 2_000;
@@ -45,6 +50,8 @@ const MAX_LOCAL_MARKDOWN_LENGTH = 5_000_000;
 export interface LocalDocSummary {
   readonly path: string;
   readonly title: string;
+  /** The Docs Cloud doc it was copied into, once moved there. */
+  readonly cloudDocId: string | null;
 }
 
 /** A file as read from disk. `version` changes whenever its text does. */
@@ -82,6 +89,16 @@ export interface LocalDocComments {
   readonly canSendToAgent: boolean;
 }
 
+/** A file copied into a Docs Cloud doc in the current project; the file stays. */
+export interface LocalDocImport {
+  /** `skipped`: it was imported before and `update` was not asked for. */
+  readonly status: "imported" | "updated" | "skipped";
+  readonly cloudDocId: string;
+  readonly commentsImported: number;
+  /** Comments left behind, e.g. because their text is no longer in the file. */
+  readonly commentsSkipped: number;
+}
+
 type CommentTarget = { readonly path: string; readonly commentId: string };
 
 export type LocalDocRequest =
@@ -94,6 +111,10 @@ export type LocalDocRequest =
       /** The version the edit started from; a different file on disk is a conflict. */
       readonly baseVersion: string;
     }
+  /** A new file under docs/ named after the title, never over an existing one. */
+  | { readonly kind: "file.create"; readonly title: string }
+  /** Copies the file and its open comments into Docs Cloud; `update` re-copies its text. */
+  | { readonly kind: "file.import"; readonly path: string; readonly update: boolean }
   | { readonly kind: "comments.list"; readonly path: string }
   | {
       readonly kind: "comment.create";
@@ -123,6 +144,8 @@ export interface LocalDocResults {
   readonly "file.write":
     | { readonly status: "saved"; readonly version: string }
     | { readonly status: "conflict"; readonly file: LocalDocFile };
+  readonly "file.create": LocalDocFile;
+  readonly "file.import": LocalDocImport;
   readonly "comments.list": LocalDocComments;
   /** `commentId` is the new thread's root. */
   readonly "comment.create": LocalDocComments & { readonly commentId: string };
@@ -176,6 +199,9 @@ const isBody = (value: unknown): value is string =>
   isText(value, MAX_COMMENT_BODY_LENGTH) && value.trim().length > 0;
 const isTime = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0;
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const isCloudDocId = (value: unknown): value is string => isText(value, MAX_CLOUD_DOC_ID_LENGTH);
 
 /**
  * Only markdown under the project's docs folder crosses the bridge, so a
@@ -230,6 +256,14 @@ const REQUEST_PARSERS: {
           markdown: fields.markdown,
           baseVersion: fields.baseVersion,
         }
+      : null,
+  "file.create": (fields) =>
+    isText(fields.title, MAX_LOCAL_TITLE_LENGTH) && fields.title.trim().length > 0
+      ? { kind: "file.create", title: fields.title }
+      : null,
+  "file.import": (fields) =>
+    isLocalDocPath(fields.path) && typeof fields.update === "boolean"
+      ? { kind: "file.import", path: fields.path, update: fields.update }
       : null,
   "comments.list": (fields) =>
     isLocalDocPath(fields.path) ? { kind: "comments.list", path: fields.path } : null,
@@ -359,11 +393,16 @@ const RESULT_PARSERS: {
     if (!isObject(value) || !Array.isArray(value.files)) return null;
     const files = value.files
       .filter(
-        (file): file is LocalDocSummary =>
+        (file): file is Fields & { path: string; title: string } =>
           isObject(file) && isLocalDocPath(file.path) && isText(file.title, MAX_PATH_LENGTH),
       )
       .slice(0, MAX_FILES)
-      .map(({ path, title }) => ({ path, title }));
+      // Hosts from before Move to Docs Cloud send no `cloudDocId`.
+      .map(({ path, title, cloudDocId }) => ({
+        path,
+        title,
+        cloudDocId: isCloudDocId(cloudDocId) ? cloudDocId : null,
+      }));
     return { files };
   },
   "file.read": parseFile,
@@ -374,6 +413,20 @@ const RESULT_PARSERS: {
     }
     const file = value.status === "conflict" ? parseFile(value.file) : null;
     return file ? { status: "conflict", file } : null;
+  },
+  "file.create": parseFile,
+  "file.import": (value) => {
+    if (!isObject(value) || !isCloudDocId(value.cloudDocId)) return null;
+    if (value.status !== "imported" && value.status !== "updated" && value.status !== "skipped") {
+      return null;
+    }
+    if (!isCount(value.commentsImported) || !isCount(value.commentsSkipped)) return null;
+    return {
+      status: value.status,
+      cloudDocId: value.cloudDocId,
+      commentsImported: value.commentsImported,
+      commentsSkipped: value.commentsSkipped,
+    };
   },
   "comments.list": parseComments,
   "comment.create": (value) => {
