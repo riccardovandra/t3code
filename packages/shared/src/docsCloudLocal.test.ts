@@ -77,7 +77,23 @@ describe("parseLocalResponseMessage and parseLocalResult", () => {
           { path: "../etc/passwd.md", title: "x" },
         ],
       }),
-    ).toEqual({ files: [{ path: "docs/a.md", title: "a" }] });
+    ).toEqual({ files: [{ path: "docs/a.md", title: "a", cloudDocId: null }] });
+  });
+
+  it("carries a listed file's Docs Cloud doc, dropping a malformed one", () => {
+    expect(
+      parseLocalResult("files.list", {
+        files: [
+          { path: "docs/a.md", title: "a", cloudDocId: "doc_1" },
+          { path: "docs/b.md", title: "b", cloudDocId: 7 },
+        ],
+      }),
+    ).toEqual({
+      files: [
+        { path: "docs/a.md", title: "a", cloudDocId: "doc_1" },
+        { path: "docs/b.md", title: "b", cloudDocId: null },
+      ],
+    });
   });
 
   it("carries the disk file on a conflict", () => {
@@ -188,5 +204,47 @@ describe("localDocVersion", () => {
   it("changes with the text", () => {
     expect(localDocVersion("# A\n")).toBe(localDocVersion("# A\n"));
     expect(localDocVersion("# A\n")).not.toBe(localDocVersion("# B\n"));
+  });
+});
+
+describe("create and import", () => {
+  it("accepts a title to create and a docs path to import", () => {
+    expect(request({ kind: "file.create", title: "Q3 plan" })?.request).toEqual({
+      kind: "file.create",
+      title: "Q3 plan",
+    });
+    expect(request({ kind: "file.import", path: "docs/a.md", update: true })?.request).toEqual({
+      kind: "file.import",
+      path: "docs/a.md",
+      update: true,
+    });
+  });
+
+  it("refuses a blank or long title and imports outside docs", () => {
+    expect(request({ kind: "file.create", title: "   " })).toBeNull();
+    expect(request({ kind: "file.create", title: "x".repeat(201) })).toBeNull();
+    expect(request({ kind: "file.create" })).toBeNull();
+    expect(request({ kind: "file.import", path: "README.md", update: false })).toBeNull();
+    expect(request({ kind: "file.import", path: "docs/a.md" })).toBeNull();
+  });
+
+  it("answers a create with the new file and an import with its doc", () => {
+    const file = {
+      path: "docs/q3-plan.md",
+      markdown: "# Q3 plan\n",
+      version: "v1",
+      readOnlyReason: null,
+    };
+    expect(parseLocalResult("file.create", file)).toEqual(file);
+    const imported = {
+      status: "imported",
+      cloudDocId: "doc_1",
+      commentsImported: 2,
+      commentsSkipped: 1,
+    };
+    expect(parseLocalResult("file.import", imported)).toEqual(imported);
+    expect(parseLocalResult("file.import", { ...imported, status: "failed" })).toBeNull();
+    expect(parseLocalResult("file.import", { ...imported, cloudDocId: "" })).toBeNull();
+    expect(parseLocalResult("file.import", { ...imported, commentsSkipped: -1 })).toBeNull();
   });
 });

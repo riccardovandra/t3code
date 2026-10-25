@@ -789,6 +789,32 @@
   margin-top: 2.25rem;
 }
 
+.local-files-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.local-files-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.local-files-new:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
 .local-files .home-empty {
   margin-top: 0;
 }
@@ -832,6 +858,14 @@
 .local-file-title {
   flex: none;
   max-width: 60%;
+}
+
+.local-file-badge {
+  flex: none;
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .local-file-path {

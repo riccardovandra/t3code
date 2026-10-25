@@ -43,7 +43,9 @@ describe("createLocalClient", () => {
       ok: true,
       result: { files: [{ path: "docs/a.md", title: "a" }] },
     });
-    await expect(pending).resolves.toEqual({ files: [{ path: "docs/a.md", title: "a" }] });
+    await expect(pending).resolves.toEqual({
+      files: [{ path: "docs/a.md", title: "a", cloudDocId: null }],
+    });
   });
 
   it("rejects an error reply and an answer of the wrong shape", async () => {

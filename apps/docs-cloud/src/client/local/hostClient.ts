@@ -1,4 +1,9 @@
-import { LOCAL_COMMENTS_FEATURE, LOCAL_FILES_FEATURE } from "@t3tools/shared/docsCloudLocal";
+import {
+  LOCAL_COMMENTS_FEATURE,
+  LOCAL_CREATE_FEATURE,
+  LOCAL_FILES_FEATURE,
+  LOCAL_IMPORT_FEATURE,
+} from "@t3tools/shared/docsCloudLocal";
 
 import {
   isEmbedded,
@@ -24,4 +29,14 @@ export function useLocalFilesAvailable(): boolean | null {
 /** Whether the T3 Code window also keeps comments on its project files. */
 export function useLocalCommentsAvailable(): boolean {
   return !!useEmbedFeatures()?.includes(LOCAL_COMMENTS_FEATURE);
+}
+
+/** Whether the T3 Code window lets this connection create project files. */
+export function useLocalCreateAvailable(): boolean {
+  return !!useEmbedFeatures()?.includes(LOCAL_CREATE_FEATURE);
+}
+
+/** Whether the T3 Code window can copy a project file into Docs Cloud. */
+export function useLocalImportAvailable(): boolean {
+  return !!useEmbedFeatures()?.includes(LOCAL_IMPORT_FEATURE);
 }

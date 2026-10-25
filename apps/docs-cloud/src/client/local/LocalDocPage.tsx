@@ -24,9 +24,15 @@ import { useMe } from "../me.ts";
 import { navigate } from "../router.ts";
 import { DocSaver } from "./docSaver.ts";
 import { localDocSource, type DocSnapshot, type DocSource } from "./docSource.ts";
-import { hostClient, useLocalCommentsAvailable, useLocalFilesAvailable } from "./hostClient.ts";
+import {
+  hostClient,
+  useLocalCommentsAvailable,
+  useLocalFilesAvailable,
+  useLocalImportAvailable,
+} from "./hostClient.ts";
 import { localCommentSource } from "./localCommentSource.ts";
 import { LocalRequestError } from "./localClient.ts";
+import { LocalImportActions } from "./LocalImportActions.tsx";
 
 const NO_TABS: ReadonlyArray<never> = [];
 const noop = () => undefined;
@@ -137,6 +143,10 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
     setNotice("Images cannot be added to project files here. Ask the agent to add one."),
   );
   const title = docTitleFromPath(props.path);
+  const importAvailable = useLocalImportAvailable();
+  const saveBeforeImport = useStableCallback(async () => {
+    await saver.current?.flush();
+  });
 
   // Comments on the file live on the T3 server; the host answers for them.
   const commentsAvailable = useLocalCommentsAvailable();
@@ -249,6 +259,13 @@ function LocalDoc(props: { readonly path: string; readonly source: DocSource }) 
             <span className="local-doc-status" aria-live="polite">
               {saving ? "Saving…" : null}
             </span>
+            {importAvailable ? (
+              <LocalImportActions
+                path={props.path}
+                beforeImport={saveBeforeImport}
+                onNotice={setNotice}
+              />
+            ) : null}
             {commentsAvailable ? (
               <button
                 type="button"

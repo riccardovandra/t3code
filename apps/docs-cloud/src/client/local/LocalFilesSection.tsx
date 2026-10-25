@@ -1,9 +1,10 @@
 import { localDocAppPath, type LocalDocSummary } from "@t3tools/shared/docsCloudLocal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DocIcon } from "../home/icons.tsx";
+import { DocIcon, PlusIcon } from "../home/icons.tsx";
+import { TitleDialog } from "../home/TitleDialog.tsx";
 import { navigate } from "../router.ts";
-import { hostClient } from "./hostClient.ts";
+import { hostClient, useLocalCreateAvailable } from "./hostClient.ts";
 
 /**
  * The T3 Code project's markdown files under `docs/`, on the home page when
@@ -13,6 +14,8 @@ import { hostClient } from "./hostClient.ts";
 export function LocalFilesSection(props: { readonly query: string }) {
   const [files, setFiles] = useState<ReadonlyArray<LocalDocSummary> | null>(null);
   const [failed, setFailed] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const canCreate = useLocalCreateAvailable();
 
   const reload = useCallback(async () => {
     try {
@@ -42,9 +45,22 @@ export function LocalFilesSection(props: { readonly query: string }) {
 
   if (files === null && !failed) return null;
 
+  const createFile = async (title: string) => {
+    const file = await hostClient.request({ kind: "file.create", title });
+    navigate(localDocAppPath(file.path));
+  };
+
   return (
     <section className="local-files" aria-label="Project files">
-      <h2 className="home-section-label">Project files</h2>
+      <div className="local-files-head">
+        <h2 className="home-section-label">Project files</h2>
+        {canCreate ? (
+          <button type="button" className="local-files-new" onClick={() => setCreating(true)}>
+            <PlusIcon size={14} />
+            New file
+          </button>
+        ) : null}
+      </div>
       {failed && files === null ? (
         <p className="home-empty">
           Could not list this project's files.{" "}
@@ -73,11 +89,22 @@ export function LocalFilesSection(props: { readonly query: string }) {
                 <DocIcon size={16} />
                 <span className="local-file-title">{file.title}</span>
                 <span className="local-file-path">{file.path}</span>
+                {file.cloudDocId ? <span className="local-file-badge">In Docs Cloud</span> : null}
               </a>
             </li>
           ))}
         </ul>
       )}
+      {creating ? (
+        <TitleDialog
+          heading="New project file"
+          detail="A markdown file in this project's docs/ folder"
+          initial=""
+          submitLabel="Create"
+          onSubmit={createFile}
+          onClose={() => setCreating(false)}
+        />
+      ) : null}
     </section>
   );
 }

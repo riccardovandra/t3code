@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { DocsCloudImportFileResult, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { localDocVersion, type LocalRequestMessage } from "@t3tools/shared/docsCloudLocal";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -9,16 +9,33 @@ import {
   unsupportedLocalDocsReply,
 } from "./docsCloudLocalHost.ts";
 
-function context(options: { canWrite?: boolean; truncated?: boolean } = {}) {
+function context(
+  options: {
+    canWrite?: boolean;
+    canImport?: boolean;
+    truncated?: boolean;
+    /** On disk but missing from the listing, as ignored files are. */
+    unlisted?: ReadonlyArray<string>;
+    importResult?: DocsCloudImportFileResult;
+  } = {},
+) {
   const disk = new Map([["docs/plan.md", "# Plan\n"]]);
+  const unlisted = new Set(options.unlisted ?? []);
+  for (const path of unlisted) disk.set(path, "");
   const writes: Array<[string, string]> = [];
+  const imports: Array<[string, boolean]> = [];
   const value: LocalDocsContext = {
     environmentId: "env-1" as EnvironmentId,
     projectId: "project-1" as ProjectId,
     cwd: "/repo",
     canWrite: options.canWrite ?? true,
+    canImport: options.canImport ?? true,
     files: {
-      list: async () => [...disk.keys()].map((path) => ({ path, title: "Plan" })),
+      list: async () =>
+        [...disk.keys()]
+          .filter((path) => !unlisted.has(path))
+          .map((path) => ({ path, title: "Plan", cloudDocId: null })),
+      exists: async (path) => [...disk.keys()].some((key) => key.toLowerCase() === path),
       read: async (path) => {
         const contents = disk.get(path);
         if (contents === undefined) throw new Error(`No such file: ${path}`);
@@ -28,9 +45,27 @@ function context(options: { canWrite?: boolean; truncated?: boolean } = {}) {
         writes.push([path, contents]);
         disk.set(path, contents);
       },
+      importToCloud: async (path, update) => {
+        imports.push([path, update]);
+        return (
+          options.importResult ?? {
+            docPath: path,
+            status: update ? "updated" : "imported",
+            doc: {
+              docPath: path,
+              docId: "doc_1",
+              url: "https://docs.test/d/doc_1",
+              importedAt: "2026-10-25T00:00:00.000Z",
+            },
+            error: null,
+            commentsImported: 2,
+            commentsSkipped: [{ commentId: "c1", quote: "gone", reason: "text_not_found" }],
+          }
+        );
+      },
     },
   };
-  return { value, disk, writes };
+  return { value, disk, writes, imports };
 }
 
 const ask = (request: LocalRequestMessage["request"], ctx: LocalDocsContext) =>
@@ -126,12 +161,85 @@ describe("LOCAL_FILE_HANDLERS", () => {
     });
   });
 
+  it("creates a new file under docs/ named after the title", async () => {
+    const { value, disk } = context();
+    const reply = await ask({ kind: "file.create", title: "  Q3   Launch: Café " }, value);
+    expect(reply).toMatchObject({
+      ok: true,
+      result: {
+        path: "docs/q3-launch-cafe.md",
+        markdown: "# Q3 Launch: Café\n",
+        version: localDocVersion("# Q3 Launch: Café\n"),
+        readOnlyReason: null,
+      },
+    });
+    expect(disk.get("docs/q3-launch-cafe.md")).toBe("# Q3 Launch: Café\n");
+  });
+
+  it("never overwrites a file, listed or not, whatever its case", async () => {
+    const { value, disk, writes } = context({ unlisted: ["docs/Plan-2.md"] });
+    const reply = await ask({ kind: "file.create", title: "Plan" }, value);
+    expect(reply).toMatchObject({ ok: true, result: { path: "docs/plan-3.md" } });
+    expect(writes).toEqual([["docs/plan-3.md", "# Plan\n"]]);
+    expect(disk.get("docs/plan.md")).toBe("# Plan\n");
+    // Titles that slugify to nothing still land inside docs/.
+    expect(await ask({ kind: "file.create", title: "../../.." }, value)).toMatchObject({
+      result: { path: "docs/untitled.md" },
+    });
+  });
+
+  it("refuses to create without write access", async () => {
+    const { value, writes } = context({ canWrite: false });
+    expect(await ask({ kind: "file.create", title: "Plan" }, value)).toMatchObject({
+      ok: false,
+      error: "This connection cannot create files.",
+    });
+    expect(writes).toEqual([]);
+  });
+
+  it("moves a file to Docs Cloud and reports its doc and comments", async () => {
+    const { value, imports } = context();
+    expect(await ask({ kind: "file.import", path: "docs/plan.md", update: false }, value)).toEqual({
+      type: "t3-docs:local-response",
+      requestId: "r1",
+      ok: true,
+      result: {
+        status: "imported",
+        cloudDocId: "doc_1",
+        commentsImported: 2,
+        commentsSkipped: 1,
+      },
+    });
+    expect(imports).toEqual([["docs/plan.md", false]]);
+  });
+
+  it("reports a failed import as an error, and refuses without permission", async () => {
+    const failed = context({
+      importResult: {
+        docPath: "docs/plan.md",
+        status: "failed",
+        doc: null,
+        error: "Docs Cloud is not connected.",
+        commentsImported: 0,
+        commentsSkipped: [],
+      },
+    });
+    expect(
+      await ask({ kind: "file.import", path: "docs/plan.md", update: true }, failed.value),
+    ).toMatchObject({ ok: false, error: "Docs Cloud is not connected." });
+    const denied = context({ canImport: false });
+    expect(
+      await ask({ kind: "file.import", path: "docs/plan.md", update: false }, denied.value),
+    ).toMatchObject({ ok: false, error: "This connection cannot move files to Docs Cloud." });
+    expect(denied.imports).toEqual([]);
+  });
+
   it("answers a request kind it cannot parse with an error, not silence", () => {
     expect(
       unsupportedLocalDocsReply({
         type: "t3-docs:local-request",
         requestId: "r3",
-        request: { kind: "file.import", path: "docs/new.md" },
+        request: { kind: "file.delete", path: "docs/new.md" },
       }),
     ).toEqual({
       type: "t3-docs:local-response",

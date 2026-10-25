@@ -77,10 +77,15 @@ function fakeServer(options: Partial<LocalCommentsOptions> = {}) {
     projectId,
     cwd: "/repo",
     canWrite: true,
+    canImport: false,
     files: {
       list: async () => [],
+      exists: async () => false,
       read: async () => ({ contents: "", truncated: false }),
       write: async () => undefined,
+      importToCloud: async () => {
+        throw new Error("not used");
+      },
     },
   } satisfies LocalDocsContext;
   const ask = (request: LocalRequestMessage["request"]) =>

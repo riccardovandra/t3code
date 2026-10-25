@@ -1,4 +1,5 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { DocsCloudImportFileResult, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { DOCS_ROOT, nextDocPath } from "@t3tools/shared/docPaths";
 import {
   LOCAL_REQUEST_TYPE,
   LOCAL_RESPONSE_TYPE,
@@ -25,11 +26,14 @@ import type { createServerEnvironmentAtoms } from "./state/server.ts";
 /** Disk access for the project's docs, over the environment connection. */
 export interface LocalDocsFiles {
   readonly list: () => Promise<ReadonlyArray<LocalDocSummary>>;
+  readonly exists: (path: string) => Promise<boolean>;
   /** Always a fresh read, never a cached one, since saves compare against it. */
   readonly read: (
     path: string,
   ) => Promise<{ readonly contents: string; readonly truncated: boolean }>;
   readonly write: (path: string, contents: string) => Promise<void>;
+  /** Copies one file and its comments into the project's Docs Cloud project. */
+  readonly importToCloud: (path: string, update: boolean) => Promise<DocsCloudImportFileResult>;
 }
 
 /** The project whose files the Docs Cloud frame may open. */
@@ -38,6 +42,7 @@ export interface LocalDocsContext {
   readonly projectId: ProjectId;
   readonly cwd: string;
   readonly canWrite: boolean;
+  readonly canImport: boolean;
   readonly files: LocalDocsFiles;
 }
 
@@ -67,6 +72,9 @@ async function readDoc(path: string, context: LocalDocsContext): Promise<LocalDo
   };
 }
 
+// Every probe means an existing file; give up long before this becomes a scan.
+const MAX_CREATE_ATTEMPTS = 100;
+
 export const LOCAL_FILE_HANDLERS = {
   "files.list": async (_request, context) => ({ files: await context.files.list() }),
   "file.read": (request, context) => readDoc(request.path, context),
@@ -79,6 +87,37 @@ export const LOCAL_FILE_HANDLERS = {
     if (current.version !== request.baseVersion) return { status: "conflict", file: current };
     await context.files.write(request.path, request.markdown);
     return { status: "saved", version: localDocVersion(request.markdown) };
+  },
+  // Named as the old Docs panel named new docs. The listing misses ignored
+  // files, so each candidate is also checked on disk before it is written.
+  "file.create": async (request, context) => {
+    if (!context.canWrite) throw new Error("This connection cannot create files.");
+    const title = request.title.replace(/\s+/g, " ").trim();
+    const taken = new Set((await context.files.list()).map((file) => file.path.toLowerCase()));
+    for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
+      const path = nextDocPath(DOCS_ROOT, title, taken);
+      if (await context.files.exists(path)) {
+        taken.add(path.toLowerCase());
+        continue;
+      }
+      const markdown = `# ${title}\n`;
+      await context.files.write(path, markdown);
+      return { path, markdown, version: localDocVersion(markdown), readOnlyReason: null };
+    }
+    throw new Error(`Could not find a free file name in ${DOCS_ROOT}/.`);
+  },
+  "file.import": async (request, context) => {
+    if (!context.canImport) throw new Error("This connection cannot move files to Docs Cloud.");
+    const result = await context.files.importToCloud(request.path, request.update);
+    if (result.status === "failed" || result.doc === null) {
+      throw new Error(result.error ?? "Could not move this file to Docs Cloud.");
+    }
+    return {
+      status: result.status,
+      cloudDocId: result.doc.docId,
+      commentsImported: result.commentsImported,
+      commentsSkipped: result.commentsSkipped.length,
+    };
   },
 } satisfies LocalDocsHandlers;
 
@@ -140,7 +179,10 @@ export function localDocsValueOf<A>(result: AtomCommandResult<A, unknown>, fallb
 
 /** The RPC atoms a client app built for its environment connection. */
 export interface LocalDocsFilesAtoms {
-  readonly server: Pick<ReturnType<typeof createServerEnvironmentAtoms>, "docsCloudImports">;
+  readonly server: Pick<
+    ReturnType<typeof createServerEnvironmentAtoms>,
+    "docsCloudImports" | "importDocsToCloud"
+  >;
   readonly projects: Pick<
     ReturnType<typeof createProjectEnvironmentAtoms>,
     "readFile" | "writeFile"
@@ -167,10 +209,24 @@ export function localDocsFiles(
         atoms.server.docsCloudImports({ environmentId, input: { projectId, cwd } }),
         { ...QUIET, refresh: true },
       );
-      return localDocsValueOf(result, "Could not list the project's docs.").docs.map((doc) => ({
+      const { docs, imports } = localDocsValueOf(result, "Could not list the project's docs.");
+      const cloudDocIds = new Map(imports.map((record) => [record.docPath, record.docId]));
+      return docs.map((doc) => ({
         path: doc.docPath,
         title: doc.title,
+        cloudDocId: cloudDocIds.get(doc.docPath) ?? null,
       }));
+    },
+    exists: async (path) => {
+      const result = await executeAtomQuery(
+        registry,
+        atoms.projects.readFile({
+          environmentId,
+          input: { cwd, relativePath: path, allowMissing: true },
+        }),
+        { ...QUIET, refresh: true },
+      );
+      return localDocsValueOf(result, "Could not check the docs folder.").exists !== false;
     },
     read: async (path) => {
       const result = await executeAtomQuery(registry, fileAtom(path), { ...QUIET, refresh: true });
@@ -187,6 +243,18 @@ export function localDocsFiles(
       localDocsValueOf(result, "Could not save the file.");
       // Other views of the file, such as the file preview, catch up.
       registry.refresh(fileAtom(path));
+    },
+    importToCloud: async (path, update) => {
+      const result = await runAtomCommand(
+        registry,
+        atoms.server.importDocsToCloud,
+        { environmentId, input: { projectId, cwd, docPaths: [path], update } },
+        QUIET,
+      );
+      const outcome = localDocsValueOf(result, "Could not move the file to Docs Cloud.");
+      const fileResult = outcome.results.find((entry) => entry.docPath === path);
+      if (!fileResult) throw new Error("Docs Cloud did not report on this file.");
+      return fileResult;
     },
   };
 }

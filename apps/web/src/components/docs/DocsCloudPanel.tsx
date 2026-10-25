@@ -11,8 +11,10 @@ import { AuthFilesystemWriteScope, type ProjectId, type ScopedThreadRef } from "
 import {
   LOCAL_COMMENTS_CHANGED_TYPE,
   LOCAL_COMMENTS_FEATURE,
+  LOCAL_CREATE_FEATURE,
   LOCAL_FILES_CHANGED_TYPE,
   LOCAL_FILES_FEATURE,
+  LOCAL_IMPORT_FEATURE,
   localDocPathFromAppPath,
   parseLocalRequestMessage,
 } from "@t3tools/shared/docsCloudLocal";
@@ -132,6 +134,9 @@ export function DocsCloudPanel(props: {
   // connection. Their text goes only to the frame, never to the Docs Cloud worker.
   const registry = useContext(RegistryContext);
   const canWriteFiles = useEnvironmentScope(threadRef.environmentId, AuthFilesystemWriteScope);
+  const canImport = useAtomValue(
+    serverEnvironment.importDocsToCloud.permissionAtom(threadRef.environmentId),
+  );
   const { workspaceRoot, projectId } = props;
   const localScope =
     projectId === null || workspaceRoot === undefined
@@ -140,6 +145,7 @@ export function DocsCloudPanel(props: {
   const localDocs: LocalDocsContext | null = localScope && {
     ...localScope,
     canWrite: canWriteFiles,
+    canImport,
     files: localDocsFiles(registry, localScope),
   };
   const servesFiles = localDocs !== null;
@@ -160,6 +166,8 @@ export function DocsCloudPanel(props: {
     "add-to-chat",
     "send-to",
     ...(servesFiles ? [LOCAL_FILES_FEATURE, LOCAL_COMMENTS_FEATURE] : []),
+    ...(servesFiles && canWriteFiles ? [LOCAL_CREATE_FEATURE] : []),
+    ...(servesFiles && canImport ? [LOCAL_IMPORT_FEATURE] : []),
   ];
   const featureKey = features.join(" ");
   const helloFeatures = useRef<string | null>(null);

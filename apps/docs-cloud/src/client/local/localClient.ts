@@ -13,6 +13,8 @@ import type { EmbedFrameMessage, EmbedParentMessage } from "../../shared/embed.t
 
 /** How long the host has to answer before the request fails, so a stuck save never hangs. */
 export const LOCAL_REQUEST_TIMEOUT_MS = 30_000;
+// An import copies the file and each comment to Docs Cloud through the T3 server.
+const IMPORT_TIMEOUT_MS = 120_000;
 
 export class LocalRequestError extends Error {}
 
@@ -76,10 +78,13 @@ export function createLocalClient(bridge: {
       counter += 1;
       const requestId = `local-${counter}-${Math.random().toString(36).slice(2, 10)}`;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.delete(requestId);
-          reject(new LocalRequestError("T3 Code did not answer. Try again."));
-        }, LOCAL_REQUEST_TIMEOUT_MS);
+        const timer = setTimeout(
+          () => {
+            pending.delete(requestId);
+            reject(new LocalRequestError("T3 Code did not answer. Try again."));
+          },
+          request.kind === "file.import" ? IMPORT_TIMEOUT_MS : LOCAL_REQUEST_TIMEOUT_MS,
+        );
         pending.set(requestId, {
           kind: request.kind,
           resolve: resolve as (result: unknown) => void,
