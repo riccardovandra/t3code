@@ -197,7 +197,7 @@ const make = Effect.gen(function* () {
       );
       return yield* new DocsCloudError({ reason: "failed", detail: code });
     }
-    return yield* Schema.decodeUnknownEffect(schema)(json).pipe(
+    return yield* Schema.decodeEffect(schema)(json).pipe(
       Effect.mapError(
         () => new DocsCloudError({ reason: "failed", detail: "unexpected response" }),
       ),
@@ -398,10 +398,10 @@ const make = Effect.gen(function* () {
     if (existing) {
       // A doc deleted in Docs Cloud since its import is imported again below.
       const current = yield* call(conn, "GET", `/api/docs/${existing.doc_id}`, DocWithTabs).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchIf(
           (error) => error.reason === "failed" && error.detail === "not_found",
-          () => Effect.succeed(Option.none()),
+          () => Effect.succeedNone,
         ),
       );
       if (Option.isSome(current)) {

@@ -51,6 +51,7 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.launchThread]: AuthOrchestrationOperateScope,
@@ -263,12 +264,13 @@ const SettingsUpdate = Schema.Struct({
   patch: ServerSettingsPatch,
   providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
 });
+const decodeSettingsUpdate = Schema.decodeUnknownSync(SettingsUpdate);
 
 const requiredScopesForSettingsUpdate = (
   payload: unknown,
   current: Pick<ServerSettings, "projectSettingsOverrides"> | undefined,
 ) => {
-  const input = Schema.decodeUnknownSync(SettingsUpdate)(payload);
+  const input = decodeSettingsUpdate(payload);
   const scopes = requiredScopesForServerSettingsPatch(input.patch, current);
   if (input.providerInstanceMutation === undefined) return scopes;
   return Object.values(input.patch).every((value) => value === undefined)
@@ -277,6 +279,7 @@ const requiredScopesForSettingsUpdate = (
 };
 
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
+const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
 
 const requiredScopesForRpcCall = (
   method: string,
@@ -287,7 +290,7 @@ const requiredScopesForRpcCall = (
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }
   if (method === WS_METHODS.assetsCreateUrl) {
-    const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
+    const { resource } = decodeAssetCreateUrlInput(payload);
     return [
       resource._tag === "workspace-file" ||
       resource._tag === "media-file" ||
@@ -320,7 +323,7 @@ export const layer = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
   currentSettings: Effect.Effect<
     Pick<ServerSettings, "projectSettingsOverrides"> | undefined
-  > = Effect.succeed(undefined),
+  > = Effect.undefined,
   onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
 ) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) =>
@@ -329,8 +332,7 @@ export const layer = (
         rpc._tag === WS_METHODS.serverUpdateSettings ? yield* currentSettings : undefined;
       const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload, settings);
       const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
-      if (requiredScope !== undefined)
-        return yield* Effect.fail(rpcAuthorizationError(requiredScope));
+      if (requiredScope !== undefined) return yield* rpcAuthorizationError(requiredScope);
       return yield* onAuthorized === undefined
         ? effect
         : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
