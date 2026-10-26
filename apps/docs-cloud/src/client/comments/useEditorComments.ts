@@ -13,6 +13,7 @@ import {
 } from "../editor/table/TableView.ts";
 import { widgetInfo } from "../../shared/widget/fence.ts";
 import { analyzeWidget } from "../../shared/widget/validate.ts";
+import { visiblePos } from "../editor/headingFold.ts";
 import { buildDocTextIndex, captureDocAnchor, resolveDocAnchor } from "./editorAnchors.ts";
 
 export interface EditorCommentAnchor extends DocAnchor {
@@ -198,24 +199,31 @@ export function useEditorComments(
     const measure = () => {
       if (editor.isDestroyed) return;
       const origin = container.getBoundingClientRect().top;
+      // A passage inside a folded section sits beside the heading that hides it.
+      const topAt = (pos: number) =>
+        Math.round(editor.view.coordsAtPos(visiblePos(editor.state, pos)).top - origin);
+      const topOf = (element: Element, pos: number) => {
+        const shown = visiblePos(editor.state, pos);
+        return shown === pos
+          ? Math.round(element.getBoundingClientRect().top - origin)
+          : topAt(shown);
+      };
       const next = new Map<string, number>();
       const state = commentsKey.getState(editor.state);
       for (const range of state?.ranges ?? []) {
-        next.set(range.id, Math.round(editor.view.coordsAtPos(range.from).top - origin));
+        next.set(range.id, topAt(range.from));
       }
       // A cell missing from the DOM has had its row or column deleted.
       for (const cell of state?.cells ?? []) {
         const element = editor.view.dom.querySelector(
           `table[data-table-id="${CSS.escape(cell.blockId)}"] td[data-row-id="${CSS.escape(cell.rowId)}"][data-col-id="${CSS.escape(cell.colId)}"]`,
         );
-        if (element) next.set(cell.id, Math.round(element.getBoundingClientRect().top - origin));
+        if (element) next.set(cell.id, topOf(element, editor.view.posAtDOM(element, 0)));
       }
       // The diagram draws in a sandboxed frame, so a label thread sits beside its diagram.
       for (const label of state?.labels ?? []) {
         const element = editor.view.nodeDOM(label.pos);
-        if (element instanceof HTMLElement) {
-          next.set(label.id, Math.round(element.getBoundingClientRect().top - origin));
-        }
+        if (element instanceof HTMLElement) next.set(label.id, topOf(element, label.pos));
       }
       setTops((current) => (sameTops(current, next) ? current : next));
     };

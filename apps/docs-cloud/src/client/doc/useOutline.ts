@@ -90,10 +90,15 @@ export function useOutline(editor: Editor | null): OutlineState {
   );
 }
 
+/** Position of the heading for `key` in the editor's current document. */
+export function headingPos(editor: Editor, key: string): number | null {
+  return extractHeadings(editor.state.doc).find((candidate) => candidate.key === key)?.pos ?? null;
+}
+
 /** Heading DOM for `key` in the editor's current document. */
 export function headingElement(editor: Editor, key: string): HTMLElement | null {
-  const heading = extractHeadings(editor.state.doc).find((candidate) => candidate.key === key);
-  const element = heading ? editor.view.nodeDOM(heading.pos) : null;
+  const pos = headingPos(editor, key);
+  const element = pos === null ? null : editor.view.nodeDOM(pos);
   return element instanceof HTMLElement ? element : null;
 }
 

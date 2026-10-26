@@ -1333,3 +1333,71 @@ span.tab-row-toggle {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* Section folding: a chevron in the gutter beside each heading. */
+
+.tab-editor .ProseMirror :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+}
+
+.fold-toggle {
+  position: absolute;
+  left: -1.75rem;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1lh;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.fold-toggle svg {
+  transition: transform 120ms ease;
+}
+
+.fold-toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.tab-editor .ProseMirror :is(h1, h2, h3, h4, h5, h6):hover > .fold-toggle,
+.fold-toggle:focus-visible,
+.fold-toggle[aria-expanded="false"] {
+  opacity: 1;
+}
+
+.fold-toggle:hover {
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .fold-toggle {
+    opacity: 1;
+  }
+}
+
+/* Printing and PDF export show every section. */
+@media screen {
+  .tab-editor .ProseMirror .fold-hidden {
+    display: none;
+  }
+}
+
+@media print {
+  .fold-toggle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fold-toggle,
+  .fold-toggle svg {
+    transition: none;
+  }
+}
