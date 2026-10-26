@@ -4,6 +4,7 @@ import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 
 import { DocsCodeBlock } from "./codeBlock.ts";
+import { HeadingFold } from "./headingFold.ts";
 import { DocImage, type DocImageOptions } from "./image.ts";
 
 /**
@@ -20,5 +21,6 @@ export const createEditorExtensions = (
   TaskItem.configure({ nested: true }),
   TableKit.configure({ table: { resizable: false } }),
   DocImage.configure(images),
+  HeadingFold,
   Markdown,
 ];

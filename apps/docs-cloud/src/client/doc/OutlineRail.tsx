@@ -1,8 +1,9 @@
 import type { Editor } from "@tiptap/core";
 import { useState } from "react";
 
+import { revealPos } from "../editor/headingFold.ts";
 import "./outline.css";
-import { headingElement, useActiveHeading, useOutline } from "./useOutline.ts";
+import { headingElement, headingPos, useActiveHeading, useOutline } from "./useOutline.ts";
 
 /**
  * Right rail for the live outline of the active tab: H1–H3 headings,
@@ -16,6 +17,8 @@ export function OutlineRail(props: { readonly editor: Editor | null }) {
   const [open, setOpen] = useState(false);
 
   const jump = (key: string) => {
+    const pos = editor ? headingPos(editor, key) : null;
+    if (editor && pos !== null) revealPos(editor.view, pos);
     const element = editor ? headingElement(editor, key) : null;
     if (!element) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
