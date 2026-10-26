@@ -18,11 +18,12 @@
   padding-bottom: 0.25rem;
 }
 
+/* The table fills the doc column and wraps cell text as the page narrows;
+   it only scrolls once every column is at its minimum width. */
 .t3-table table {
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 100%;
-  width: max-content;
+  width: 100%;
 }
 
 .t3-table th,
@@ -34,7 +35,6 @@
   vertical-align: top;
   background: var(--bg);
   min-width: 6rem;
-  max-width: 28rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
