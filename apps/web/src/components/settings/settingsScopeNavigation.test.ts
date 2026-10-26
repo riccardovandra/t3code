@@ -282,7 +282,7 @@ describe("settings scope key", () => {
       search: { skill: "teach" },
     });
     const settingsSearch = () =>
-      router.state.matches.find((match) => match.routeId === "/settings")?.search ?? {};
+      router.state.matches.find((match) => String(match.routeId) === "/settings")?.search ?? {};
     expect(settingsSearch()).toMatchObject({ project: "repository:t3code", skill: "teach" });
     const detailKey = settingsScopeKey(settingsSearch());
 

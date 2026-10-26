@@ -118,10 +118,10 @@ const make = Effect.gen(function* () {
     threads.getThreadShell(threadId).pipe(
       Effect.tapError((cause) => Effect.logWarning("Doc comment thread lookup failed", { cause })),
       Effect.mapError(() => new DocsError({ reason: "persistence" })),
-      Effect.flatMap((shell) =>
-        shell === null || shell.projectId !== projectId
-          ? Effect.fail(new DocsError({ reason: "thread_not_found" }))
-          : Effect.succeed(shell),
+      Effect.filterOrFail(
+        (shell): shell is NonNullable<typeof shell> =>
+          shell !== null && shell.projectId === projectId,
+        () => new DocsError({ reason: "thread_not_found" }),
       ),
     );
 
