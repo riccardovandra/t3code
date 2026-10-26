@@ -1013,6 +1013,20 @@ export function filterSidebarProjectScopeItems<TItem extends { readonly value: s
   return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
 }
 
+// A plain pick filters to that project alone; a toggle adds or removes it so
+// several projects can share the list. Removing the last one shows every project.
+export function nextSidebarProjectScopeKeys(input: {
+  readonly current: ReadonlyArray<string>;
+  readonly value: string;
+  readonly toggle: boolean;
+}): ReadonlyArray<string> {
+  if (input.value === "all") return [];
+  if (!input.toggle) return [input.value];
+  return input.current.includes(input.value)
+    ? input.current.filter((key) => key !== input.value)
+    : [...input.current, input.value];
+}
+
 export interface SidebarProjectScopeMenuState {
   readonly open: boolean;
   readonly query: string;

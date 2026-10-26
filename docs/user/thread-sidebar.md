@@ -191,6 +191,14 @@ The linked pull request participates in automatic settlement.
 
 ## Find and reference work
 
+On web and desktop, the filter button beside the sidebar search shows one
+project's threads: pick a project to see only it. To see several projects
+together, tick the checkbox beside each one, or `Shift+click` them (also
+`Cmd+click` on macOS, `Ctrl+click` elsewhere); the list stays open while you add
+or remove projects. Pick
+**All projects** to clear the filter. With one project filtered, or several
+that include the thread you are in, **New thread** starts there without asking.
+
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
 across connected environments by title, branch, pull request, or project.
 Threads you open often or recently rank higher, and for three weeks the thread
