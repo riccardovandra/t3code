@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 
 import { canEdit, canShare, displayName } from "../../shared/access.ts";
 import { DOC_STATUS_LABEL } from "../../shared/protocol.ts";
@@ -16,6 +16,7 @@ export interface MoveTarget extends SwitcherProject {
 export interface DocActions {
   readonly moveTargets: ReadonlyArray<MoveTarget>;
   readonly onMove: (entry: HomeEntry, projectId: string | null) => void;
+  readonly onCopyLink: (entry: HomeEntry) => void;
   readonly onRename: (entry: HomeEntry) => void;
   readonly onDelete: (entry: HomeEntry) => void;
 }
@@ -59,11 +60,64 @@ function Preview(props: { readonly entry: HomeEntry }) {
 }
 
 function DocMenu(props: { readonly entry: HomeEntry; readonly actions: DocActions }) {
-  const { entry, actions } = props;
-  const editable = canEdit(entry.role);
   return (
-    <Menu label={`Actions for ${entry.title}`} trigger={<MoreIcon size={16} />}>
-      {(close) => (
+    <Menu label={`Actions for ${props.entry.title}`} trigger={<MoreIcon size={16} />}>
+      {(close) => <DocMenuBody entry={props.entry} actions={props.actions} close={close} />}
+    </Menu>
+  );
+}
+
+const focusMenuView = (view: HTMLDivElement | null) => {
+  const items = [...(view?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
+  (items.find((item) => item.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
+};
+
+/** Mounted only while the menu is open, so it always reopens on the main view. */
+function DocMenuBody(props: {
+  readonly entry: HomeEntry;
+  readonly actions: DocActions;
+  readonly close: () => void;
+}) {
+  const { entry, actions, close } = props;
+  const [moving, setMoving] = useState(false);
+  const editable = canEdit(entry.role);
+
+  const move = (projectId: string | null) => {
+    close();
+    if ((entry.project?.id ?? null) !== projectId) actions.onMove(entry, projectId);
+  };
+
+  return (
+    // Keyed per view: switching views unmounts the focused item, so focus the new view.
+    <div key={moving ? "move" : "main"} ref={focusMenuView}>
+      {moving ? (
+        <>
+          <MenuItem onSelect={() => setMoving(false)}>Back</MenuItem>
+          <MenuSeparator />
+          <MenuLabel>Move to project</MenuLabel>
+          <div className="home-menu-scroll">
+            {actions.moveTargets.map((target) => (
+              <MenuItem
+                key={target.id}
+                kind="radio"
+                checked={entry.project?.id === target.id}
+                icon={<ProjectBadge name={target.name} />}
+                onSelect={() => move(target.id)}
+              >
+                {target.name}
+              </MenuItem>
+            ))}
+          </div>
+          <MenuItem
+            kind="radio"
+            checked={entry.project === null}
+            icon={<NoProjectBadge />}
+            onSelect={() => move(null)}
+          >
+            No project
+          </MenuItem>
+        </>
+      ) : (
         <>
           <MenuItem
             onSelect={() => {
@@ -72,6 +126,14 @@ function DocMenu(props: { readonly entry: HomeEntry; readonly actions: DocAction
             }}
           >
             Open
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              close();
+              actions.onCopyLink(entry);
+            }}
+          >
+            Copy link
           </MenuItem>
           {editable ? (
             <MenuItem
@@ -83,39 +145,7 @@ function DocMenu(props: { readonly entry: HomeEntry; readonly actions: DocAction
               Rename
             </MenuItem>
           ) : null}
-          {editable ? (
-            <>
-              <MenuSeparator />
-              <MenuLabel>Move to project</MenuLabel>
-              <div className="home-menu-scroll">
-                {actions.moveTargets.map((target) => (
-                  <MenuItem
-                    key={target.id}
-                    kind="radio"
-                    checked={entry.project?.id === target.id}
-                    icon={<ProjectBadge name={target.name} />}
-                    onSelect={() => {
-                      close();
-                      if (entry.project?.id !== target.id) actions.onMove(entry, target.id);
-                    }}
-                  >
-                    {target.name}
-                  </MenuItem>
-                ))}
-              </div>
-              <MenuItem
-                kind="radio"
-                checked={entry.project === null}
-                icon={<NoProjectBadge />}
-                onSelect={() => {
-                  close();
-                  if (entry.project !== null) actions.onMove(entry, null);
-                }}
-              >
-                No project
-              </MenuItem>
-            </>
-          ) : null}
+          {editable ? <MenuItem onSelect={() => setMoving(true)}>Move…</MenuItem> : null}
           {canShare(entry.role) ? (
             <>
               <MenuSeparator />
@@ -132,7 +162,7 @@ function DocMenu(props: { readonly entry: HomeEntry; readonly actions: DocAction
           ) : null}
         </>
       )}
-    </Menu>
+    </div>
   );
 }
 

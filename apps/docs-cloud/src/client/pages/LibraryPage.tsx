@@ -56,6 +56,7 @@ import {
 } from "../home/ProjectSwitcher.tsx";
 import { useMe } from "../me.ts";
 import { docPath, navigate } from "../router.ts";
+import { canonicalDocUrl } from "../share/ShareDialog.tsx";
 import "../home/home.css";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -119,6 +120,7 @@ export function LibraryPage() {
   } | null>(null);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<HomeEntry | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -217,6 +219,12 @@ export function LibraryPage() {
       onMove: (entry: HomeEntry, projectId: string | null) => {
         void api.moveDoc(entry.id, projectId).then(reload, reload);
       },
+      onCopyLink: (entry: HomeEntry) =>
+        // Same wording as the doc page's Copy link.
+        void navigator.clipboard.writeText(canonicalDocUrl(entry.id)).then(
+          () => setNotice("Link copied. Only people the doc is shared with can open it."),
+          () => setNotice("Could not copy the link."),
+        ),
       onRename: setRenaming,
       onDelete: (entry: HomeEntry) => {
         // Same wording as the doc page's Delete.
@@ -275,6 +283,15 @@ export function LibraryPage() {
         <ProjectSwitcher scope={scope} projects={projects} onChange={chooseScope} />
         <AccountMenu />
       </div>
+
+      {notice ? (
+        <div className="notice" role="status">
+          {notice}
+          <button type="button" className="link-button" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <div className="home-toolbar">
         <div className="home-tabs" role="tablist" aria-label="Whose docs">
