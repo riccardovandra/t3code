@@ -19,7 +19,8 @@
 }
 
 /* The table fills the doc column and wraps cell text as the page narrows;
-   it only scrolls once every column is at its minimum width. */
+   it only scrolls once every column is at its minimum width. Headers wrap
+   so a long name does not widen a column of short values. */
 .t3-table table {
   border-collapse: separate;
   border-spacing: 0;
@@ -34,9 +35,18 @@
   text-align: left;
   vertical-align: top;
   background: var(--bg);
-  min-width: 6rem;
+  min-width: 4rem;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* Not anywhere: that lets a column shrink below its longest word. */
+  overflow-wrap: break-word;
+}
+
+.t3-table td:is([data-type="date"], [data-type="number"], [data-type="select"]) {
+  white-space: nowrap;
+}
+
+.t3-table th.t3-long {
+  min-width: 11rem;
 }
 
 .t3-table tr > :first-child {
@@ -47,7 +57,6 @@
   border-top: 1px solid var(--border);
   font-weight: 500;
   color: var(--muted);
-  white-space: nowrap;
 }
 
 .t3-table th.editable {

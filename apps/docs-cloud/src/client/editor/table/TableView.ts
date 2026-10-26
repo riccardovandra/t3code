@@ -83,6 +83,11 @@ function button(className: string, text: string, onClick: () => void, label?: st
   return node;
 }
 
+// Prose columns get a readable floor so a narrow page scrolls the table instead of stacking their text into tall rows.
+const hasLongText = (table: RichTable, column: TableColumn) =>
+  (column.type === "text" || column.type === "link") &&
+  table.rows.some((row) => cellText(row.cells[column.id]).length > 40);
+
 function chip(value: string, color: ChipColor | undefined) {
   const node = element("span", "t3-chip", value);
   node.dataset.color = color ?? "gray";
@@ -109,11 +114,10 @@ interface EditingCell {
 }
 
 /**
- * A ```t3-table block. The fence's JSON is the node's text; the view renders
- * it as a table and writes edits back as one transaction replacing that text,
- * so saves go through the editor's normal markdown path. Typing happens in
- * plain inputs and only a committed cell dispatches, so a large table is not
- * re-rendered per keystroke; a committed cell repaints only itself.
+ * A ```t3-table block. The fence's JSON is the node's text; edits write back as
+ * one transaction replacing it, so saves take the normal markdown path. Typing
+ * happens in plain inputs and only a committed cell dispatches and repaints, so
+ * a large table is not re-rendered per keystroke.
  */
 export class TableView implements NodeView {
   readonly dom = element("div", "t3-table");
@@ -277,6 +281,7 @@ export class TableView implements NodeView {
       const th = element("th");
       th.dataset.colId = column.id;
       th.dataset.type = column.type;
+      if (hasLongText(table, column)) th.classList.add("t3-long");
       const name = element("span", "t3-col-name", column.name || " ");
       th.append(name);
       if (this.editable) {
