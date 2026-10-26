@@ -21,7 +21,7 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import {
   buildSidebarProjectSnapshots,
   resolveScopedNewThreadProjectRef,
-  resolveSidebarProjectScopeKey,
+  resolveSidebarProjectScopeKeys,
 } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
@@ -62,12 +62,12 @@ function ChatRouteGlobalShortcuts() {
     resolveEnvironmentLabel: () => null,
   });
   const projectGroupCount = projectGroups.length;
-  const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const projectScopeKey = legacySidebarEnabled
-    ? null
-    : resolveSidebarProjectScopeKey({
+  const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
+  const projectScopeKeys = legacySidebarEnabled
+    ? []
+    : resolveSidebarProjectScopeKeys({
         groups: projectGroups,
-        key: persistedProjectScopeKey,
+        keys: persistedProjectScopeKeys,
         settings: projectGroupingSettings,
       });
   const terminalOpen = useTerminalUiStateStore((state) =>
@@ -133,7 +133,7 @@ function ChatRouteGlobalShortcuts() {
         event.stopPropagation();
         const scopedProjectRef = resolveScopedNewThreadProjectRef({
           groups: projectGroups,
-          scopeKey: projectScopeKey,
+          scopeKeys: projectScopeKeys,
           contextProjectRef: resolveThreadActionProjectRef({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
@@ -216,7 +216,7 @@ function ChatRouteGlobalShortcuts() {
     primaryEnvironmentId,
     projectGroupCount,
     projectGroups,
-    projectScopeKey,
+    projectScopeKeys,
     routeThreadRef,
     scratchEnvironmentId,
     selectedThreadKeysSize,

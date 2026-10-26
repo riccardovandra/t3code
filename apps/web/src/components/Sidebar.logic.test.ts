@@ -33,6 +33,7 @@ import {
   type SidebarListMarker,
   type SidebarSection,
   resolveSidebarDropVerb,
+  nextSidebarProjectScopeKeys,
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
@@ -1350,5 +1351,28 @@ describe("resolveSidebarRouteReveal", () => {
         findThread,
       }),
     ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+  });
+});
+
+describe("nextSidebarProjectScopeKeys", () => {
+  it("narrows to one project on a plain pick", () => {
+    expect(nextSidebarProjectScopeKeys({ current: ["a", "b"], value: "c", toggle: false })).toEqual(
+      ["c"],
+    );
+  });
+
+  it("adds and removes projects on a toggle", () => {
+    expect(nextSidebarProjectScopeKeys({ current: ["a"], value: "b", toggle: true })).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(nextSidebarProjectScopeKeys({ current: ["a", "b"], value: "a", toggle: true })).toEqual([
+      "b",
+    ]);
+  });
+
+  it("shows every project after removing the last one or picking all", () => {
+    expect(nextSidebarProjectScopeKeys({ current: ["a"], value: "a", toggle: true })).toEqual([]);
+    expect(nextSidebarProjectScopeKeys({ current: ["a"], value: "all", toggle: true })).toEqual([]);
   });
 });
