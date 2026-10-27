@@ -158,14 +158,13 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
-  const statusOf = (config: McpHubServerConfig) =>
-    Effect.gen(function* () {
-      if (!config.enabled) return { state: "disabled" } as const;
-      if (config.auth.type === "oauth" && !(yield* hasTokens(config.id))) {
-        return { state: "needs-sign-in" } as const;
-      }
-      return (yield* Ref.get(statuses)).get(config.id) ?? ({ state: "idle" } as const);
-    });
+  const statusOf = Effect.fn("McpServerRegistry.statusOf")(function* (config: McpHubServerConfig) {
+    if (!config.enabled) return { state: "disabled" } as const;
+    if (config.auth.type === "oauth" && !(yield* hasTokens(config.id))) {
+      return { state: "needs-sign-in" } as const;
+    }
+    return (yield* Ref.get(statuses)).get(config.id) ?? ({ state: "idle" } as const);
+  });
 
   const toEntry = (config: McpHubServerConfig) =>
     statusOf(config).pipe(Effect.map((status): McpServerEntry => ({ ...config, status })));
@@ -189,24 +188,26 @@ const make = Effect.gen(function* () {
     load.pipe(Effect.map((servers) => servers.find((server) => server.id === id)));
 
   /** Resolves one secret input to a new value, or undefined to keep the stored one. */
-  const resolveSecret = (input: McpSecretInput, projectId: ProjectId | undefined) =>
-    Effect.gen(function* () {
-      if (input.secretRef !== undefined) {
-        if (projectId === undefined) {
-          return yield* new McpServerError({ reason: "secret_ref_unscoped" });
-        }
-        // Required per call rather than at construction: SecretRequests sits above
-        // the provider sessions that read this registry, so a construction-time
-        // dependency would be circular.
-        const secretRequests = yield* SecretRequests.SecretRequests;
-        return yield* secretRequests
-          .consume({ ref: input.secretRef, projectId })
-          .pipe(
-            Effect.mapError((cause) => new McpServerError({ reason: "secret_ref_failed", cause })),
-          );
+  const resolveSecret = Effect.fn("McpServerRegistry.resolveSecret")(function* (
+    input: McpSecretInput,
+    projectId: ProjectId | undefined,
+  ) {
+    if (input.secretRef !== undefined) {
+      if (projectId === undefined) {
+        return yield* new McpServerError({ reason: "secret_ref_unscoped" });
       }
-      return input.secret;
-    });
+      // Required per call rather than at construction: SecretRequests sits above
+      // the provider sessions that read this registry, so a construction-time
+      // dependency would be circular.
+      const secretRequests = yield* SecretRequests.SecretRequests;
+      return yield* secretRequests
+        .consume({ ref: input.secretRef, projectId })
+        .pipe(
+          Effect.mapError((cause) => new McpServerError({ reason: "secret_ref_failed", cause })),
+        );
+    }
+    return input.secret;
+  });
 
   const upsert: McpServerRegistry["Service"]["upsert"] = (input, options) =>
     lock
@@ -375,20 +376,21 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const credentials: McpServerRegistry["Service"]["credentials"] = (config) =>
-    Effect.gen(function* () {
-      const headers: Record<string, string> = {};
-      const env: Record<string, string> = {};
-      if (config.auth.type === "header") {
-        headers[config.auth.header] = yield* readSecret(headerSecretName(config.id));
+  const credentials: McpServerRegistry["Service"]["credentials"] = Effect.fn(
+    "McpServerRegistry.credentials",
+  )(function* (config) {
+    const headers: Record<string, string> = {};
+    const env: Record<string, string> = {};
+    if (config.auth.type === "header") {
+      headers[config.auth.header] = yield* readSecret(headerSecretName(config.id));
+    }
+    if (config.transport.type === "stdio") {
+      for (const key of config.transport.secretEnv) {
+        env[key] = yield* readSecret(envSecretName(config.id, key));
       }
-      if (config.transport.type === "stdio") {
-        for (const key of config.transport.secretEnv) {
-          env[key] = yield* readSecret(envSecretName(config.id, key));
-        }
-      }
-      return { headers, env };
-    });
+    }
+    return { headers, env };
+  });
 
   // Status reports do not go through `changes`: that stream drops clients, and
   // every connect reports a status.

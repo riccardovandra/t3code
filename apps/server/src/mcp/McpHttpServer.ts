@@ -37,6 +37,7 @@ import {
   MAX_REPORTED_DEPTH,
   toolOutcome,
 } from "../telemetry/ProviderDimensions.ts";
+import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
@@ -420,7 +421,9 @@ const decodeAsAdvertised = <Tools extends Record<string, Tool.Any>>(
 
 const isPreviewAutomationError = Schema.is(PreviewAutomationError);
 
-const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
+const previewSnapshotFailure = Effect.fn("previewSnapshotFailure")(function <E>(
+  cause: Cause.Cause<E>,
+) {
   if (Cause.hasInterrupts(cause) || cause.reasons.some(Cause.isDieReason)) {
     return Effect.failCause(cause).pipe(Effect.orDie);
   }
@@ -453,7 +456,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
     errorTag,
     failureCount: failures.length,
   }).pipe(Effect.as(result));
-};
+});
 
 const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot")(function* () {
   const server = yield* McpServer.McpServer;
@@ -468,7 +471,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
     tool: new McpSchema.Tool({
       name: tool.name,
       description: Tool.getDescription(tool),
-      inputSchema: Tool.getJsonSchema(tool),
+      inputSchema: advertisedJsonSchema(tool),
       annotations: {
         ...Context.getOption(tool.annotations, Tool.Title).pipe(
           Option.map((title) => ({ title })),
@@ -652,7 +655,7 @@ const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function*
     tool: new McpSchema.Tool({
       name: tool.name,
       description: Tool.getDescription(tool),
-      inputSchema: Tool.getJsonSchema(tool),
+      inputSchema: advertisedJsonSchema(tool),
       annotations: {
         ...Context.getOption(tool.annotations, Tool.Title).pipe(
           Option.map((title) => ({ title })),
@@ -769,21 +772,31 @@ const HANDOFF_TOOLS: ReadonlySet<string> = new Set([
   "t3_thread_launch",
   "t3_thread_send",
   "t3_thread_send_attachments",
-  "t3_thread_fork",
-  "t3_thread_merge_back",
-  "t3_queue_edit",
-  "t3_queue_promote_to_steer",
-  "t3_pending_request_respond",
   "schedule_task",
   "run_scheduled_task_now",
 ]);
 
-/** Handoff tools whose result is only `{ sequence }`; their input names the receiving thread. */
-const INPUT_TARGET_TOOLS: ReadonlySet<string> = new Set([
-  "t3_queue_edit",
-  "t3_queue_promote_to_steer",
-  "t3_pending_request_respond",
-]);
+/** Tool actions that hand work over with only a `{ sequence }` result; the input names the thread. */
+const INPUT_TARGET_ACTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  t3_queue: new Set(["edit", "promote_to_steer"]),
+  t3_pending_request: new Set(["respond"]),
+};
+
+/** Tool actions that hand work over and name the receiving thread in their result. */
+const RESULT_TARGET_ACTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  t3_thread_transfer: new Set(["fork", "merge_back"]),
+};
+
+const hasAction = (
+  actions: Readonly<Record<string, ReadonlySet<string>>>,
+  tool: string,
+  args: unknown,
+) =>
+  actions[tool]?.has(String((args as { readonly action?: unknown } | null | undefined)?.action)) ===
+  true;
+
+const isInputTargetHandoff = (tool: string, args: unknown) =>
+  hasAction(INPUT_TARGET_ACTIONS, tool, args);
 
 const resultThreadKeys = ["childThreadId", "targetThreadId", "boundThreadId", "threadId"] as const;
 
@@ -805,7 +818,7 @@ const handoffTargetIds = (
   args: unknown,
   result: McpSchema.CallToolResult | undefined,
 ): ReadonlyArray<string> => {
-  if (!INPUT_TARGET_TOOLS.has(tool)) return resultThreadIds(result?.structuredContent);
+  if (!isInputTargetHandoff(tool, args)) return resultThreadIds(result?.structuredContent);
   if (result === undefined || toolOutcome(result).outcome !== "ok") return [];
   const threadId = (args as { readonly threadId?: unknown } | null | undefined)?.threadId;
   return typeof threadId === "string" ? [threadId] : [];
@@ -871,7 +884,10 @@ const withToolAnalytics =
           result: McpSchema.CallToolResult | undefined,
           durationMs: number,
         ) {
-          const handoff = HANDOFF_TOOLS.has(tool);
+          const handoff =
+            HANDOFF_TOOLS.has(tool) ||
+            isInputTargetHandoff(tool, args) ||
+            hasAction(RESULT_TARGET_ACTIONS, tool, args);
           const outcome = toolOutcome(result);
           // Agents call status, read, and preview tools in tight loops, so an
           // event per successful call floods analytics. Only failures count there.
@@ -923,8 +939,8 @@ const withToolAnalytics =
       );
     const recordingServer = McpServer.McpServer.of({
       ...server,
-      addTool: (options) =>
-        server.addTool({
+      addTool: Effect.fn("McpServer.addTool")(function (options) {
+        return server.addTool({
           ...options,
           handle:
             /* Request instrumentation already owns the span; keep this helper in that context. */
@@ -946,7 +962,8 @@ const withToolAnalytics =
                 }),
               );
             }),
-        }),
+        });
+      }),
     });
     return yield* registration.pipe(Effect.provideService(McpServer.McpServer, recordingServer));
   });
@@ -1089,43 +1106,44 @@ const decodeMcpServerId = Schema.decodeUnknownOption(McpServerId);
  * here. Failures never answer 401: the provider would start an OAuth flow
  * against T3 Code instead of reporting that the upstream needs sign-in.
  */
-const handleUpstreamRequest = (clients: McpUpstreamClients.McpUpstreamClients["Service"]) =>
-  Effect.gen(function* () {
-    const scope = yield* McpInvocationContext.McpInvocationContext;
-    if (scope.thread === undefined) {
-      return upstreamFailure(
-        403,
-        "thread_credential_required",
-        "Configured MCP servers are available to agents running inside T3 Code threads.",
-      );
-    }
-    const serverId = decodeMcpServerId((yield* HttpRouter.params).serverId);
-    if (Option.isNone(serverId)) {
-      return upstreamFailure(404, "mcp_server_not_found", "That MCP server does not exist.");
-    }
-    yield* Effect.annotateCurrentSpan({
-      "orchestration_v2.thread_id": scope.thread.threadId,
-      "mcp.upstream.server_id": serverId.value,
-    });
-    const opened = yield* Effect.result(clients.open(serverId.value));
-    if (Result.isFailure(opened)) {
-      const error = opened.failure;
-      return upstreamFailure(
-        error.reason === "not_found" || error.reason === "disabled" ? 404 : 503,
-        `mcp_server_${error.reason}`,
-        error.message,
-      );
-    }
-    const session = opened.success;
-    const context = yield* Effect.context<never>();
-    return yield* HttpEffect.fromWebHandler((request) =>
-      forwardMcpRequest({
-        session,
-        request,
-        run: (effect, signal) => Effect.runPromiseWith(context)(effect, { signal }),
-      }),
+const handleUpstreamRequest = Effect.fn("McpHttpServer.handleUpstreamRequest")(function* (
+  clients: McpUpstreamClients.McpUpstreamClients["Service"],
+) {
+  const scope = yield* McpInvocationContext.McpInvocationContext;
+  if (scope.thread === undefined) {
+    return upstreamFailure(
+      403,
+      "thread_credential_required",
+      "Configured MCP servers are available to agents running inside T3 Code threads.",
     );
+  }
+  const serverId = decodeMcpServerId((yield* HttpRouter.params).serverId);
+  if (Option.isNone(serverId)) {
+    return upstreamFailure(404, "mcp_server_not_found", "That MCP server does not exist.");
+  }
+  yield* Effect.annotateCurrentSpan({
+    "orchestration_v2.thread_id": scope.thread.threadId,
+    "mcp.upstream.server_id": serverId.value,
   });
+  const opened = yield* Effect.result(clients.open(serverId.value));
+  if (Result.isFailure(opened)) {
+    const error = opened.failure;
+    return upstreamFailure(
+      error.reason === "not_found" || error.reason === "disabled" ? 404 : 503,
+      `mcp_server_${error.reason}`,
+      error.message,
+    );
+  }
+  const session = opened.success;
+  const context = yield* Effect.context<never>();
+  return yield* HttpEffect.fromWebHandler((request) =>
+    forwardMcpRequest({
+      session,
+      request,
+      run: (effect, signal) => Effect.runPromiseWith(context)(effect, { signal }),
+    }),
+  );
+});
 
 export const layerUpstreamRoute = Layer.unwrap(
   Effect.gen(function* () {
@@ -1169,7 +1187,8 @@ export const T3_MCP_TOOLKITS: ReadonlyArray<Toolkit.Any> = [
   SkillLibraryToolkit,
 ];
 
-export const layer = Layer.mergeAll(
+/** Every tool the T3 MCP server advertises. AgentContextBudget.test.ts measures this set. */
+export const layerTools = Layer.mergeAll(
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,
@@ -1182,6 +1201,10 @@ export const layer = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+);
+
+export const layer = Layer.mergeAll(
+  layerTools,
   layerDocsToolkit,
   layerAipmToolkit,
   layerMcpServersToolkit,

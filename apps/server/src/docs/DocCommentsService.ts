@@ -172,63 +172,67 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const create: DocCommentsService["Service"]["create"] = (input) =>
-    Effect.gen(function* () {
+  const create: DocCommentsService["Service"]["create"] = Effect.fn("DocCommentsService.create")(
+    function* (input) {
       const id = yield* persistence(newId);
       const createdAt = yield* now;
       yield* persistence(sql`
-        INSERT INTO doc_comments (
-          comment_id, project_id, doc_path, parent_id, author_kind, author_thread_id,
-          body, quote, prefix, suffix, resolved_at, created_at
-        ) VALUES (
-          ${id}, ${input.projectId}, ${input.docPath}, NULL, ${input.author.kind},
-          ${input.author.threadId}, ${input.body}, ${input.quote}, ${input.prefix},
-          ${input.suffix}, NULL, ${createdAt}
-        )
-      `);
+      INSERT INTO doc_comments (
+        comment_id, project_id, doc_path, parent_id, author_kind, author_thread_id,
+        body, quote, prefix, suffix, resolved_at, created_at
+      ) VALUES (
+        ${id}, ${input.projectId}, ${input.docPath}, NULL, ${input.author.kind},
+        ${input.author.threadId}, ${input.body}, ${input.quote}, ${input.prefix},
+        ${input.suffix}, NULL, ${createdAt}
+      )
+    `);
       return yield* readThread(id);
-    });
+    },
+  );
 
-  const reply: DocCommentsService["Service"]["reply"] = (input) =>
-    Effect.gen(function* () {
+  const reply: DocCommentsService["Service"]["reply"] = Effect.fn("DocCommentsService.reply")(
+    function* (input) {
       const target = yield* findRow(input.projectId, input.commentId);
       const rootId = rootOf(target);
       const id = yield* persistence(newId);
       const createdAt = yield* now;
       yield* persistence(sql`
-        INSERT INTO doc_comments (
-          comment_id, project_id, doc_path, parent_id, author_kind, author_thread_id,
-          body, created_at
-        ) VALUES (
-          ${id}, ${target.project_id}, ${target.doc_path}, ${rootId}, ${input.author.kind},
-          ${input.author.threadId}, ${input.body}, ${createdAt}
-        )
-      `);
+      INSERT INTO doc_comments (
+        comment_id, project_id, doc_path, parent_id, author_kind, author_thread_id,
+        body, created_at
+      ) VALUES (
+        ${id}, ${target.project_id}, ${target.doc_path}, ${rootId}, ${input.author.kind},
+        ${input.author.threadId}, ${input.body}, ${createdAt}
+      )
+    `);
       return yield* readThread(rootId);
-    });
+    },
+  );
 
-  const setResolved: DocCommentsService["Service"]["setResolved"] = (input) =>
-    Effect.gen(function* () {
-      const target = yield* findRow(input.projectId, input.commentId);
-      const rootId = rootOf(target);
-      const resolvedAt = input.resolved ? yield* now : null;
-      yield* persistence(
-        sql`UPDATE doc_comments SET resolved_at = ${resolvedAt} WHERE comment_id = ${rootId}`,
-      );
-      return yield* readThread(rootId);
-    });
+  const setResolved: DocCommentsService["Service"]["setResolved"] = Effect.fn(
+    "DocCommentsService.setResolved",
+  )(function* (input) {
+    const target = yield* findRow(input.projectId, input.commentId);
+    const rootId = rootOf(target);
+    const resolvedAt = input.resolved ? yield* now : null;
+    yield* persistence(
+      sql`UPDATE doc_comments SET resolved_at = ${resolvedAt} WHERE comment_id = ${rootId}`,
+    );
+    return yield* readThread(rootId);
+  });
 
-  const markSent: DocCommentsService["Service"]["markSent"] = (input) =>
-    Effect.gen(function* () {
-      const target = yield* findRow(input.projectId, input.commentId);
-      yield* persistence(
-        sql`UPDATE doc_comments SET sent_to_thread_id = ${input.threadId} WHERE comment_id = ${target.comment_id}`,
-      );
-      return yield* readThread(rootOf(target));
-    });
+  const markSent: DocCommentsService["Service"]["markSent"] = Effect.fn(
+    "DocCommentsService.markSent",
+  )(function* (input) {
+    const target = yield* findRow(input.projectId, input.commentId);
+    yield* persistence(
+      sql`UPDATE doc_comments SET sent_to_thread_id = ${input.threadId} WHERE comment_id = ${target.comment_id}`,
+    );
+    return yield* readThread(rootOf(target));
+  });
 
-  const remove: DocCommentsService["Service"]["delete"] = (input) =>
-    Effect.gen(function* () {
+  const remove: DocCommentsService["Service"]["delete"] = Effect.fn("DocCommentsService.remove")(
+    function* (input) {
       const target = yield* findRow(input.projectId, input.commentId);
       if (target.parent_id === null) {
         yield* persistence(
@@ -238,7 +242,8 @@ const make = Effect.gen(function* () {
       }
       yield* persistence(sql`DELETE FROM doc_comments WHERE comment_id = ${target.comment_id}`);
       return yield* readThread(target.parent_id);
-    });
+    },
+  );
 
   return DocCommentsService.of({
     list,
