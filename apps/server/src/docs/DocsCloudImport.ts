@@ -143,7 +143,7 @@ export class DocsCloudImport extends Context.Service<
      * back and forth.
      */
     readonly syncMissingProjects: Effect.Effect<ReadonlyArray<DocsCloudProject>, DocsCloudError>;
-    /** The checkout's docs, and those already imported into the configured Docs Cloud. */
+    /** The checkout's markdown files, and those already imported into the configured Docs Cloud. */
     readonly listImports: (
       input: DocsCloudImportsInput,
     ) => Effect.Effect<DocsCloudImportsResult, DocsCloudError>;
@@ -319,8 +319,8 @@ const make = Effect.gen(function* () {
       `,
     );
 
-  const listDocPaths = (cwd: string) =>
-    workspaceDocs.list({ cwd, folder: DOCS_ROOT }).pipe(
+  const listDocPaths = (cwd: string, folder?: string) =>
+    workspaceDocs.list(folder === undefined ? { cwd } : { cwd, folder }).pipe(
       Effect.map((listed) => listed.docs),
       Effect.mapError((error) => new DocsCloudError({ reason: "failed", detail: error.message })),
     );
@@ -481,7 +481,8 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const conn = yield* connection;
     const cloudProject = yield* resolveProject(conn, input.projectId);
-    const docPaths = input.docPaths ?? (yield* listDocPaths(input.cwd)).map((doc) => doc.docPath);
+    const docPaths =
+      input.docPaths ?? (yield* listDocPaths(input.cwd, DOCS_ROOT)).map((doc) => doc.docPath);
     const existing = new Map(
       (yield* readImports(conn.origin, input.projectId)).map((row) => [row.doc_path, row]),
     );

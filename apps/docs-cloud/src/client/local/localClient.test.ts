@@ -65,7 +65,7 @@ describe("createLocalClient", () => {
       type: "t3-docs:local-response",
       requestId: requestIdOf(host.sent[1]),
       ok: true,
-      result: { path: "src/a.md", markdown: "", version: "v", readOnlyReason: null },
+      result: { path: ".repos/a.md", markdown: "", version: "v", readOnlyReason: null },
     });
     await expect(malformed).rejects.toBeInstanceOf(LocalRequestError);
   });

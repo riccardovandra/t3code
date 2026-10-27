@@ -159,7 +159,7 @@ export const DocsCloudImportsInput = Schema.Struct({
 export type DocsCloudImportsInput = typeof DocsCloudImportsInput.Type;
 
 export const DocsCloudImportsResult = Schema.Struct({
-  // Every doc under docs/ in the checkout, so a client can import them one by one.
+  // The checkout's markdown files (see WorkspaceDocs.list), so a client can import them one by one.
   docs: Schema.Array(Schema.Struct({ docPath: DocPath, title: Schema.String })),
   imports: Schema.Array(DocsCloudImportRecord),
 });

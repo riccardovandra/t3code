@@ -4,6 +4,7 @@ import {
   docExcerpt,
   docTitleFromPath,
   isMarkdownPath,
+  isProjectDocPath,
   nextDocPath,
   slugifyDocTitle,
 } from "./docPaths.ts";
@@ -33,5 +34,21 @@ describe("docPaths", () => {
     expect(docTitleFromPath("docs/specs/launch_plan-v2.md")).toBe("launch plan v2");
     expect(isMarkdownPath("docs/a.MD")).toBe(true);
     expect(isMarkdownPath("docs/a.mdx")).toBe(false);
+  });
+
+  it("accepts project markdown and refuses traversal and skipped folders", () => {
+    expect(isProjectDocPath("README.md")).toBe(true);
+    expect(isProjectDocPath("apps/x/README.md")).toBe(true);
+    expect(isProjectDocPath("apps/x/README.txt")).toBe(false);
+    expect(isProjectDocPath("docs/../README.md")).toBe(false);
+    expect(isProjectDocPath("/README.md")).toBe(false);
+    expect(isProjectDocPath("docs\\x.md")).toBe(false);
+    expect(isProjectDocPath(".repos/effect/README.md")).toBe(false);
+    expect(isProjectDocPath("packages/a/node_modules/b/README.md")).toBe(false);
+    expect(isProjectDocPath(".T3/private.md")).toBe(false);
+    expect(isProjectDocPath("Node_Modules/x.md")).toBe(false);
+    expect(isProjectDocPath(".git./x.md")).toBe(false);
+    expect(isProjectDocPath(" .t3/private.md")).toBe(false);
+    expect(isProjectDocPath("README.md ")).toBe(false);
   });
 });
