@@ -72,7 +72,7 @@ export function parseOpenTabs(raw: string | null): ReadonlyArray<OpenTab> {
   }
 }
 
-// Remembered per browser; the embedded panel and a browser tab share it.
+// Remembered per browser. Only T3 Code's Docs panel and mobile app show them.
 const STORAGE_KEY = "docs-cloud:open-tabs";
 
 const storage = (): Storage | null => {

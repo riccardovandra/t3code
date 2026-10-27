@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "./api.ts";
+import { isEmbedded } from "./embedBridge.ts";
 import { LocalDocPage } from "./local/LocalDocPage.tsx";
 import { setMe, useMe } from "./me.ts";
 import { DocPage } from "./pages/DocPage.tsx";
@@ -15,7 +16,8 @@ export function App() {
   const [loaded, setLoaded] = useState(false);
   const me = useMe();
   const route = parseRoute(usePathname());
-  const openTabs = useOpenTabs();
+  const storedTabs = useOpenTabs();
+  const openTabs = isEmbedded() ? storedTabs : [];
 
   useEffect(() => {
     api
