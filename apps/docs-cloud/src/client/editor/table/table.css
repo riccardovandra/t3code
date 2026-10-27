@@ -18,6 +18,40 @@
   padding-bottom: 0.25rem;
 }
 
+/* A styled scrollbar stays visible where the platform would overlay and
+   hide it, so a table wider than the column reads as scrollable. */
+.t3-table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.t3-table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.t3-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .t3-table-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+}
+
+.t3-table.overflow-right::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0.75rem;
+  width: 2.5rem;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--bg));
+}
+
 /* The table fills the doc column and wraps cell text as the page narrows;
    it only scrolls once every column is at its minimum width. Headers wrap
    so a long name does not widen a column of short values. */
@@ -374,7 +408,8 @@
   .t3-table .t3-row-handle,
   .t3-table .t3-col-add,
   .t3-row-add,
-  .t3-cell-comment {
+  .t3-cell-comment,
+  .t3-table.overflow-right::after {
     display: none;
   }
 

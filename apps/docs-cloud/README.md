@@ -29,7 +29,7 @@ You need a Cloudflare account with a domain on it, and a [Resend](https://resend
    wrangler d1 create docs-cloud              # note the database_id it prints
    wrangler r2 bucket create docs-cloud-images
    ```
-3. Copy `deploy.env.example` to `deploy.env` (gitignored) and fill it in: `PUBLIC_ORIGIN` (its host becomes the Worker's custom domain), `OWNER_EMAILS`, `EMAIL_FROM`, `D1_DATABASE_ID`, and optionally `HUB_URL`, a page the admin's home links back to. Variables already set in the environment win over the file.
+3. Copy `deploy.env.example` to `deploy.env` (gitignored) and fill it in: `PUBLIC_ORIGIN` (its host becomes the Worker's custom domain), `OWNER_EMAILS`, `EMAIL_FROM`, and `D1_DATABASE_ID`. Variables already set in the environment win over the file.
 4. `vp run --filter @t3tools/docs-cloud deploy` builds, writes `wrangler.deploy.json` from `wrangler.jsonc` plus `deploy.env`, applies remote migrations and deploys. Append `--dry-run` to check the config without deploying.
 5. Store the Resend key: `wrangler secret put RESEND_API_KEY`.
 6. Open your `PUBLIC_ORIGIN`, sign in with an owner address, and create an API token under Settings.

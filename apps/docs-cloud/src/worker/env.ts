@@ -13,8 +13,6 @@ export interface Env {
   readonly PUBLIC_ORIGIN: string;
   /** CSP host-sources (space-separated) allowed to frame the app: the T3 Code clients. */
   readonly FRAME_ANCESTORS?: string;
-  /** Optional page the admin's home links back to. Unset hides the link. */
-  readonly HUB_URL?: string;
   /** Unset in local dev: sign-in codes are logged to the console instead. */
   readonly RESEND_API_KEY?: string;
 }

@@ -1,18 +1,16 @@
 import { EMBED_ORIGINS_META, frameAncestorsPolicy, PUBLIC_ORIGIN_META } from "../shared/embed.ts";
-import { HUB_URL_META } from "../shared/hub.ts";
 
 const escapeAttribute = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
 /**
  * Only T3 Code origins may frame the app. The HTML also carries the same list
  * so the embed bridge can check postMessage origins against it, and the
- * public origin so shared links point there, and the hub link when one is set.
+ * public origin so shared links point there.
  */
 export async function withEmbedPolicy(
   response: Response,
   sources: ReadonlyArray<string>,
   publicOrigin: string,
-  hubUrl?: string,
 ): Promise<Response> {
   const headers = new Headers(response.headers);
   // Images load only from this origin: doc uploads under /api/images. A remote
@@ -24,8 +22,7 @@ export async function withEmbedPolicy(
   }
   const meta =
     `<meta name="${EMBED_ORIGINS_META}" content="${escapeAttribute(sources.join(" "))}">` +
-    `<meta name="${PUBLIC_ORIGIN_META}" content="${escapeAttribute(publicOrigin)}">` +
-    (hubUrl ? `<meta name="${HUB_URL_META}" content="${escapeAttribute(hubUrl)}">` : "");
+    `<meta name="${PUBLIC_ORIGIN_META}" content="${escapeAttribute(publicOrigin)}">`;
   const html = (await response.text()).replace("</head>", `${meta}</head>`);
   headers.delete("Content-Length");
   headers.delete("ETag");

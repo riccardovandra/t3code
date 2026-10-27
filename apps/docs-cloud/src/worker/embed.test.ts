@@ -47,22 +47,6 @@ describe("embed policy", () => {
     );
   });
 
-  it("hands the hub link to the page only when one is set", async () => {
-    const page = () =>
-      new Response("<html><head></head></html>", { headers: { "Content-Type": "text/html" } });
-    const withHub = await withEmbedPolicy(
-      page(),
-      SOURCES,
-      "https://docs.example",
-      "https://hub.example",
-    );
-    expect(await withHub.text()).toContain(
-      '<meta name="t3-docs-hub-url" content="https://hub.example">',
-    );
-    const withoutHub = await withEmbedPolicy(page(), SOURCES, "https://docs.example");
-    expect(await withoutHub.text()).not.toContain("t3-docs-hub-url");
-  });
-
   it("refuses all framing when the var is empty", async () => {
     const response = await withEmbedPolicy(
       new Response("x", { headers: { "Content-Type": "text/javascript" } }),

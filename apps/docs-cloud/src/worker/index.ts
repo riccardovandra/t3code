@@ -65,7 +65,6 @@ export default {
       await env.ASSETS.fetch(request),
       parseEmbedOrigins(env.FRAME_ANCESTORS),
       env.PUBLIC_ORIGIN,
-      env.HUB_URL,
     );
   },
 } satisfies ExportedHandler<Env>;

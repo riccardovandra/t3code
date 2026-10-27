@@ -114,8 +114,8 @@ export const CloseIcon = (props: IconProps) => (
   </Icon>
 );
 
-export const ArrowLeftIcon = (props: IconProps) => (
+export const HomeIcon = (props: IconProps) => (
   <Icon {...props}>
-    <path d="m12 19-7-7 7-7M19 12H5" />
+    <path d="M3 10.5 12 3l9 7.5M5 9.5V20h5v-6h4v6h5V9.5" />
   </Icon>
 );

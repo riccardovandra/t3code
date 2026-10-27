@@ -4,7 +4,8 @@ import type { DocMember, DocRole, UserSummary } from "../../shared/access.ts";
 import { PUBLIC_ORIGIN_META } from "../../shared/embed.ts";
 import { api, ApiError } from "../api.ts";
 import { useMe } from "../me.ts";
-import { docPath, navigate } from "../router.ts";
+import { leaveDoc } from "../openTabs.ts";
+import { docPath } from "../router.ts";
 import { MemberRow } from "./MemberRow.tsx";
 import { RoleMenu } from "./RoleMenu.tsx";
 import { ShareExportTab } from "./ShareExportTab.tsx";
@@ -170,7 +171,7 @@ export function ShareDialog(props: {
       const result = await api.removeMember(docId, member.id);
       if (leaving) {
         // Without access the doc page cannot load anymore.
-        navigate("/");
+        leaveDoc(docId);
         return;
       }
       setMembers(result.members);
