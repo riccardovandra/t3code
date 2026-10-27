@@ -24,6 +24,7 @@ export function makeTestD1(options: { readonly before?: string } = {}): D1Databa
   const statement = (sql: string, params: Array<NodeSqlite.SQLInputValue> = []) => ({
     bind: (...values: Array<unknown>) => statement(sql, values as Array<NodeSqlite.SQLInputValue>),
     first: async () => (sqlite.prepare(sql).get(...params) as unknown) ?? null,
+    rows: () => sqlite.prepare(sql).all(...params),
     all: async () => ({ results: sqlite.prepare(sql).all(...params), success: true, meta: {} }),
     run: async () => {
       const prepared = sqlite.prepare(sql);
@@ -44,10 +45,14 @@ export function makeTestD1(options: { readonly before?: string } = {}): D1Databa
       return { count: 0, duration: 0 };
     },
     batch: async (statements: Array<ReturnType<typeof statement>>) => {
+      // Runs without yielding, so an overlapping batch never lands inside this transaction.
       sqlite.exec("BEGIN");
       try {
-        const results = [];
-        for (const item of statements) results.push(await item.all());
+        const results = statements.map((item) => ({
+          results: item.rows(),
+          success: true,
+          meta: {},
+        }));
         sqlite.exec("COMMIT");
         return results;
       } catch (cause) {

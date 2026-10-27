@@ -158,10 +158,11 @@ export async function getMe(
   userId: string,
   owners: ReadonlySet<string>,
 ): Promise<Me> {
-  return {
-    user: await getUser(db, userId, owners),
-    emails: await userEmails(db, userId, owners),
-  };
+  const [user, emails] = await Promise.all([
+    getUser(db, userId, owners),
+    userEmails(db, userId, owners),
+  ]);
+  return { user, emails };
 }
 
 export async function setUserName(db: D1Database, userId: string, name: string): Promise<void> {
@@ -378,27 +379,31 @@ export async function removeMember(
 /**
  * Narrows the library to the docs the user belongs to. The admin keeps every
  * project, even empty ones; anyone else sees only projects holding a doc
- * shared with them.
+ * shared with them. The library is still loading when this starts, so the
+ * two reads overlap.
  */
 export async function scopeLibrary(
   db: D1Database,
   input: {
-    readonly library: Library;
+    readonly library: Promise<Library>;
     readonly userId: string;
     readonly owners: ReadonlySet<string>;
   },
 ): Promise<AccessibleLibrary> {
-  const [mine, docOwners] = await db.batch<Record<string, unknown>>([
-    db.prepare("SELECT doc_id, role FROM doc_members WHERE user_id = ?").bind(input.userId),
-    db
-      .prepare(
-        `SELECT o.doc_id, u.id, u.email, u.name FROM doc_members o
-         JOIN users u ON u.id = o.user_id
-         JOIN doc_members me ON me.doc_id = o.doc_id AND me.user_id = ?
-         WHERE o.role = 'owner'
-         ORDER BY o.created_at DESC, o.id DESC`,
-      )
-      .bind(input.userId),
+  const [library, [mine, docOwners]] = await Promise.all([
+    input.library,
+    db.batch<Record<string, unknown>>([
+      db.prepare("SELECT doc_id, role FROM doc_members WHERE user_id = ?").bind(input.userId),
+      db
+        .prepare(
+          `SELECT o.doc_id, u.id, u.email, u.name FROM doc_members o
+           JOIN users u ON u.id = o.user_id
+           JOIN doc_members me ON me.doc_id = o.doc_id AND me.user_id = ?
+           WHERE o.role = 'owner'
+           ORDER BY o.created_at DESC, o.id DESC`,
+        )
+        .bind(input.userId),
+    ]),
   ]);
   const roles = new Map(
     ((mine?.results ?? []) as unknown as Array<{ doc_id: string; role: DocRole }>).map((row) => [
@@ -417,11 +422,11 @@ export async function scopeLibrary(
       return role ? [{ ...doc, role, owner: ownerOf.get(doc.id) ?? null }] : [];
     });
   return {
-    projects: input.library.projects.flatMap((project) => {
+    projects: library.projects.flatMap((project) => {
       const docs = visible(project.docs);
       return docs.length > 0 || isAdmin(input.userId) ? [{ ...project, docs }] : [];
     }),
-    noProjectDocs: visible(input.library.noProjectDocs),
+    noProjectDocs: visible(library.noProjectDocs),
   };
 }
 

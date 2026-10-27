@@ -258,8 +258,8 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (path === "/api/library" && method === "GET") {
-      const library = await Access.scopeLibrary(deps.db, {
-        library: await Docs.listLibrary(deps.db),
+      const library = Access.scopeLibrary(deps.db, {
+        library: Docs.listLibrary(deps.db),
         userId: principal.userId,
         owners: deps.owners,
       });
