@@ -213,6 +213,7 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
+import * as WorkspaceEnvFile from "./workspace/WorkspaceEnvFile.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as McpServerTools from "./mcpServers/McpServerTools.ts";
 import * as SkillLibrary from "./skills/SkillLibrary.ts";
@@ -604,6 +605,7 @@ const FORK_RPC_METHODS = [
   WS_METHODS.skillSourcesRemove,
   WS_METHODS.skillLibraryList,
   WS_METHODS.serverReleaseMirrorPublished,
+  WS_METHODS.projectsSetEnvVariables,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1349,6 +1351,15 @@ const layerReleaseMirrorRpc = Layer.unwrap(
       published(version),
     ),
   ),
+);
+
+const layerEnvFileRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const envFile = yield* WorkspaceEnvFile.WorkspaceEnvFile;
+    return ServerWsRpcGroup.toLayerHandler(WS_METHODS.projectsSetEnvVariables, (input) =>
+      envFile.setVariables(input),
+    );
+  }),
 );
 
 const layerAiPmDocsRpc = Layer.unwrap(
@@ -3574,6 +3585,7 @@ export const layer = Layer.unwrap(
               Layer.merge(layerSkillTrashRpc),
               Layer.merge(layerSkillSourcesRpc),
               Layer.merge(layerReleaseMirrorRpc),
+              Layer.merge(layerEnvFileRpc),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
@@ -3592,6 +3604,7 @@ export const layer = Layer.unwrap(
                   Layer.provide(WorkspaceDocs.layer),
                 ),
               ),
+              Layer.provide(WorkspaceEnvFile.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AiPmService.layer.pipe(Layer.provide(ProcessRunner.layer))),
               Layer.provide(AgentSessionScanner.layer),

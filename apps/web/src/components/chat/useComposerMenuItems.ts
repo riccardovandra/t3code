@@ -189,6 +189,13 @@ export function useComposerMenuItems({
           label: "/model",
           description: "Switch response model for this thread",
         },
+        {
+          id: "slash:secret",
+          type: "slash-command",
+          command: "secret",
+          label: "/secret",
+          description: "Save API keys to .env without the agent seeing them",
+        },
         ...(planModeUiEnabled
           ? ([
               {

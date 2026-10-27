@@ -412,6 +412,11 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  ProjectSetEnvVariablesError,
+  ProjectSetEnvVariablesInput,
+  ProjectSetEnvVariablesResult,
+} from "./envFile.ts";
+import {
   McpServerEntry,
   McpServerError,
   McpServerListResult,
@@ -605,6 +610,7 @@ export const WS_METHODS = {
   skillSourcesRemove: "skillSources.remove",
   skillLibraryList: "skillLibrary.list",
   serverReleaseMirrorPublished: "server.releaseMirrorPublished",
+  projectsSetEnvVariables: "projects.setEnvVariables",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -2071,6 +2077,13 @@ const WsServerReleaseMirrorPublishedRpc = Rpc.make(WS_METHODS.serverReleaseMirro
   error: EnvironmentAuthorizationError,
 });
 
+// Fork: the /secret command writes API keys into a workspace .env file.
+const WsProjectsSetEnvVariablesRpc = Rpc.make(WS_METHODS.projectsSetEnvVariables, {
+  payload: ProjectSetEnvVariablesInput,
+  success: ProjectSetEnvVariablesResult,
+  error: Schema.Union([ProjectSetEnvVariablesError, EnvironmentAuthorizationError]),
+});
+
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   payload: Schema.Struct({}),
   success: McpServerListResult,
@@ -2232,6 +2245,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillSourcesRemoveRpc,
   WsSkillLibraryListRpc,
   WsServerReleaseMirrorPublishedRpc,
+  WsProjectsSetEnvVariablesRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
