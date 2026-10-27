@@ -53,17 +53,17 @@ const SKIPPED_DOC_FOLDERS: ReadonlySet<string> = new Set([
  * `/`-separated segments, none of them in a skipped folder.
  */
 export function isProjectDocPath(path: string): boolean {
-  if (!isMarkdownPath(path)) return false;
-  return path
-    .split("/")
-    .every(
-      (segment) =>
-        segment !== "" &&
-        segment !== "." &&
-        segment !== ".." &&
-        !SKIPPED_DOC_FOLDERS.has(segment) &&
-        !/[\\\u0000-\u001f\u007f]/.test(segment),
-    );
+  // The server trims paths before resolving them.
+  if (!isMarkdownPath(path) || path !== path.trim()) return false;
+  return path.split("/").every(
+    (segment) =>
+      segment !== "" &&
+      segment !== "." &&
+      segment !== ".." &&
+      // Case-insensitive disks, and Windows dropping trailing dots and spaces.
+      !SKIPPED_DOC_FOLDERS.has(segment.toLowerCase().replace(/[. ]+$/, "")) &&
+      !/[\\\u0000-\u001f\u007f]/.test(segment),
+  );
 }
 
 /**

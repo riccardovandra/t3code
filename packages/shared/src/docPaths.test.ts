@@ -45,5 +45,10 @@ describe("docPaths", () => {
     expect(isProjectDocPath("docs\\x.md")).toBe(false);
     expect(isProjectDocPath(".repos/effect/README.md")).toBe(false);
     expect(isProjectDocPath("packages/a/node_modules/b/README.md")).toBe(false);
+    expect(isProjectDocPath(".T3/private.md")).toBe(false);
+    expect(isProjectDocPath("Node_Modules/x.md")).toBe(false);
+    expect(isProjectDocPath(".git./x.md")).toBe(false);
+    expect(isProjectDocPath(" .t3/private.md")).toBe(false);
+    expect(isProjectDocPath("README.md ")).toBe(false);
   });
 });
