@@ -133,6 +133,9 @@ export class TableView implements NodeView {
   private popover: { readonly node: HTMLElement; readonly close: () => void } | null = null;
   private comments: TableCommentSpec | null = null;
   private hovered: HTMLTableCellElement | null = null;
+  // Wide tables scroll inside the doc column; the fade shows hidden columns
+  // where overlay scrollbars (macOS) would otherwise leave no hint of them.
+  private readonly resize = new ResizeObserver(() => this.markOverflow());
 
   constructor({ node, editor, getPos, decorations }: NodeViewRendererProps) {
     this.node = node;
@@ -153,6 +156,7 @@ export class TableView implements NodeView {
     this.scroll.addEventListener("scroll", () => {
       this.closePopover();
       this.showCommentButton(this.editingCell() ?? null);
+      this.markOverflow();
     });
     this.comments = commentSpec(decorations);
     this.render(node.textContent);
@@ -185,6 +189,7 @@ export class TableView implements NodeView {
 
   destroy() {
     this.closePopover();
+    this.resize.disconnect();
   }
 
   private get editable() {
@@ -225,6 +230,11 @@ export class TableView implements NodeView {
     }
     this.table = parsed.table;
     this.renderTable(parsed.table);
+  }
+
+  private markOverflow() {
+    const { scrollLeft, scrollWidth, clientWidth } = this.scroll;
+    this.dom.classList.toggle("overflow-right", scrollLeft + clientWidth < scrollWidth - 1);
   }
 
   private renderEmpty() {
@@ -341,6 +351,9 @@ export class TableView implements NodeView {
       );
     }
     this.scroll.replaceChildren(...nodes);
+    this.resize.disconnect();
+    this.resize.observe(this.scroll);
+    this.resize.observe(tableNode);
     this.paintComments();
     if (keep && this.cells.has(cellKey(keep.rowId, keep.columnId))) {
       this.startEditing(keep.rowId, keep.columnId, keep.read());
