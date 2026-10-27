@@ -84,6 +84,49 @@ export function resolveSidebarProjectScopeKey(input: {
   return group?.projectKey ?? (input.canClearMissingScope ? null : input.key);
 }
 
+export function resolveSidebarProjectScopeKeys(input: {
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly keys: ReadonlyArray<string>;
+  readonly settings?: ProjectGroupingSettings;
+  readonly canClearMissingScope?: boolean;
+}): ReadonlyArray<string> {
+  const resolved = input.keys.flatMap((key) => {
+    const scopeKey = resolveSidebarProjectScopeKey({ ...input, key });
+    return scopeKey === null ? [] : [scopeKey];
+  });
+  return [...new Set(resolved)];
+}
+
+// With the sidebar filtered, New starts a thread in a filtered project instead
+// of asking. The context project wins when it belongs to a filtered group so a
+// grouped project keeps the environment the user is already working in. With
+// several projects filtered and no context among them, the choice is the user's.
+export function resolveScopedNewThreadProjectRef(input: {
+  readonly groups: ReadonlyArray<
+    Pick<SidebarProjectSnapshot, "projectKey" | "environmentId" | "id" | "memberProjectRefs">
+  >;
+  readonly scopeKeys: ReadonlyArray<string>;
+  readonly contextProjectRef: ScopedProjectRef | null;
+}): ScopedProjectRef | null {
+  const scopedGroups = input.groups.filter((candidate) =>
+    input.scopeKeys.includes(candidate.projectKey),
+  );
+  const context = input.contextProjectRef;
+  if (
+    context &&
+    scopedGroups.some((group) =>
+      group.memberProjectRefs.some(
+        (ref) => ref.environmentId === context.environmentId && ref.projectId === context.projectId,
+      ),
+    )
+  ) {
+    return context;
+  }
+  const [group] = scopedGroups;
+  if (scopedGroups.length !== 1 || !group) return null;
+  return { environmentId: group.environmentId, projectId: group.id };
+}
+
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;

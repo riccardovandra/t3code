@@ -1,8 +1,8 @@
-/**
- * Do not import t3code modules from the string body. The Pi process resolves
- * `@earendil-works/pi-coding-agent` and `typebox` from the user's pi install.
- */
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+// No T3 imports inside the string; resolve Pi and typebox from the user's Pi install.
+import {
+  DOCS_CLOUD_MCP_SERVER_NAME,
+  t3CodeOrchestrationInstructions,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -13,10 +13,7 @@ export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 /** JSON `[{ name, url }]` of configured MCP servers, reached with the same bearer token. */
 export const T3_MCP_UPSTREAM_SERVERS_ENV = "T3_MCP_UPSTREAM_SERVERS";
 
-/**
- * Pi tools whose confirmations the bridge raises as file-change approvals.
- * Auto-accept edits skips them; the adapter keys the approval kind off them.
- */
+// These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
@@ -30,7 +27,9 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const UPSTREAM_SERVERS_ENV = ${JSON.stringify(T3_MCP_UPSTREAM_SERVERS_ENV)};
-const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const DOCS_CLOUD_SERVER_NAME = ${JSON.stringify(DOCS_CLOUD_MCP_SERVER_NAME)};
+const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(t3CodeOrchestrationInstructions(false).trim())};
+const DOCS_CLOUD_ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(t3CodeOrchestrationInstructions(true).trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -105,7 +104,13 @@ function parseSseOrJson(body: string, contentType: string): JsonRpcResponse {
 function jsonSchemaToTypebox(schema: Record<string, unknown> | undefined) {
   const unsafe = (Type as { Unsafe?: (value: unknown) => unknown }).Unsafe;
   if (typeof unsafe === "function" && schema !== undefined) {
-    return unsafe(schema);
+    // Zero-argument MCP tools may omit "properties", which some OpenAI-compatible
+    // servers reject. Declare it, as Pi does for its own MCP tools.
+    return unsafe({
+      ...schema,
+      type: schema.type ?? "object",
+      ...(schema.properties === undefined ? { properties: {} } : {}),
+    });
   }
   return Type.Object({}, { additionalProperties: true });
 }
@@ -343,7 +348,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
       { signal: ctx.signal },
     );
     if (!approved) {
-      return { block: true, reason: \`\${event.toolName} was declined in UP Orchestrator.\` };
+      return { block: true, reason: \`\${event.toolName} was declined in T3 Code.\` };
     }
   });
 
@@ -377,6 +382,9 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     catalog: [] as ReadonlyArray<McpTool>,
     started: undefined as Promise<void> | undefined,
   }));
+  const orchestrationInstructions = upstreams.some((server) => server.name === DOCS_CLOUD_SERVER_NAME)
+    ? DOCS_CLOUD_ORCHESTRATION_INSTRUCTIONS
+    : ORCHESTRATION_INSTRUCTIONS;
 
   const toolResult = (server: string, name: string, result: JsonValue | undefined) => {
     const content = mcpModelContent(result);
@@ -526,12 +534,16 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     }
   });
 
-  // Deliver orchestration guidance through pi's real system-prompt channel.
-  // Wrapping the first user message instead would stop it from starting
-  // with "/" and silently break slash-command expansion.
+  // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    const sections = event.systemPromptOptions?.sections;
+    if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
+      // A full prompt override bypasses Pi's later section rendering.
+      sections.t3_code_orchestration = orchestrationInstructions;
+      return undefined;
+    }
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + orchestrationInstructions };
   });
 }
 `;

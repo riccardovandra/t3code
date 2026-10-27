@@ -75,10 +75,7 @@ export function BrowserImportWizard({
   );
   const [targetError, setTargetError] = useState<string>();
   const newProfileId = useRef(`profile-${randomUUID()}`);
-  // A second Import click before React has left the configure screen would
-  // start a second run; the parent refuses it, and applying that refusal here
-  // would drop the wizard out of the importing step while the first write is
-  // still going. The ref settles synchronously where state does not.
+  // Guard synchronously so a second click's refusal cannot leave the importing step during the first write.
   const importInFlight = useRef(false);
 
   const runImport = () => {
@@ -263,11 +260,11 @@ function FullDiskAccessStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Let UP Orchestrator read {source.name}&rsquo;s cookies</DialogTitle>
+        <DialogTitle>Let T3 Code read {source.name}&rsquo;s cookies</DialogTitle>
         <DialogDescription>
-          To import cookies from {source.name}, UP Orchestrator needs Full Disk Access. Turn it on
-          in System Settings, then come back to finish the import — you can revoke it again once the
-          import is done.
+          To import cookies from {source.name}, T3 Code needs Full Disk Access. Turn it on in System
+          Settings, then come back to finish the import. You can revoke it again once the import is
+          done.
         </DialogDescription>
       </DialogHeader>
       <DialogPanel>
@@ -297,8 +294,8 @@ function FullDiskAccessStep({
         {!permission.isReady(["fullDiskAccess"]) ? (
           <p className="mt-3 text-xs text-muted-foreground">
             {stillRequired
-              ? "Access is still required. Quit and reopen UP Orchestrator if you just allowed it, then retry the import."
-              : "If access doesn't update after you allow it, quit and reopen UP Orchestrator, then retry the import."}
+              ? "Access is still required. Quit and reopen T3 Code if you just allowed it, then retry the import."
+              : "If access doesn't update after you allow it, quit and reopen T3 Code, then retry the import."}
           </p>
         ) : null}
       </DialogPanel>

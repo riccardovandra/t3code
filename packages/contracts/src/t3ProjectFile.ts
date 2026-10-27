@@ -12,8 +12,7 @@ export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
 
-// Annotations go on the encoded (string) side so they survive into the
-// published JSON Schema; decoding still trims and re-validates non-emptiness.
+// Encoded-side annotations survive into JSON Schema; decoding still trims and rejects empty strings.
 const trimmedNonEmpty = (annotations: { readonly description: string }, maxLength?: number) => {
   const annotated = Schema.String.annotate(annotations);
   const encoded =
@@ -25,10 +24,10 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
 
 export const T3ProjectFileScript = Schema.Struct({
   name: trimmedNonEmpty({
-    description: "Display name for the script, shown in the UP Orchestrator scripts menu.",
+    description: "Display name for the script, shown in the T3 Code scripts menu.",
   }),
   command: trimmedNonEmpty({
-    description: "Shell command executed in an UP Orchestrator terminal at the project root.",
+    description: "Shell command executed in a T3 Code terminal at the project root.",
   }),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
@@ -66,7 +65,7 @@ export const T3ProjectFileScript = Schema.Struct({
     }),
   ),
 }).annotate({
-  description: "A project script that team members can import into UP Orchestrator.",
+  description: "A project script that team members can import into T3 Code.",
 });
 export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
 
@@ -80,7 +79,7 @@ export const T3ProjectFile = Schema.Struct({
     trimmedNonEmpty(
       {
         description:
-          'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before UP Orchestrator\'s built-in icon locations.',
+          'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before T3 Code\'s built-in icon locations.',
       },
       T3_PROJECT_FILE_PATH_MAX_LENGTH,
     ),
@@ -88,43 +87,35 @@ export const T3ProjectFile = Schema.Struct({
   defaultThreadEnvMode: Schema.optionalKey(
     ThreadEnvMode.annotate({
       description:
-        'Where new threads start for this repository: "worktree" for a fresh git worktree, "local" for the current checkout. A per-project setting in UP Orchestrator overrides this; when neither is set, the global default applies.',
+        'Where new threads start for this repository: "worktree" for a fresh git worktree, "local" for the current checkout. A per-project setting in T3 Code overrides this; when neither is set, the global default applies.',
     }),
   ),
   worktreeSubmodules: Schema.optionalKey(
     WorktreeSubmodules.annotate({
       description:
-        'How new worktrees populate git submodules: "recursive" (the default) initializes nested submodules too, "top-level" initializes only those declared by this repository, and "none" leaves every submodule empty for a setup script to handle. A project or environment setting in UP Orchestrator overrides this.',
+        'How new worktrees populate git submodules: "recursive" (the default) initializes nested submodules too, "top-level" initializes only those declared by this repository, and "none" leaves every submodule empty for a setup script to handle. A project or environment setting in T3 Code overrides this.',
     }),
   ),
   scripts: Schema.optionalKey(
     Schema.Array(T3ProjectFileScript)
       .annotate({
-        description:
-          "Project scripts shared with everyone who opens this repository in UP Orchestrator.",
+        description: "Project scripts shared with everyone who opens this repository in T3 Code.",
       })
       .check(Schema.isMaxLength(T3_PROJECT_FILE_MAX_SCRIPTS)),
   ),
 }).annotate({
   title: "T3 project file",
   description:
-    "Checked-in project configuration for UP Orchestrator (t3.json at the repository root). See https://t3.codes for documentation.",
+    "Checked-in project configuration for T3 Code (t3.json at the repository root). See https://t3.codes for documentation.",
 });
 export type T3ProjectFile = typeof T3ProjectFile.Type;
 
-/**
- * A key here must be nullable on `ServerSettings` (null means inherit) so both
- * the project override and the environment value can defer to the file; `field`
- * names the t3.json field carrying the same value and `builtIn` is what applies
- * when every tier is unset.
- */
+/** Keys must be nullable in ServerSettings so both environment and project overrides can inherit t3.json. */
 export const PROJECT_FILE_BACKED_SETTINGS = {
   defaultThreadEnvMode: { field: "defaultThreadEnvMode", builtIn: "local" },
   worktreeSubmodules: { field: "worktreeSubmodules", builtIn: "recursive" },
 } as const satisfies {
-  // `providerInstances` is scoped per project but overrides field by field
-  // rather than replacing a whole `ServerSettings` value (see its doc comment
-  // in settings.ts), so it cannot be file-backed and is excluded here.
+  // providerInstances overrides individual fields, so it cannot use whole-setting file inheritance.
   readonly [K in ProjectScopedServerSettingKey & keyof ServerSettings]?: {
     readonly field: {
       readonly [F in keyof T3ProjectFile]: T3ProjectFile[F] extends

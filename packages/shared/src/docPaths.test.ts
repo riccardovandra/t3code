@@ -19,6 +19,7 @@ describe("docPaths", () => {
   it("slugifies titles to ASCII, falling back to untitled", () => {
     expect(slugifyDocTitle("Q3 Launch: Café Plan!")).toBe("q3-launch-cafe-plan");
     expect(slugifyDocTitle("???")).toBe("untitled");
+    expect(slugifyDocTitle(`${"a".repeat(79)} b`)).toBe("a".repeat(79));
   });
 
   it("never picks an existing path, comparing case-insensitively", () => {

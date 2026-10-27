@@ -29,11 +29,11 @@ export function kdeCapturePaths(paths: KdeCapturePaths) {
   };
 }
 
-export function kdeCaptureDesktopEntry(executable: string): string {
+function kdeCaptureDesktopEntry(executable: string): string {
   return [
     "[Desktop Entry]",
     "Type=Application",
-    "Name=UP Orchestrator SnapShots",
+    "Name=T3 Code SnapShots",
     "NoDisplay=true",
     `Exec=${escapeDesktopEntryExecArgument(executable)} check`,
     // KService reads this custom property as a KConfig list, not an XDG ';' list.
@@ -115,8 +115,7 @@ export class KdeCaptureSetup {
       if (!bundle)
         return {
           status: "error",
-          message:
-            "The capture helper is missing from this build. Update or reinstall UP Orchestrator.",
+          message: "The capture helper is missing from this build. Update or reinstall T3 Code.",
         };
       if (!installed.equals(bundle) || entry.toString() !== kdeCaptureDesktopEntry(executable))
         return {
@@ -161,7 +160,7 @@ export class KdeCaptureSetup {
       const bundle = await regularFile(this.paths.bundle);
       if (!bundle)
         throw new Error(
-          "The capture helper is missing from this build. Update or reinstall UP Orchestrator.",
+          "The capture helper is missing from this build. Update or reinstall T3 Code.",
         );
       await NodeFSP.mkdir(directory, { recursive: true });
       await NodeFSP.mkdir(NodePath.dirname(desktop), { recursive: true });
@@ -183,8 +182,7 @@ export class KdeCaptureSetup {
     }
     // KService must see the new desktop entry before KWin checks the executable.
     await run("kbuildsycoca6", ["--noincremental"]);
-    // AppImages change XDG search paths, and KService caches are also locale-specific.
-    // Refresh Plasma's cache in its session environment, not just the app's cache.
+    // AppImage search paths and locale affect KService caches; refresh in Plasma's session environment.
     await run("systemd-run", [
       "--user",
       "--quiet",

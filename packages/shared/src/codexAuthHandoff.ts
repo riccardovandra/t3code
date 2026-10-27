@@ -56,8 +56,12 @@ export function codexAuthorizationRequest(value: string) {
 }
 
 export function codexCallbackUrl(value: string, redirectUri: string, state: string) {
-  const callback = new URL(value);
   const expected = new URL(redirectUri);
+  const pasted = value.trimStart();
+  // Browsers can hide `http://` in the address bar, so a pasted callback may lack it.
+  const callback = new URL(
+    /^[a-z][a-z\d+.-]*:\/\//iu.test(pasted) ? pasted : `${expected.protocol}//${pasted}`,
+  );
   const states = callback.searchParams.getAll("state");
   const codes = callback.searchParams.getAll("code");
   const errors = callback.searchParams.getAll("error");
@@ -116,7 +120,7 @@ export function codexAuthDeliveryUrl(input: CodexAuthHandoff, callbackUrl: strin
   const request = codexAuthorizationRequest(input.authorizationUrl);
   codexCallbackUrl(callbackUrl, request.redirectUri, request.state);
   const destination = providerAuthReturnUrl(input.returnUrl);
-  if (!destination) throw new Error("Invalid UP Orchestrator return address.");
+  if (!destination) throw new Error("Invalid T3 Code return address.");
   const url = new URL(destination);
   const delivery = {
     environmentId: input.environmentId,

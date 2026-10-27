@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   compactDynamicToolOutput,
   MAX_TOOL_OUTPUT_IMAGES,
-  omitToolOutputImageData,
   toolOutputImages,
   toolOutputIndicatesFailure,
 } from "./toolOutput.ts";
@@ -133,17 +132,66 @@ describe("compactDynamicToolOutput", () => {
       threadId: "known",
     });
   });
+});
 
-  it("is idempotent for compact metadata", () => {
-    const compact = compactDynamicToolOutput({
-      isError: true,
-      structuredContent: {
-        threadId: "thread-1",
-        threads: [{ threadId: "thread-1" }, { status: "rolled_back" }],
-        output: "Private output",
+describe("compactDynamicToolOutput Docs Cloud", () => {
+  const tab = {
+    tabId: "tab-1",
+    title: "Overview",
+    parentTabId: null,
+    position: 0,
+    version: 2,
+    url: "https://docs.example.com/d/doc-1/tab-1",
+  };
+
+  it("keeps the doc and tab a create_doc result points at", () => {
+    const result = {
+      doc: {
+        docId: "doc-1",
+        title: "Launch plan",
+        url: tab.url,
+        projectId: "p",
+        status: "thinking",
+      },
+      tab,
+    };
+    expect(
+      compactDynamicToolOutput({ content: [{ type: "text", text: JSON.stringify(result) }] }),
+    ).toEqual({
+      docsCloud: {
+        url: tab.url,
+        docId: "doc-1",
+        tabId: "tab-1",
+        tabTitle: "Overview",
+        docTitle: "Launch plan",
       },
     });
-    expect(compactDynamicToolOutput(compact)).toEqual(compact);
+  });
+
+  it("reads its own compacted output again", () => {
+    const once = compactDynamicToolOutput({
+      doc: { docId: "doc-1", title: "Launch plan" },
+      tab,
+    });
+    expect(compactDynamicToolOutput(once)).toEqual(once);
+    const lone = compactDynamicToolOutput({ tab });
+    expect(compactDynamicToolOutput(lone)).toEqual(lone);
+    expect(
+      compactDynamicToolOutput({ docsCloud: { ...once?.docsCloud, docId: "other" } }),
+    ).toBeUndefined();
+  });
+
+  it("keeps a lone tab and rejects a url that does not name it", () => {
+    expect(compactDynamicToolOutput(JSON.stringify({ tab }))?.docsCloud).toEqual({
+      url: tab.url,
+      docId: "doc-1",
+      tabId: "tab-1",
+      tabTitle: "Overview",
+    });
+    expect(compactDynamicToolOutput({ tab: { ...tab, tabId: "other" } })).toBeUndefined();
+    expect(
+      compactDynamicToolOutput({ tab: { ...tab, url: "javascript:alert(1)//d/doc-1/tab-1" } }),
+    ).toBeUndefined();
   });
 });
 
@@ -210,20 +258,5 @@ describe("toolOutputImages", () => {
   it("stops after the first few images", () => {
     const images = toolOutputImages(Array.from({ length: 10_000 }, () => mcpImage));
     expect(images).toHaveLength(MAX_TOOL_OUTPUT_IMAGES);
-  });
-
-  it("drops the bytes but keeps each image's position", () => {
-    const omitted = omitToolOutputImageData({ content: [text, claudeImage, mcpImage] });
-    expect(omitted).toEqual({
-      content: [
-        text,
-        { type: "image", mimeType: "image/jpeg" },
-        { type: "image", mimeType: "image/png" },
-      ],
-    });
-    expect(toolOutputImages(omitted)).toEqual([
-      { mimeType: "image/jpeg" },
-      { mimeType: "image/png" },
-    ]);
   });
 });

@@ -3,7 +3,8 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { isLocalDocPath, localDocAppPath } from "@t3tools/shared/docsCloudLocal";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -26,6 +27,8 @@ const RIGHT_PANEL_KINDS = [
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
+export type PullRequestDetailTab = "summary" | "guide" | "timeline" | "code";
+
 export interface DeviceTabTarget {
   hostId: string;
   deviceId: string;
@@ -46,7 +49,12 @@ export type RightPanelSurface =
       splitDirection?: "horizontal" | "vertical";
     }
   | { id: "ai-pm"; kind: "ai-pm"; projectId?: string }
-  | { id: "docs"; kind: "docs"; docPath?: string }
+  | {
+      id: "docs";
+      kind: "docs";
+      /** The Docs Cloud app path, such as `/d/:docId/:tabId` or `/local/docs/plan.md`. */
+      cloudPath?: string;
+    }
   | { id: "diff"; kind: "diff" }
   | {
       id: "files";
@@ -61,25 +69,20 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
       attachment?: ChatFileAttachment;
-      /**
-       * Set when breadcrumbs moved a folder browser up from a deeper path: the
-       * deepest workspace path the breadcrumbs keep offering on the way back down.
-       */
+      /** Deepest workspace path retained for navigating back down after moving up. */
       folderTrail?: string;
     }
   | {
       id: `pull-request:${string}`;
       kind: "pull-request";
-      /**
-       * The list spans every connected one, so two of them can hold the same project id; a
-       * panel beside a thread leaves this out and takes the environment from its own ref.
-       */
+      /** Cross-environment lists can repeat project ids; thread panels inherit their ref's environment. */
       environmentId?: string;
       projectId: string;
       host?: string;
       repository: string;
       number: number;
       url?: string;
+      detailTab?: PullRequestDetailTab;
     }
   | { id: "pull-requests"; kind: "pull-requests" };
 
@@ -99,6 +102,7 @@ export interface ThreadRightPanelState {
   surfaces: RightPanelSurface[];
   dismissedDeviceSurfaceIds?: string[];
   maximized?: true;
+  proactiveDiffTurnId?: RunId;
 }
 
 export interface ThreadPanelVisibility {
@@ -115,31 +119,31 @@ interface RightPanelStoreState {
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
-  /**
-   * Refused when the user made a panel choice after
-   * `expectedUserActionRevision` was read.
-   */
+  /** Refused if the user chose a panel after expectedUserActionRevision was read. */
   openProactive: (
     ref: ScopedThreadRef,
-    surface: Extract<RightPanelSurface, { kind: "diff" | "pull-request" | "pull-requests" }>,
+    request:
+      | Extract<RightPanelSurface, { kind: "pull-request" | "pull-requests" }>
+      | { kind: "diff"; turnId: RunId },
     expectedUserActionRevision: number,
+    activateExisting?: boolean,
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
   selectAiPmProject: (ref: ScopedThreadRef, projectId: string | undefined) => void;
-  selectDoc: (ref: ScopedThreadRef, docPath: string | undefined) => void;
+  /** Shows Docs Cloud at `cloudPath`; `automatic` records where the embedded app navigated. */
+  selectDocsCloud: (
+    ref: ScopedThreadRef,
+    cloudPath: string | undefined,
+    automatic?: boolean,
+  ) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
-  /**
-   * Moves the folder browser in `surfaceId` to `relativePath` in place, so walking
-   * the breadcrumbs does not leave a tab behind per folder. `""` is the workspace
-   * root, which is the files explorer. `folderTrail` is kept for the way back down.
-   * `keepSource` opens the folder beside the source tab instead, for a file preview.
-   */
+  /** Moves in place; "" opens the root explorer. folderTrail keeps the return path; keepSource opens beside the source. */
   navigateFolder: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -157,7 +161,13 @@ interface RightPanelStoreState {
       repository: string;
       number: number;
       url?: string;
+      detailTab?: PullRequestDetailTab;
     },
+  ) => void;
+  setPullRequestDetailTab: (
+    ref: ScopedThreadRef,
+    surfaceId: string,
+    detailTab: PullRequestDetailTab,
   ) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
@@ -283,6 +293,7 @@ export function pullRequestSurface(target: {
   repository: string;
   number: number;
   url?: string;
+  detailTab?: PullRequestDetailTab;
 }): PullRequestSurface {
   return {
     id: pullRequestSurfaceId(target),
@@ -293,6 +304,7 @@ export function pullRequestSurface(target: {
     repository: target.repository,
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
+    ...(target.detailTab === undefined ? {} : { detailTab: target.detailTab }),
   };
 }
 
@@ -320,7 +332,8 @@ const updateThreadStateMap = (
     !next.isOpen &&
     next.activeSurfaceId === null &&
     next.surfaces.length === 0 &&
-    !next.dismissedDeviceSurfaceIds?.length
+    !next.dismissedDeviceSurfaceIds?.length &&
+    next.proactiveDiffTurnId === undefined
   ) {
     if (!(threadKey in byThreadKey)) return byThreadKey;
     const { [threadKey]: _removed, ...rest } = byThreadKey;
@@ -438,6 +451,26 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+/**
+ * The Docs Cloud path a persisted Docs surface opens at. Surfaces saved by the
+ * removed file-based Docs panel carry `source: "files"` and a `docPath`; those
+ * open the same file inside Docs Cloud.
+ */
+export function persistedDocsCloudPath(surface: {
+  readonly source?: unknown;
+  readonly docPath?: unknown;
+  readonly cloudPath?: unknown;
+}): string | undefined {
+  const cloudPath =
+    typeof surface.cloudPath === "string" && surface.cloudPath.startsWith("/")
+      ? surface.cloudPath
+      : undefined;
+  const onFiles = surface.source === "files" || (surface.source === undefined && !cloudPath);
+  if (!onFiles) return cloudPath;
+  // Without an open doc the old panel showed its file list, now Docs Cloud's home.
+  return isLocalDocPath(surface.docPath) ? localDocAppPath(surface.docPath) : undefined;
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
@@ -460,13 +493,12 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     const kind = (surface as { kind?: string }).kind;
                     if (kind === "plan" || kind === "agents") return [];
                     if (surface.kind === "docs") {
+                      const cloudPath = persistedDocsCloudPath(surface);
                       return [
                         {
                           id: "docs",
                           kind: "docs",
-                          ...(typeof surface.docPath === "string"
-                            ? { docPath: surface.docPath }
-                            : {}),
+                          ...(cloudPath === undefined ? {} : { cloudPath }),
                         },
                       ];
                     }
@@ -577,6 +609,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                   isOpen,
                   surfaces,
                   activeSurfaceId,
+                  ...(typeof validThreadState?.proactiveDiffTurnId === "string"
+                    ? { proactiveDiffTurnId: RunId.make(validThreadState.proactiveDiffTurnId) }
+                    : {}),
                   ...(Array.isArray(validThreadState?.dismissedDeviceSurfaceIds)
                     ? {
                         dismissedDeviceSurfaceIds:
@@ -625,24 +660,43 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       closeRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
-      openProactive: (ref, surface, expectedUserActionRevision) => {
+      openProactive: (ref, request, expectedUserActionRevision, activateExisting = false) => {
         let opened = false;
         set((state) => {
           const threadKey = scopedThreadKey(ref);
+          if (request.kind === "diff") {
+            const current = selectThreadRightPanelState(state.byThreadKey, ref);
+            if (current.proactiveDiffTurnId === request.turnId) return state;
+            const activePanel = selectActiveRightPanel(state.byThreadKey, ref);
+            const pullRequestActive =
+              activePanel === "pull-request" || activePanel === "pull-requests";
+            opened =
+              (state.userActionRevisionByThreadKey[threadKey] ?? 0) ===
+                expectedUserActionRevision &&
+              activePanel !== "diff" &&
+              !pullRequestActive;
+            // Record the offer even when refused, so a revisit does not retry this turn.
+            return automaticUpdate(state, threadKey, (thread) => ({
+              ...(opened ? upsertSurface(thread, singletonSurface("diff")) : thread),
+              proactiveDiffTurnId: request.turnId,
+            }));
+          }
           if (
             (state.userActionRevisionByThreadKey[threadKey] ?? 0) !== expectedUserActionRevision
           ) {
             return state;
           }
+          // Keep an existing PR tab where the user left it when revisiting a thread.
           if (
-            surface.kind === "diff" &&
-            (selectActiveRightPanel(state.byThreadKey, ref) === "pull-request" ||
-              selectActiveRightPanel(state.byThreadKey, ref) === "pull-requests")
+            !activateExisting &&
+            selectThreadRightPanelState(state.byThreadKey, ref).surfaces.some(
+              (entry) => entry.id === request.id,
+            )
           ) {
             return state;
           }
           opened = true;
-          return automaticUpdate(state, threadKey, (current) => upsertSurface(current, surface));
+          return automaticUpdate(state, threadKey, (current) => upsertSurface(current, request));
         });
         return opened;
       },
@@ -670,15 +724,20 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }),
           })),
         ),
-      selectDoc: (ref, docPath) =>
+      selectDocsCloud: (ref, cloudPath, automatic = false) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => ({
-            ...current,
-            surfaces: current.surfaces.map((surface) => {
-              if (surface.kind !== "docs") return surface;
-              return { id: "docs", kind: "docs", ...(docPath === undefined ? {} : { docPath }) };
-            }),
-          })),
+          (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
+            const docs = current.surfaces.find((surface) => surface.kind === "docs");
+            if (docs && docs.cloudPath === cloudPath) return current;
+            return {
+              ...current,
+              surfaces: current.surfaces.map((surface) => {
+                if (surface.kind !== "docs") return surface;
+                const { cloudPath: _cloudPath, ...rest } = surface;
+                return { ...rest, ...(cloudPath === undefined ? {} : { cloudPath }) };
+              }),
+            };
+          }),
         ),
       openDevice: (ref, target, automatic = false) =>
         set((state) =>
@@ -733,12 +792,31 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ? {
                   ...next,
                   surfaces: next.surfaces.map((entry) =>
-                    entry.id === surface.id ? surface : entry,
+                    entry.id === surface.id && entry.kind === "pull-request"
+                      ? { ...entry, ...surface }
+                      : entry,
                   ),
                 }
               : next;
           }),
         ),
+      setPullRequestDetailTab: (ref, surfaceId, detailTab) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const existing = state.byThreadKey[threadKey]?.surfaces.find(
+            (surface) => surface.id === surfaceId,
+          );
+          if (existing?.kind !== "pull-request" || (existing.detailTab ?? "summary") === detailTab)
+            return state;
+          return automaticUpdate(state, threadKey, (current) => ({
+            ...current,
+            surfaces: current.surfaces.map((surface) =>
+              surface.id === surfaceId && surface.kind === "pull-request"
+                ? { ...surface, detailTab }
+                : surface,
+            ),
+          }));
+        }),
       openFile: (ref, requestedPath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
@@ -785,7 +863,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 ? { ...singletonSurface("files"), ...trail }
                 : { ...fileSurface(relativePath, null, 1), ...trail };
             const source = current.surfaces[index]!;
-            // A tab already showing the target wins, so its state is never replaced.
             const existing = current.surfaces.some(
               (surface, i) => i !== index && surface.id === target.id,
             );
@@ -794,7 +871,6 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 const kept = keepSource ? [source] : [];
                 return existing ? kept : [...kept, target];
               }
-              // Like openFile: a file surface replaces the standalone explorer.
               return !existing && target.kind === "file" && surface.kind === "files"
                 ? []
                 : [surface];

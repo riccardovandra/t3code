@@ -84,6 +84,7 @@ import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmentConnectionPresentation";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { T3Wordmark } from "../T3Wordmark";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CommandBlock } from "../CommandBlock";
@@ -118,8 +119,7 @@ export function WelcomeWizard({
   const [step, setStep] = useState<WizardStep>(resumeEnvironmentId ? "agents" : "connection");
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
-  // One registry for the wizard's lifetime, shared with the connect list, so a computer is
-  // auto-selected once even after the user unchecks it.
+  // Share the registry for the wizard's lifetime so unchecked computers are not auto-selected again.
   const [autoSelectedComputers] = useState(() => new Set<EnvironmentId>());
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>(
     resumeEnvironmentId ? [resumeEnvironmentId] : [],
@@ -216,20 +216,26 @@ export function WelcomeWizard({
   };
 
   return (
-    <Dialog open disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
+    <Dialog
+      open
+      disablePointerDismissal
+      onOpenChange={(_, event) => {
+        event.cancel();
+        if (event.reason === "close-press" && !isImporting) void finish();
+      }}
+    >
       <WizardPopup
         size="wide"
         bottomStickOnMobile={false}
-        showCloseButton={false}
         initialFocus={() => document.getElementById("onboarding-pairing-url") ?? true}
       >
         <WizardHeader
-          title="Set up UP Orchestrator"
+          title="Set up T3 Code"
           identity={
-            <div className="flex items-baseline gap-1.5" role="img" aria-label="UP Orchestrator">
-              <span className="shrink-0 text-2xl font-semibold tracking-tight">UP</span>
+            <div className="flex items-baseline gap-1.5" role="img" aria-label="T3 Code">
+              <T3Wordmark className="h-4 w-auto shrink-0" aria-hidden />
               <span className="text-2xl font-medium tracking-tight text-muted-foreground">
-                Orchestrator
+                Code
               </span>
             </div>
           }
@@ -364,6 +370,11 @@ function ConnectionStep({
                     {environment.displayUrl}
                   </span>
                 ) : null}
+                {environment.connection.phase === "unsupported" && environment.connection.error ? (
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {environment.connection.error}
+                  </span>
+                ) : null}
               </span>
             </label>
           ))}
@@ -420,8 +431,8 @@ function ConnectionStep({
       ) : null}
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-          UP Orchestrator collects anonymous usage data to help us improve it. To read more about
-          how your data is used and how to opt out, see our{" "}
+          T3 Code collects anonymous usage data to help us improve it. To read more about how your
+          data is used and how to opt out, see our{" "}
           <a
             className="underline underline-offset-2 hover:text-foreground"
             href={PRIVACY_POLICY_URL}
@@ -518,7 +529,7 @@ function ConnectAccountOption({
             </p>
             <CommandBlock command="npx t3 connect" className="mt-3" />
             <p className="mt-3 text-xs text-muted-foreground">
-              Keep UP Orchestrator running. Select the computers you want to set up above.
+              Keep T3 Code running. Select the computers you want to set up above.
             </p>
           </div>
         </CollapsiblePanel>
@@ -627,8 +638,8 @@ function PairingForm({
             </p>
             <CommandBlock command="npx t3 pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start UP Orchestrator first, or run <code className="font-mono">npx t3 serve</code>.
-              Add <code className="font-mono">--tailscale</code> to use your tailnet.
+              Start T3 Code first, or run <code className="font-mono">npx t3 serve</code>. Add{" "}
+              <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>
         </Collapsible>
@@ -1022,9 +1033,8 @@ function AgentInstallTerminal({
   >("preparing");
   const terminalReady = setupState === "ready" || setupState === "writeFailed";
 
-  // In Strict Mode, a canceled open can finish after the replacement setup
-  // starts; it must not close or pre-type into the replacement session that
-  // shares this terminal id.
+  // StrictMode can finish a cancelled open after replacement setup; it must not close or pre-type into that
+  // session.
   useEffect(() => {
     const generation = setupGenerationRef.current + 1;
     setupGenerationRef.current = generation;
@@ -1066,8 +1076,7 @@ function AgentInstallTerminal({
       setSetupState(wrote._tag === "Success" ? "ready" : "writeFailed");
     });
 
-    // Close the PTY only while this connection still has terminal access;
-    // revocation leaves it running.
+    // Revocation leaves the PTY running; close only while terminal access remains.
     return () => {
       if (activeSetupGenerationRef.current === generation) {
         activeSetupGenerationRef.current = null;
@@ -1146,11 +1155,8 @@ function AgentInstallTerminal({
             providerInstanceId={providerInstanceId}
             advancedTypography={advancedTypography}
             onSessionExited={onClose}
-            focusRequestId={1}
             autoFocus
             visible
-            resizeEpoch={0}
-            drawerHeight={256}
             keybindings={keybindings}
           />
         ) : null}

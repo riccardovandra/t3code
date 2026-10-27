@@ -63,7 +63,7 @@ export class DesktopSshPromptWindowUnavailableError extends Schema.TaggedError<D
 ) {
   override get message(): string {
     const request = this.requestId === null ? "before a request id was assigned" : this.requestId;
-    return `UP Orchestrator window is unavailable during ${this.stage} for SSH authentication to ${this.destination} (request: ${request}).`;
+    return `T3 Code window is unavailable during ${this.stage} for SSH authentication to ${this.destination} (request: ${request}).`;
   }
 }
 
@@ -218,7 +218,7 @@ const failPending = (
   error: DesktopSshPasswordPromptRequestError,
 ) => Deferred.fail(pending.deferred, error).pipe(Effect.asVoid);
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
   options: DesktopSshPasswordPromptsOptions = {},
 ) {

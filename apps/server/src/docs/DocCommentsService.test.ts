@@ -136,12 +136,13 @@ layer("DocCommentsService", (it) => {
     Effect.gen(function* () {
       const docs = yield* DocCommentsService.DocCommentsService;
       const comment = yield* createComment("notes/scope.md", "quote", "Mine");
-      const errors = yield* Effect.all(
+      const errors = yield* Effect.forEach(
         [
           docs.reply({ projectId: otherProjectId, commentId: comment.id, body: "x", author: user }),
           docs.setResolved({ projectId: otherProjectId, commentId: comment.id, resolved: true }),
           docs.delete({ projectId: otherProjectId, commentId: comment.id }),
-        ].map(Effect.flip),
+        ],
+        Effect.flip,
       );
       assert.deepStrictEqual(
         errors.map((error) => error.reason),

@@ -1,4 +1,9 @@
 import {
+  type DisabledSkills,
+  type DisabledSkillsProjectOverride,
+  type McpServerConfig,
+  type McpServerProjectOverrides,
+  type McpServers,
   type ModelSelection,
   PROJECT_FILE_BACKED_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
@@ -38,19 +43,13 @@ export function hasProjectSettingsOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
 ): boolean {
   for (const entry of Object.values(settings.projectSettingsOverrides)) {
-    // A forward-compatible decode can leave an unknown value as a present
-    // undefined; that is not an override.
+    // Forward-compatible decoding can leave a present undefined, which is not an override.
     if (Object.values(entry).some((value) => value !== undefined)) return true;
   }
   return false;
 }
 
-/**
- * The project aggregate's own model and workspace fields. They remain the
- * source of truth until the server has folded them into the override record;
- * after the fold the record alone decides, so a reset there cannot be undone
- * by a stale aggregate value.
- */
+/** Legacy aggregate fields apply only until folded into overrides, so stale values cannot undo later resets. */
 export interface LegacyProjectSettingsFields {
   readonly defaultModelSelection?: ModelSelection | null | undefined;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null | undefined;
@@ -139,9 +138,26 @@ function resolveProjectOverrides(
   for (const key of PROJECT_SCOPED_SERVER_SETTING_KEYS) {
     if (!Object.hasOwn(overrides, key)) continue;
     const value = overrides[key];
-    // A forward-compatible decode leaves an unknown value as a present
-    // undefined; that is not an override.
+    // Forward-compatible decoding can leave a present undefined, which is not an override.
     if (value === undefined) continue;
+    // Sparse per-name overrides: the project adds to and switches the
+    // environment's entries instead of replacing the whole value, so a server
+    // or skill added to the environment later still reaches the project.
+    if (key === "mcpServers") {
+      effective[key] = mergeProjectMcpServers(settings.mcpServers, overrides.mcpServers);
+      sources[key] = "project";
+      continue;
+    }
+    if (key === "disabledSkills") {
+      effective[key] = mergeProjectDisabledSkills(
+        settings.disabledSkills,
+        overrides.disabledSkills,
+      );
+      sources[key] = "project";
+      continue;
+    }
+    // A model on a disabled provider falls back to the environment, like the
+    // environment-level guards do for these keys.
     if (
       (key === "textGenerationModelSelection" || key === "defaultModelSelection") &&
       value !== undefined &&
@@ -172,12 +188,7 @@ function resolveProjectOverrides(
   return { settings: effective as ServerSettings, sources, overrides };
 }
 
-/**
- * A project the environment made from just a name (a folder directly inside
- * `ServerConfig.newProjectsRoot`) has only its first commit, so until it has a
- * thread, a new thread works in the project checkout even when the environment
- * default is a new worktree.
- */
+/** New name-only projects use their checkout until the first thread, even when the default is worktree. */
 export function resolveNewThreadEnvMode(input: {
   readonly projectSettings: ResolvedProjectSettings<ResolvedServerSettings>;
   readonly workspaceRoot: string | null;
@@ -205,13 +216,51 @@ export function resolveNewThreadEnvMode(input: {
   return isNewProjectFolder ? "local" : configured;
 }
 
-export function withProjectSettingsOverrides(
-  settings: Pick<ServerSettings, "projectSettingsOverrides">,
-  projectId: ProjectId,
-  next: ProjectSettingsOverrides | null,
-): ServerSettings["projectSettingsOverrides"] {
-  const { [projectId]: _removed, ...rest } = settings.projectSettingsOverrides;
-  return next === null || Object.keys(next).length === 0 ? rest : { ...rest, [projectId]: next };
+export function resolveSendEnvMode(input: {
+  readonly requestedEnvMode: ThreadEnvMode;
+  readonly isGitRepo: boolean;
+}): ThreadEnvMode {
+  return input.isGitRepo ? input.requestedEnvMode : "local";
+}
+
+/**
+ * The environment's servers with a project's entries applied by name: an
+ * entry with a transport adds or replaces a server, one without only switches
+ * the inherited server. A switch for a server the environment no longer has
+ * is dropped.
+ */
+function mergeProjectMcpServers(
+  environment: McpServers,
+  project: McpServerProjectOverrides | undefined,
+): McpServers {
+  if (project === undefined) return environment;
+  const merged: Record<string, McpServerConfig> = { ...environment };
+  for (const [name, entry] of Object.entries(project)) {
+    if (entry.transport !== undefined) {
+      merged[name] = { enabled: entry.enabled, transport: entry.transport };
+      continue;
+    }
+    const inherited = Object.hasOwn(environment, name) ? environment[name] : undefined;
+    if (inherited !== undefined) merged[name] = { ...inherited, enabled: entry.enabled };
+  }
+  return merged as McpServers;
+}
+
+/**
+ * The environment's disabled skills with a project's per-name switches
+ * applied. Names match ignoring case, as agents and the composer match them.
+ */
+export function mergeProjectDisabledSkills(
+  environment: DisabledSkills,
+  project: DisabledSkillsProjectOverride | undefined,
+): DisabledSkills {
+  if (project === undefined) return environment;
+  const disabled = new Map(environment.map((name) => [name.toLowerCase(), name]));
+  for (const [name, off] of Object.entries(project)) {
+    if (off) disabled.set(name.toLowerCase(), disabled.get(name.toLowerCase()) ?? name);
+    else disabled.delete(name.toLowerCase());
+  }
+  return [...disabled.values()].sort();
 }
 
 export function clearProjectSettingsOverrides(

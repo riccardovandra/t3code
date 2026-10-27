@@ -5,6 +5,7 @@ import type { ClosedView, ClosedViewEntry } from "./closedViewStore";
 import type { PullRequestListPreferences } from "./components/pullRequest/pullRequestListPreferences";
 import { openPreviewSession } from "./components/preview/openPreviewSession";
 import {
+  persistedDocsCloudPath,
   type RightPanelSurface,
   type ThreadRightPanelState,
   useRightPanelStore,
@@ -119,7 +120,7 @@ export async function reopenClosedView(
   switch (surface.kind) {
     case "docs":
       panels.open(ref, "docs");
-      panels.selectDoc(ref, surface.docPath);
+      panels.selectDocsCloud(ref, persistedDocsCloudPath(surface));
       break;
     case "ai-pm":
       panels.open(ref, "ai-pm");

@@ -6,6 +6,7 @@ import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
 import { useNpmReleasePublished } from "~/state/npmRelease";
+import { useReleaseMirrorPublished } from "~/state/releaseMirror";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
@@ -22,6 +23,7 @@ import {
   type SkippedMachine,
   type UpdateRunMachine,
 } from "./updateEverything.logic";
+import { gateServersOnRelease, serverReleaseSource } from "./releaseGate";
 import {
   clearSavedUpdateEverythingResult,
   saveUpdateEverythingResult,
@@ -58,23 +60,30 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     machines,
     targetVersion,
   );
-  // A desktop-managed server installs from its own app's update feed, so only
-  // servers that download t3 from npm wait for npm to publish the version.
-  const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
-  const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
-  const servers = published
-    ? behindServers
-    : behindServers.filter((server) => server.selfUpdate === "desktop-managed");
-  const skipped: ReadonlyArray<SkippedMachine> = [
-    ...unreachable,
-    ...behindServers
-      .filter((server) => !servers.includes(server))
-      .map((server) => ({
-        environmentId: server.environmentId,
-        label: server.serverLabel,
-        reason: `t3@${targetVersion} is not on npm yet`,
-      })),
-  ];
+  // A desktop-managed server installs from its own app's update feed, and a release-mirror
+  // server from its mirror, so only the rest wait for npm to publish the version.
+  const releaseMirrors = new Set(
+    machines
+      .filter((machine) => machine.serverConfig?.environment.capabilities.serverReleaseMirror)
+      .map((machine) => machine.environmentId),
+  );
+  const sources = behindServers.map((server) => serverReleaseSource(server, releaseMirrors));
+  const npmPublished = useNpmReleasePublished(sources.includes("npm") ? targetVersion : null);
+  const mirrorPublished = useReleaseMirrorPublished(
+    targetVersion,
+    behindServers
+      .filter((_, index) => sources[index] === "release-mirror")
+      .map((server) => server.environmentId),
+  );
+  const gated = gateServersOnRelease({
+    servers: behindServers,
+    targetVersion,
+    releaseMirrors,
+    npmPublished,
+    mirrorPublished,
+  });
+  const servers = gated.servers;
+  const skipped: ReadonlyArray<SkippedMachine> = [...unreachable, ...gated.skipped];
   const restarts = collectRestartingMachines(machines, servers, localUpdateVersion !== null);
   const providers = useProviderUpdates();
   const updateServer = useServerUpdate();

@@ -1,6 +1,12 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
-import { PullRequestContextMetadata, type PullRequestReviewPosition } from "@t3tools/contracts";
+import {
+  DocsCloudCommentContextMetadata,
+  PullRequestContextMetadata,
+  type PullRequestReviewPosition,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+
+import { isLineInFileDiff } from "./components/pullRequest/pullRequestDiff.logic";
 
 const ReviewCommentSelectionSchema = Schema.Struct({
   start: Schema.Number,
@@ -23,6 +29,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
   pullRequest: Schema.optional(PullRequestContextMetadata),
+  docsCloud: Schema.optional(DocsCloudCommentContextMetadata),
 });
 
 export interface ReviewCommentContext {
@@ -38,6 +45,7 @@ export interface ReviewCommentContext {
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
   readonly pullRequest?: PullRequestContextMetadata | undefined;
+  readonly docsCloud?: DocsCloudCommentContextMetadata | undefined;
 }
 
 interface DiffReviewLine {
@@ -78,6 +86,31 @@ export function buildFileReviewComment(input: {
     text: input.text.trim(),
     diff: selectedLines.join("\n"),
     fenceLanguage: inferReviewCommentFenceLanguage(input.filePath),
+  };
+}
+
+/**
+ * A Docs Cloud comment as composer context. The doc's URL stands where a file
+ * path would, and the quoted passage where a file's lines would; `docsCloud`
+ * carries the ids the agent needs to reply in the doc. The same comment added
+ * twice replaces itself.
+ */
+export function buildDocsCloudReviewComment(
+  input: DocsCloudCommentContextMetadata & { readonly quote: string; readonly body: string },
+): ReviewCommentContext {
+  const { quote, body, ...docsCloud } = input;
+  return {
+    id: `docs-cloud-${input.commentId}`,
+    sectionId: `docs-cloud:${input.docId}/${input.tabId}`,
+    sectionTitle: "Docs Cloud comment",
+    filePath: input.url,
+    startIndex: 0,
+    endIndex: 0,
+    rangeLabel: input.docTitle.trim() || "Untitled",
+    text: body.trim(),
+    diff: quote,
+    fenceLanguage: "text",
+    docsCloud,
   };
 }
 
@@ -344,13 +377,25 @@ export function resolveDiffReviewPosition(
   })[0];
   if (line === undefined) return null;
 
+  // An explicit selection must not resolve to a same-numbered line on the other side.
+  if (
+    (side === "additions" && line.newLineNumber !== lineNumber) ||
+    (side === "deletions" && line.oldLineNumber !== lineNumber)
+  ) {
+    return null;
+  }
+
   switch (line.change) {
     case "add":
       return line.newLineNumber === null ? null : { kind: "added", newLine: line.newLineNumber };
     case "delete":
       return line.oldLineNumber === null ? null : { kind: "deleted", oldLine: line.oldLineNumber };
     case "context":
-      return line.oldLineNumber === null || line.newLineNumber === null
+      // An expanded file also shows the gaps between hunks, and GitHub rejects a whole review
+      // over one comment anchored there.
+      return line.oldLineNumber === null ||
+        line.newLineNumber === null ||
+        !isLineInFileDiff(fileDiff, "right", line.newLineNumber)
         ? null
         : {
             kind: "context",
@@ -359,6 +404,46 @@ export function resolveDiffReviewPosition(
             side: side === "deletions" ? "left" : "right",
           };
   }
+}
+
+function reviewHunkIndex(fileDiff: FileDiffMetadata, position: PullRequestReviewPosition): number {
+  const [side, line] =
+    position.kind === "deleted"
+      ? (["left", position.oldLine] as const)
+      : (["right", position.newLine] as const);
+  return fileDiff.hunks.findIndex((hunk) =>
+    side === "left"
+      ? line >= hunk.deletionStart && line < hunk.deletionStart + hunk.deletionCount
+      : line >= hunk.additionStart && line < hunk.additionStart + hunk.additionCount,
+  );
+}
+
+/**
+ * Where a review comment on `range` is anchored. With `ranged`, a selection inside one hunk
+ * keeps its first line, in diff order, as `startPosition`, because hosts refuse a range that
+ * crosses hunks. Otherwise the comment sits on the line the selection ended on.
+ */
+export function resolveDiffReviewAnchor(
+  fileDiff: FileDiffMetadata,
+  range: SelectedLineRange,
+  ranged: boolean,
+): {
+  readonly position: PullRequestReviewPosition;
+  readonly startPosition?: PullRequestReviewPosition;
+} | null {
+  const endSide = range.endSide ?? range.side;
+  const last = resolveDiffReviewPosition(fileDiff, range.end, endSide);
+  if (last === null) return null;
+  const first = ranged ? resolveDiffReviewPosition(fileDiff, range.start, range.side) : null;
+  if (first === null) return { position: last };
+  const startIndex = findDiffReviewLineIndex(fileDiff, range.start, range.side);
+  const endIndex = findDiffReviewLineIndex(fileDiff, range.end, endSide);
+  if (startIndex === endIndex) return { position: last };
+  const [start, end] = startIndex < endIndex ? [first, last] : [last, first];
+  const hunk = reviewHunkIndex(fileDiff, end);
+  return hunk >= 0 && reviewHunkIndex(fileDiff, start) === hunk
+    ? { position: end, startPosition: start }
+    : { position: last };
 }
 
 function getDiffRange(

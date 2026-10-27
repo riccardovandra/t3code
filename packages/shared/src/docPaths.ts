@@ -13,11 +13,16 @@ export function slugifyDocTitle(title: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 80) || "untitled"
+      .slice(0, 80)
+      .replace(/-+$/, "") || "untitled"
   );
 }
 
-/** Picks `<folder>/<slug>.md`, suffixing a number so an existing doc is never overwritten. */
+/**
+ * Picks `<folder>/<slug>.md`, suffixing a number so an existing doc is never
+ * overwritten. `existingPaths` holds lowercase paths, so names differing only
+ * in case clash, as they do on case-insensitive disks.
+ */
 export function nextDocPath(
   folder: string,
   title: string,
@@ -32,6 +37,18 @@ export function nextDocPath(
 
 export function isMarkdownPath(path: string): boolean {
   return /\.md$/i.test(path);
+}
+
+/**
+ * The editors' markdown converters drop structure they have no node for.
+ * Saving such a doc from a rich editor would silently rewrite it, so these
+ * docs open read-only.
+ */
+export function unsupportedMarkdownReason(markdown: string): string | null {
+  if (/^---\r?\n[\s\S]*?\r?\n---\r?\n/.test(markdown)) return "front matter";
+  if (/^\s{0,3}<(?!!--)[a-zA-Z][^>]*>/m.test(markdown)) return "HTML blocks";
+  if (/^\s{0,3}\[\^[^\]]+\]:/m.test(markdown)) return "footnotes";
+  return null;
 }
 
 export const DOC_EXCERPT_MAX_LENGTH = 280;

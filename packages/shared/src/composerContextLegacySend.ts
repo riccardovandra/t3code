@@ -1,12 +1,11 @@
 import type { ComposerContextRecord, ElementContextDetails } from "@t3tools/contracts";
 
-import { collectComposerContextReferences } from "./composerContextReferences.ts";
+import {
+  collectComposerContextReferences,
+  formatDocsCloudCommentForAgent,
+} from "./composerContextReferences.ts";
 
-/**
- * Serializes a canonical message (inline reference links plus records) into the pre-inline-context
- * wire shape, for servers that do not advertise `inlineMessageContext`. Those servers drop the
- * records and forward the links as literal text, so the payload has to travel inside the message.
- */
+/** Embeds context in message text for older servers that drop records and cannot resolve inline links. */
 export function serializeLegacyContextMessage(input: {
   text: string;
   records: ReadonlyArray<ComposerContextRecord>;
@@ -147,8 +146,10 @@ function renderReviewComment(record: ComposerContextRecord): string {
     ...[...record.diff.matchAll(/`+/g)].map((match) => match[0].length),
   );
   const fence = "`".repeat(Math.max(3, longestRun + 1));
-  const body = record.diff
-    ? `${record.text}\n\n${fence}${record.fenceLanguage ?? "diff"}\n${record.diff}\n${fence}`
-    : record.text;
+  const body = record.docsCloud
+    ? formatDocsCloudCommentForAgent(record, record.docsCloud)
+    : record.diff
+      ? `${record.text}\n\n${fence}${record.fenceLanguage ?? "diff"}\n${record.diff}\n${fence}`
+      : record.text;
   return `<review_comment ${attributes}>\n${body}\n</review_comment>`;
 }

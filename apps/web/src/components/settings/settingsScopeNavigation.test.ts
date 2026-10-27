@@ -9,9 +9,14 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveSettingsScope } from "./settingsScope";
-import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScopeNavigation";
+import {
+  retainSettingsScope,
+  settingsScopeKey,
+  validateSettingsRouteSearch,
+} from "./settingsScopeNavigation";
 
 import { validateScheduledTasksSearch } from "./scheduledTasksSettings.logic";
+import { validateToolsSearch } from "./toolsSettings.logic";
 
 const checkoutSearch = {
   project: "repository:t3code",
@@ -53,6 +58,11 @@ function createSettingsRouter(initialEntry = "/settings/general") {
     path: "scheduled-tasks",
     validateSearch: validateScheduledTasksSearch,
   });
+  const tools = createRoute({
+    getParentRoute: () => settings,
+    path: "tools",
+    validateSearch: validateToolsSearch,
+  });
   const legacyProject = createRoute({
     getParentRoute: () => root,
     path: "projects/$projectKey",
@@ -73,6 +83,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
         sourceControl,
         providers,
         scheduledTasks,
+        tools,
       ]),
       legacyProject,
     ]),
@@ -81,19 +92,6 @@ function createSettingsRouter(initialEntry = "/settings/general") {
 }
 
 describe("settings scope navigation", () => {
-  it("replaces the default scope with an explicit environment, then replaces it with a project", async () => {
-    const router = createSettingsRouter();
-    await router.load();
-    await router.navigate({
-      to: "/settings/general",
-      search: { machine: "remote-server" },
-      hash: "",
-    });
-    expect(router.state.location.search).toEqual({ machine: "remote-server" });
-    await router.navigate({ to: "/settings/projects", search: { project: "another-project" } });
-    expect(router.state.location.search).toEqual({ project: "another-project" });
-  });
-
   it("clears a checkout when selecting all environments and all projects", async () => {
     const router = createSettingsRouter();
     await router.navigate({ to: "/settings/general", search: checkoutSearch, hash: "old-setting" });
@@ -119,12 +117,7 @@ describe("settings scope navigation", () => {
     expect(router.state.location.search).toEqual(checkoutSearch);
   });
 
-  it.each([
-    "/settings/projects",
-    "/settings/integrations",
-    "/settings/source-control",
-    "/settings/scheduled-tasks",
-  ] as const)(
+  it.each(["/settings/projects", "/settings/scheduled-tasks"] as const)(
     "keeps %s when regrouping or selecting a target from the shared settings layout",
     async (to) => {
       const router = createSettingsRouter();
@@ -216,16 +209,6 @@ describe("settings scope navigation", () => {
     });
   });
 
-  it("respects explicit clearing keys instead of restoring the previous checkout", async () => {
-    const router = createSettingsRouter();
-    await router.navigate({ to: "/settings/general", search: checkoutSearch });
-    await router.navigate({
-      to: "/settings/projects",
-      search: { project: "different-project", machine: undefined },
-    });
-    expect(router.state.location.search).toEqual({ project: "different-project" });
-  });
-
   it("preserves escaped checkout identifiers across reload and browser history", async () => {
     const router = createSettingsRouter();
     await router.navigate({ to: "/settings/general", search: checkoutSearch });
@@ -286,11 +269,31 @@ describe("scheduled task scope navigation", () => {
     });
     expect(router.state.matches.at(-1)?.search).toEqual({});
   });
+});
 
-  it("keeps the project and checkout filters when entering scheduled tasks", async () => {
+describe("settings scope key", () => {
+  // The layout keys its page by this, so a change remounts the page and drops its state.
+  it("stays the same when a page opens or closes its own detail", async () => {
     const router = createSettingsRouter();
-    await router.navigate({ to: "/settings/projects", search: checkoutSearch });
-    await router.navigate({ to: "/settings/scheduled-tasks" });
-    expect(router.state.matches.at(-1)?.search).toEqual(checkoutSearch);
+    await router.navigate({ to: "/settings/tools", search: { project: "repository:t3code" } });
+    await router.navigate({
+      from: "/settings/tools",
+      to: "/settings/tools",
+      search: { skill: "teach" },
+    });
+    const settingsSearch = () =>
+      router.state.matches.find((match) => String(match.routeId) === "/settings")?.search ?? {};
+    expect(settingsSearch()).toMatchObject({ project: "repository:t3code", skill: "teach" });
+    const detailKey = settingsScopeKey(settingsSearch());
+
+    await router.navigate({ from: "/settings/tools", to: "/settings/tools", search: {} });
+    expect(router.state.location.search).toEqual({ project: "repository:t3code" });
+    expect(settingsScopeKey(settingsSearch())).toBe(detailKey);
+  });
+
+  it("changes with the scope", () => {
+    expect(settingsScopeKey({ project: "repository:t3code" })).not.toBe(
+      settingsScopeKey({ project: "repository:other" }),
+    );
   });
 });

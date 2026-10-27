@@ -6,7 +6,7 @@
  */
 import {
   type McpSecretInput,
-  McpServerConfig,
+  McpHubServerConfig,
   type McpServerEntry,
   McpServerError,
   McpServerId,
@@ -38,7 +38,7 @@ import * as ServerConfig from "../config.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 
 const StoredServers = Schema.fromJsonString(
-  Schema.Struct({ servers: Schema.Array(McpServerConfig) }),
+  Schema.Struct({ servers: Schema.Array(McpHubServerConfig) }),
 );
 const decodeStored = Schema.decodeUnknownEffect(StoredServers);
 const encodeStored = Schema.encodeEffect(StoredServers);
@@ -56,7 +56,7 @@ const oauthSessionSecretNames = (id: McpServerId) => [
   oauthRegistrationSecretName(id),
 ];
 
-const secretNames = (config: McpServerConfig): ReadonlyArray<string> => [
+const secretNames = (config: McpHubServerConfig): ReadonlyArray<string> => [
   ...(config.auth.type === "header" ? [headerSecretName(config.id)] : []),
   ...(config.auth.type === "oauth"
     ? [
@@ -70,7 +70,7 @@ const secretNames = (config: McpServerConfig): ReadonlyArray<string> => [
 ];
 
 /** Tokens from one server or client are useless, and possibly unsafe, for another. */
-const oauthIdentity = (config: McpServerConfig) =>
+const oauthIdentity = (config: McpHubServerConfig) =>
   config.auth.type === "oauth" && config.transport.type === "http"
     ? `${config.transport.url} ${config.auth.client?.clientId ?? ""}`
     : undefined;
@@ -85,7 +85,9 @@ export class McpServerRegistry extends Context.Service<
   McpServerRegistry,
   {
     readonly list: Effect.Effect<McpServerListResult, McpServerError>;
-    readonly get: (id: McpServerId) => Effect.Effect<McpServerConfig | undefined, McpServerError>;
+    readonly get: (
+      id: McpServerId,
+    ) => Effect.Effect<McpHubServerConfig | undefined, McpServerError>;
     /** `projectId` scopes secretRef consumption to the calling thread's project. */
     readonly upsert: (
       input: McpServerUpsertInput,
@@ -96,7 +98,7 @@ export class McpServerRegistry extends Context.Service<
       input: McpServerSetEnabledInput,
     ) => Effect.Effect<McpServerEntry, McpServerError>;
     readonly credentials: (
-      config: McpServerConfig,
+      config: McpHubServerConfig,
     ) => Effect.Effect<McpServerCredentials, McpServerError>;
     readonly reportStatus: (id: McpServerId, status: McpServerStatus) => Effect.Effect<void>;
     /** Drops the server's client and reported status after its stored sign-in changed. */
@@ -117,7 +119,7 @@ const make = Effect.gen(function* () {
   const filePath = path.join(path.dirname(settingsPath), "mcp-servers.json");
 
   const lock = yield* Semaphore.make(1);
-  const cache = yield* Ref.make<ReadonlyArray<McpServerConfig> | undefined>(undefined);
+  const cache = yield* Ref.make<ReadonlyArray<McpHubServerConfig> | undefined>(undefined);
   const statuses = yield* Ref.make<ReadonlyMap<McpServerId, McpServerStatus>>(new Map());
   const changed = yield* PubSub.unbounded<McpServerId>();
   // Subscribers re-read the whole list, so one pending signal covers any burst.
@@ -136,7 +138,7 @@ const make = Effect.gen(function* () {
     return servers;
   }).pipe(Effect.mapError((cause) => new McpServerError({ reason: "read_failed", cause })));
 
-  const save = (servers: ReadonlyArray<McpServerConfig>) =>
+  const save = (servers: ReadonlyArray<McpHubServerConfig>) =>
     encodeStored({ servers }).pipe(
       Effect.flatMap((contents) =>
         writeFileStringAtomically({ filePath, contents: `${contents}\n` }),
@@ -156,16 +158,15 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
-  const statusOf = (config: McpServerConfig) =>
-    Effect.gen(function* () {
-      if (!config.enabled) return { state: "disabled" } as const;
-      if (config.auth.type === "oauth" && !(yield* hasTokens(config.id))) {
-        return { state: "needs-sign-in" } as const;
-      }
-      return (yield* Ref.get(statuses)).get(config.id) ?? ({ state: "idle" } as const);
-    });
+  const statusOf = Effect.fn("McpServerRegistry.statusOf")(function* (config: McpHubServerConfig) {
+    if (!config.enabled) return { state: "disabled" } as const;
+    if (config.auth.type === "oauth" && !(yield* hasTokens(config.id))) {
+      return { state: "needs-sign-in" } as const;
+    }
+    return (yield* Ref.get(statuses)).get(config.id) ?? ({ state: "idle" } as const);
+  });
 
-  const toEntry = (config: McpServerConfig) =>
+  const toEntry = (config: McpHubServerConfig) =>
     statusOf(config).pipe(Effect.map((status): McpServerEntry => ({ ...config, status })));
 
   const markChanged = (id: McpServerId) =>
@@ -187,24 +188,26 @@ const make = Effect.gen(function* () {
     load.pipe(Effect.map((servers) => servers.find((server) => server.id === id)));
 
   /** Resolves one secret input to a new value, or undefined to keep the stored one. */
-  const resolveSecret = (input: McpSecretInput, projectId: ProjectId | undefined) =>
-    Effect.gen(function* () {
-      if (input.secretRef !== undefined) {
-        if (projectId === undefined) {
-          return yield* new McpServerError({ reason: "secret_ref_unscoped" });
-        }
-        // Required per call rather than at construction: SecretRequests sits above
-        // the provider sessions that read this registry, so a construction-time
-        // dependency would be circular.
-        const secretRequests = yield* SecretRequests.SecretRequests;
-        return yield* secretRequests
-          .consume({ ref: input.secretRef, projectId })
-          .pipe(
-            Effect.mapError((cause) => new McpServerError({ reason: "secret_ref_failed", cause })),
-          );
+  const resolveSecret = Effect.fn("McpServerRegistry.resolveSecret")(function* (
+    input: McpSecretInput,
+    projectId: ProjectId | undefined,
+  ) {
+    if (input.secretRef !== undefined) {
+      if (projectId === undefined) {
+        return yield* new McpServerError({ reason: "secret_ref_unscoped" });
       }
-      return input.secret;
-    });
+      // Required per call rather than at construction: SecretRequests sits above
+      // the provider sessions that read this registry, so a construction-time
+      // dependency would be circular.
+      const secretRequests = yield* SecretRequests.SecretRequests;
+      return yield* secretRequests
+        .consume({ ref: input.secretRef, projectId })
+        .pipe(
+          Effect.mapError((cause) => new McpServerError({ reason: "secret_ref_failed", cause })),
+        );
+    }
+    return input.secret;
+  });
 
   const upsert: McpServerRegistry["Service"]["upsert"] = (input, options) =>
     lock
@@ -270,7 +273,7 @@ const make = Effect.gen(function* () {
           }
 
           const now = DateTime.formatIso(yield* DateTime.now);
-          const config: McpServerConfig = {
+          const config: McpHubServerConfig = {
             id,
             name: input.name,
             enabled: input.enabled ?? true,
@@ -350,7 +353,7 @@ const make = Effect.gen(function* () {
           const servers = yield* load;
           const existing = servers.find((server) => server.id === input.id);
           if (existing === undefined) return yield* new McpServerError({ reason: "not_found" });
-          const config: McpServerConfig = {
+          const config: McpHubServerConfig = {
             ...existing,
             enabled: input.enabled,
             updatedAt: DateTime.formatIso(yield* DateTime.now),
@@ -373,20 +376,21 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const credentials: McpServerRegistry["Service"]["credentials"] = (config) =>
-    Effect.gen(function* () {
-      const headers: Record<string, string> = {};
-      const env: Record<string, string> = {};
-      if (config.auth.type === "header") {
-        headers[config.auth.header] = yield* readSecret(headerSecretName(config.id));
+  const credentials: McpServerRegistry["Service"]["credentials"] = Effect.fn(
+    "McpServerRegistry.credentials",
+  )(function* (config) {
+    const headers: Record<string, string> = {};
+    const env: Record<string, string> = {};
+    if (config.auth.type === "header") {
+      headers[config.auth.header] = yield* readSecret(headerSecretName(config.id));
+    }
+    if (config.transport.type === "stdio") {
+      for (const key of config.transport.secretEnv) {
+        env[key] = yield* readSecret(envSecretName(config.id, key));
       }
-      if (config.transport.type === "stdio") {
-        for (const key of config.transport.secretEnv) {
-          env[key] = yield* readSecret(envSecretName(config.id, key));
-        }
-      }
-      return { headers, env };
-    });
+    }
+    return { headers, env };
+  });
 
   // Status reports do not go through `changes`: that stream drops clients, and
   // every connect reports a status.

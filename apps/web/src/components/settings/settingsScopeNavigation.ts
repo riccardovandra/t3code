@@ -25,3 +25,12 @@ export const retainSettingsScope: SearchMiddleware<SettingsScopeSearch> = ({ sea
   );
   return { ...previousScope, ...result };
 };
+
+/**
+ * Identifies the scope a settings page shows. The layout remounts a page when
+ * this changes, so it ignores a page's own params (an open skill or task),
+ * which the parent route's search also carries.
+ */
+export function settingsScopeKey(search: SettingsScopeSearch): string {
+  return JSON.stringify(validateSettingsScopeSearch({ ...search }));
+}

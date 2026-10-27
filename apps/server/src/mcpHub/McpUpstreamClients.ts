@@ -4,7 +4,11 @@
  * reconnects, and closes after sitting idle, which also stops a stdio server's
  * process. Upstream credentials are attached here and never leave the server.
  */
-import { type McpServerConfig, type McpServerId, type McpServerStatus } from "@t3tools/contracts";
+import {
+  type McpHubServerConfig,
+  type McpServerId,
+  type McpServerStatus,
+} from "@t3tools/contracts";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
@@ -94,7 +98,7 @@ interface Entry {
  * UnauthorizedError or an OAuth error from the token endpoint.
  */
 const authFailure = (
-  config: McpServerConfig,
+  config: McpHubServerConfig,
   cause: unknown,
 ): UpstreamFailureReason | undefined => {
   if (cause instanceof StreamableHTTPError && (cause.code === 401 || cause.code === 403)) {
@@ -110,7 +114,7 @@ const authFailure = (
   return undefined;
 };
 
-const connectFailure = (config: McpServerConfig, cause: unknown): UpstreamFailureReason =>
+const connectFailure = (config: McpHubServerConfig, cause: unknown): UpstreamFailureReason =>
   authFailure(config, cause) ?? "unavailable";
 
 const statusFor = (reason: UpstreamFailureReason): McpServerStatus =>
@@ -127,88 +131,85 @@ const make = Effect.gen(function* () {
   const closeClient = (client: Client) =>
     Effect.promise(() => client.close().catch(() => undefined));
 
-  const drop = (id: McpServerId, entry: Entry) =>
-    Effect.gen(function* () {
-      if (entries.get(id) !== entry) return;
-      entries.delete(id);
-      if (entry.connected !== undefined) yield* closeClient(entry.connected);
-    });
+  const drop = Effect.fn("McpUpstreamClients.drop")(function* (id: McpServerId, entry: Entry) {
+    if (entries.get(id) !== entry) return;
+    entries.delete(id);
+    if (entry.connected !== undefined) yield* closeClient(entry.connected);
+  });
 
-  const connect = (config: McpServerConfig) =>
-    Effect.gen(function* () {
-      const fail = (reason: UpstreamFailureReason, cause?: unknown) =>
-        new McpUpstreamError({
-          serverId: config.id,
-          reason,
-          ...(cause === undefined ? {} : { cause }),
-        });
-      const credentials = yield* registry
-        .credentials(config)
-        .pipe(Effect.mapError((cause) => fail("unavailable", cause)));
-      const authProvider = yield* oauth.forwardingProvider(config);
-      if (config.auth.type === "oauth" && authProvider === undefined) {
-        return yield* fail("needs_sign_in");
-      }
-      const transport =
-        config.transport.type === "http"
-          ? new StreamableHTTPClientTransport(new URL(config.transport.url), {
-              requestInit: { headers: credentials.headers },
-              ...(authProvider === undefined ? {} : { authProvider }),
-            })
-          : new StdioClientTransport({
-              command: config.transport.command,
-              args: [...config.transport.args],
-              // Only the SDK's safe defaults, so the server's own secrets stay out of the child.
-              env: { ...getDefaultEnvironment(), ...config.transport.env, ...credentials.env },
-              stderr: "ignore",
-            });
-      const client = new Client({ name: "t3-code", version: packageJson.version });
-      yield* Effect.tryPromise({
-        // The SDK's transport classes predate exactOptionalPropertyTypes.
-        try: () => client.connect(cast<typeof transport, Transport>(transport)),
-        catch: (cause) => fail(connectFailure(config, cause), cause),
-      }).pipe(Effect.tapError(() => closeClient(client)));
-      return client;
-    });
+  const connect = Effect.fn("McpUpstreamClients.connect")(function* (config: McpHubServerConfig) {
+    const fail = (reason: UpstreamFailureReason, cause?: unknown) =>
+      new McpUpstreamError({
+        serverId: config.id,
+        reason,
+        ...(cause === undefined ? {} : { cause }),
+      });
+    const credentials = yield* registry
+      .credentials(config)
+      .pipe(Effect.mapError((cause) => fail("unavailable", cause)));
+    const authProvider = yield* oauth.forwardingProvider(config);
+    if (config.auth.type === "oauth" && authProvider === undefined) {
+      return yield* fail("needs_sign_in");
+    }
+    const transport =
+      config.transport.type === "http"
+        ? new StreamableHTTPClientTransport(new URL(config.transport.url), {
+            requestInit: { headers: credentials.headers },
+            ...(authProvider === undefined ? {} : { authProvider }),
+          })
+        : new StdioClientTransport({
+            command: config.transport.command,
+            args: [...config.transport.args],
+            // Only the SDK's safe defaults, so the server's own secrets stay out of the child.
+            env: { ...getDefaultEnvironment(), ...config.transport.env, ...credentials.env },
+            stderr: "ignore",
+          });
+    const client = new Client({ name: "t3-code", version: packageJson.version });
+    yield* Effect.tryPromise({
+      // The SDK's transport classes predate exactOptionalPropertyTypes.
+      try: () => client.connect(cast<typeof transport, Transport>(transport)),
+      catch: (cause) => fail(connectFailure(config, cause), cause),
+    }).pipe(Effect.tapError(() => closeClient(client)));
+    return client;
+  });
 
-  const acquire = (config: McpServerConfig) =>
-    Effect.gen(function* () {
-      const existing = entries.get(config.id);
-      if (existing !== undefined) return existing;
-      const entry: Entry = {
-        client: yield* Deferred.make<Client, McpUpstreamError>(),
-        connected: undefined,
-        lastUsedAt: yield* Clock.currentTimeMillis,
-        active: 0,
-      };
-      entries.set(config.id, entry);
-      // Connecting runs in the service's scope so a caller that gives up does
-      // not leave the callers waiting with it on a connection nobody finishes.
-      yield* connect(config).pipe(
-        Effect.tap((client) => {
-          // Dropped while connecting, such as by a config change.
-          if (entries.get(config.id) !== entry) return closeClient(client);
-          entry.connected = client;
-          // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the SDK client only exposes this callback.
-          client.onclose = () => {
-            if (entries.get(config.id) === entry) entries.delete(config.id);
-          };
-          return registry.reportStatus(config.id, { state: "connected" });
-        }),
-        Effect.tapError((error) =>
-          Effect.sync(() => entries.delete(config.id)).pipe(
-            Effect.andThen(registry.reportStatus(config.id, statusFor(error.reason))),
-          ),
+  const acquire = Effect.fn("McpUpstreamClients.acquire")(function* (config: McpHubServerConfig) {
+    const existing = entries.get(config.id);
+    if (existing !== undefined) return existing;
+    const entry: Entry = {
+      client: yield* Deferred.make<Client, McpUpstreamError>(),
+      connected: undefined,
+      lastUsedAt: yield* Clock.currentTimeMillis,
+      active: 0,
+    };
+    entries.set(config.id, entry);
+    // Connecting runs in the service's scope so a caller that gives up does
+    // not leave the callers waiting with it on a connection nobody finishes.
+    yield* connect(config).pipe(
+      Effect.tap((client) => {
+        // Dropped while connecting, such as by a config change.
+        if (entries.get(config.id) !== entry) return closeClient(client);
+        entry.connected = client;
+        // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the SDK client only exposes this callback.
+        client.onclose = () => {
+          if (entries.get(config.id) === entry) entries.delete(config.id);
+        };
+        return registry.reportStatus(config.id, { state: "connected" });
+      }),
+      Effect.tapError((error) =>
+        Effect.sync(() => entries.delete(config.id)).pipe(
+          Effect.andThen(registry.reportStatus(config.id, statusFor(error.reason))),
         ),
-        Effect.exit,
-        Effect.flatMap((exit) => Deferred.done(entry.client, exit)),
-        Effect.forkIn(scope),
-      );
-      return entry;
-    });
+      ),
+      Effect.exit,
+      Effect.flatMap((exit) => Deferred.done(entry.client, exit)),
+      Effect.forkIn(scope),
+    );
+    return entry;
+  });
 
-  const open: McpUpstreamClients["Service"]["open"] = (id) =>
-    Effect.gen(function* () {
+  const open: McpUpstreamClients["Service"]["open"] = Effect.fn("McpUpstreamClients.open")(
+    function* (id) {
       const fail = (reason: UpstreamFailureReason, cause?: unknown) =>
         new McpUpstreamError({ serverId: id, reason, ...(cause === undefined ? {} : { cause }) });
       const config = yield* registry
@@ -265,7 +266,8 @@ const make = Effect.gen(function* () {
         instructions: client.getInstructions(),
         request,
       };
-    }).pipe(Effect.withSpan("McpUpstreamClients.open"));
+    },
+  );
 
   const reapIdle = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;

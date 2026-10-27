@@ -22,6 +22,7 @@ export type T3McpToolSummaryAction =
   | "thread-wait"
   | "thread-interrupt"
   | "workflow-stop"
+  | "background-wait"
   | "thread-configuration"
   | "thread-configure"
   | "thread-fork"
@@ -51,6 +52,12 @@ export type T3McpToolSummaryAction =
   | "project-clone"
   | "environment-read"
   | "environment-update"
+  | "tools-read"
+  | "tools-update"
+  | "skills-install"
+  | "skills-remove"
+  | "skills-trash-list"
+  | "skills-restore"
   | "attachment-prepare"
   | "attachment-discard"
   | "attachment-send"
@@ -110,12 +117,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "pull-request",
   ),
   unwatch_pull_request: tool(
-    ["Stop watching", "Stopping watching", "Stopped watching", "a pull request"],
+    ["Stop watching", "Unwatching", "Stopped watching", "a pull request"],
     "unwatch-pr",
     "pull-request",
   ),
   write_pull_request_guides: tool(
-    ["Write", "Writing", "Started", "review guides"],
+    ["Write", "Writing", "Started writing", "review guides"],
     "write-pr-guides",
     "pull-request",
   ),
@@ -131,7 +138,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   delegate_task: tool(["Delegate", "Delegating", "Delegated", "a child task"], "delegate"),
   task_status: tool(["Get", "Getting", "Got", "delegated task status"], "task-status"),
   task_cancel: tool(
-    ["Cancel", "Canceling", "Requested cancellation of", "delegated task"],
+    ["Cancel", "Canceling", "Requested cancellation of", "a delegated task"],
     "task-cancel",
   ),
   schedule_task: tool(
@@ -157,6 +164,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_workflow_stop: tool(
     ["Stop", "Stopping", "Requested a stop for", "a workflow"],
     "workflow-stop",
+  ),
+  t3_background_wait: tool(
+    ["Update", "Updating", "Updated", "background waits"],
+    "background-wait",
   ),
   t3_thread_interrupt: tool(
     ["Interrupt", "Interrupting", "Requested an interrupt of", "a T3 thread"],
@@ -189,6 +200,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "browser",
     "Snapshot the preview page",
   ),
+  preview_act: tool(["Use", "Using", "Used", "the preview browser"], "browser", "browser"),
   preview_click: tool(
     ["Click", "Clicking", "Clicked", "in the preview browser"],
     "browser",
@@ -271,6 +283,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Run", "Running", "Requested a run of", "a scheduled task"],
     "schedule-run",
   ),
+  t3_queue: tool(["Manage", "Managing", "Managed", "queued messages"], "queue-edit"),
+  t3_pending_request: tool(
+    ["Handle", "Handling", "Handled", "pending questions"],
+    "question-respond",
+  ),
   t3_queue_list: tool(["List", "Listing", "Listed", "queued messages"], "queue-list"),
   t3_queue_read: tool(["Read", "Reading", "Read", "a queued message"], "queue-read"),
   t3_queue_edit: tool(["Edit", "Editing", "Edited", "a queued message"], "queue-edit"),
@@ -296,7 +313,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Read", "Reading", "Read", "thread configuration"],
     "thread-configuration",
   ),
-  t3_thread_configure: tool(["Set", "Setting", "Set", "thread model"], "thread-configure"),
+  t3_thread_configure: tool(["Use", "Using", "Used", "thread model settings"], "thread-configure"),
+  t3_thread_transfer: tool(["Use", "Using", "Used", "thread transfers"], "thread-fork"),
   t3_thread_fork: tool(["Fork", "Forking", "Requested a fork of", "this thread"], "thread-fork"),
   t3_thread_merge_back: tool(
     ["Merge", "Merging", "Requested a merge of", "thread context"],
@@ -317,6 +335,15 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",
   ),
+  t3_tools_read: tool(["Read", "Reading", "Read", "skills and MCP servers"], "tools-read"),
+  t3_tools_update: tool(
+    ["Update", "Updating", "Updated", "skills and MCP servers"],
+    "tools-update",
+  ),
+  t3_skills_install: tool(["Install", "Installing", "Installed", "skills"], "skills-install"),
+  t3_skills_remove: tool(["Remove", "Removing", "Removed", "a skill"], "skills-remove"),
+  t3_skills_trash_list: tool(["List", "Listing", "Listed", "the skill trash"], "skills-trash-list"),
+  t3_skills_restore: tool(["Restore", "Restoring", "Restored", "a skill"], "skills-restore"),
   t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
   t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),
@@ -337,9 +364,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
   docs_list: tool(["List", "Listing", "Listed", "docs"], "docs"),
   docs_read: tool(["Read", "Reading", "Read", "a doc"], "docs"),
+  // Retired tool, kept so earlier threads still label its calls.
   docs_create: tool(["Create", "Creating", "Created", "a doc"], "docs"),
   docs_open: tool(["Open", "Opening", "Opened", "a doc"], "docs"),
   docs_list_comments: tool(["Read", "Reading", "Read", "doc comments"], "docs-comments"),
+  docs_cloud_project: tool(["Find", "Finding", "Found", "the Docs Cloud project"], "docs"),
+  docs_cloud_import: tool(["Import", "Importing", "Imported", "docs into Docs Cloud"], "docs"),
   docs_comment_create: tool(
     ["Comment on", "Commenting on", "Commented on", "a doc"],
     "docs-comments",
@@ -355,6 +385,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   aipm_idea_list: tool(["List", "Listing", "Listed", "AI PM ideas"], "ai-pm-ideas"),
   aipm_idea_save: tool(["Park", "Parking", "Parked", "an idea"], "ai-pm-ideas"),
   aipm_idea_set_status: tool(["Update", "Updating", "Updated", "an idea's status"], "ai-pm-ideas"),
+  t3_skill_sources_list: tool(["List", "Listing", "Listed", "skill sources"], "tools-read"),
+  t3_skill_library_list: tool(["List", "Listing", "Listed", "the skill library"], "tools-read"),
   mcp_servers_list: tool(["List", "Listing", "Listed", "MCP servers"], "mcp-servers"),
   mcp_server_upsert: tool(["Save", "Saving", "Saved", "an MCP server"], "mcp-servers"),
   mcp_server_remove: tool(["Remove", "Removing", "Removed", "an MCP server"], "mcp-servers"),
@@ -375,13 +407,7 @@ function normalizeT3McpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
-/**
- * ACP agents disagree on how the injected T3 server prefixes its tools:
- * `mcp__t3-code__x` (Claude/Cursor), `t3-code.x` (Codex), plus single
- * underscore, colon, slash, dash, and space separators seen from registry
- * agents. The prefix match is deliberately loose because the display-name
- * inventory is the real gate; unknown tools stay on the generic renderer.
- */
+// ACP tool prefixes vary; match loosely but require a known display-name entry.
 function resolveT3McpToolName(value: string): string | null {
   const label = normalizeT3McpToolLabel(value);
   const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
@@ -404,9 +430,7 @@ function resolveT3McpToolName(value: string): string | null {
   const prefixed = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(T3_MCP_TOOLS, candidate)) return candidate;
-  // OpenCode 2 registers one server per thread, `t3-code-<thread>`, and joins
-  // it to the tool with `_`. Thread ids can hold `_` too, so take the longest
-  // known tool name that ends the label.
+  // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.
   if (!/^t3-code-/i.test(label)) return null;
   let longest: string | null = null;
   for (const tool of Object.keys(T3_MCP_TOOLS)) {
@@ -420,22 +444,61 @@ export function resolveT3McpToolId(toolName: string | null | undefined): string 
   return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? name : null;
 }
 
+type SummaryInput = Readonly<Record<string, unknown>>;
+
+const asSummaryInput = (input: unknown): SummaryInput | undefined =>
+  typeof input === "object" && input !== null ? (input as SummaryInput) : undefined;
+
+/** Action tools present each call as the single-purpose tool its action replaced. */
+const ACTION_TOOLS: Readonly<Record<string, (action: string) => string | undefined>> = {
+  preview_act: (action) => `preview_${action}`,
+  t3_queue: (action) => `t3_queue_${action}`,
+  t3_pending_request: (action) => `t3_pending_request_${action}`,
+  t3_thread_transfer: (action) =>
+    ({ fork: "t3_thread_fork", merge_back: "t3_thread_merge_back", status: "t3_thread_transfers" })[
+      action
+    ],
+};
+
+/** Pass the call's input so an action tool resolves to the labels and summary of its action. */
 export function resolveT3McpToolDefinition(
   toolName: string | null | undefined,
+  input?: unknown,
 ): T3McpToolDefinition | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
-  return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? T3_MCP_TOOLS[name]! : null;
+  if (name === null || !Object.hasOwn(T3_MCP_TOOLS, name)) return null;
+  const action = asSummaryInput(input)?.action;
+  const actionTool = typeof action === "string" ? ACTION_TOOLS[name]?.(action) : undefined;
+  return actionTool !== undefined && Object.hasOwn(T3_MCP_TOOLS, actionTool)
+    ? T3_MCP_TOOLS[actionTool]!
+    : T3_MCP_TOOLS[name]!;
+}
+
+/** Tools whose summary depends on which fields a call sets. */
+const ACTION_SUMMARIES: Readonly<
+  Record<string, (input: SummaryInput) => T3McpToolSummaryAction | undefined>
+> = {
+  t3_thread_configure: ({ modelSelection }) =>
+    modelSelection === undefined ? "thread-configuration" : "thread-configure",
+  schedule_task: ({ scheduledTaskId }) =>
+    scheduledTaskId === undefined ? "schedule-create" : "schedule-update",
+};
+
+export function resolveT3McpSummaryAction(
+  toolName: string | null | undefined,
+  input: unknown,
+): T3McpToolSummaryAction | null {
+  const definition = resolveT3McpToolDefinition(toolName, input);
+  if (definition === null) return null;
+  const summarize = ACTION_SUMMARIES[resolveT3McpToolName(toolName!) ?? ""];
+  const fields = asSummaryInput(input);
+  return (fields && summarize?.(fields)) ?? definition.summaryAction;
 }
 
 export function resolveT3McpToolPresentation(
   toolName: string | null | undefined,
+  input?: unknown,
 ): T3McpToolPresentation | null {
-  const definition = resolveT3McpToolDefinition(toolName);
+  const definition = resolveT3McpToolDefinition(toolName, input);
   return definition === null ? null : { displayName: definition.displayName, logo: "t3-code" };
-}
-
-export function resolveT3McpToolSummaryAction(
-  toolName: string | null | undefined,
-): T3McpToolSummaryAction | null {
-  return resolveT3McpToolDefinition(toolName)?.summaryAction ?? null;
 }

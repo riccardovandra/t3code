@@ -1,4 +1,5 @@
 import ChatMarkdown from "./ChatMarkdown";
+import { isSvgAttachment } from "@t3tools/shared/image";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
 import type { PreviewAnnotationPayload, ThreadContextRecord } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
@@ -25,6 +26,7 @@ import {
   previewAnnotationContextLabel,
   reviewCommentContextId,
   reviewCommentContextLabel,
+  reviewCommentKindLabel,
   terminalContextReference,
   uploadedAttachmentContextRecord,
 } from "~/lib/composerContextRecords";
@@ -222,6 +224,15 @@ function FileContextChip(props: {
   return (
     <FileChip
       name={props.record.name}
+      svgPreview={
+        isSvgAttachment(props.record)
+          ? {
+              file: props.record.file,
+              environmentId: props.record.uploadEnvironmentId,
+              attachmentId: props.record.uploadedAttachmentId,
+            }
+          : undefined
+      }
       size={size}
       isVideo={isVideo}
       theme={resolvedTheme}
@@ -287,7 +298,10 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
-          <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
+          <ReadOnlySourcePreview
+            name={comment.docsCloud ? "quote.txt" : "review.diff"}
+            text={comment.diff}
+          />
         </div>
       ) : null}
     </div>
@@ -320,6 +334,16 @@ function ComposerPreviewAnnotationDetails({
         {summary}
       </div>
     </div>
+  );
+}
+
+function ComposerThreadContextChip(props: { record: ThreadContextRecord }) {
+  const { environmentId } = use(ComposerContextActionsContext);
+  return (
+    <ThreadContextChip
+      record={props.record}
+      unreadable={environmentId !== null && props.record.environmentId !== environmentId}
+    />
   );
 }
 
@@ -397,7 +421,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
           <ContextChip
             icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
             label={reviewCommentContextLabel(entry.record)}
-            kindLabel={isPullRequest ? pullRequestContextKindLabel(entry.record) : "Review comment"}
+            kindLabel={reviewCommentKindLabel(entry.record)}
             details={<ComposerReviewCommentDetails comment={entry.record} />}
             detailsMode={definition.capabilities.details}
             kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}
@@ -432,7 +456,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
       canRender: (entry) => entry.kind === "thread",
       render: (entry, context) =>
         entry.kind === "thread" ? (
-          <ThreadContextChip record={entry.record} />
+          <ComposerThreadContextChip record={entry.record} />
         ) : (
           <UnresolvedContextChip label={context.label} />
         ),

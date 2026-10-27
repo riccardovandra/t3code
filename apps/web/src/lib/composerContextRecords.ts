@@ -1,4 +1,8 @@
 import {
+  capitalizeTerm,
+  sourceControlClients,
+} from "@t3tools/client-runtime/source-control-clients";
+import {
   COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS,
   COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS,
 } from "@t3tools/contracts";
@@ -43,11 +47,7 @@ import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 const PREVIEW_LABEL_MAX_CHARS = 48;
 
-/**
- * A review selection can be arbitrarily large, but the wire schema bounds `text` and `diff`.
- * Clamp at the same boundary so an oversized selection still sends, marked where it was cut,
- * rather than failing to encode at send time.
- */
+// Truncate selections to wire bounds before persistence to avoid send-time encoding failures.
 const TRUNCATION_MARKER = "\n… truncated …";
 
 function clampContextText(value: string, max: number): string {
@@ -61,7 +61,19 @@ function basename(filePath: string): string {
   return filePath.split(/[\\/]/).at(-1) ?? filePath;
 }
 
+const DOC_QUOTE_LABEL_MAX_CHARS = 40;
+
 export function reviewCommentContextLabel(comment: ReviewCommentPresentation): string {
+  if (comment.docsCloud !== undefined) {
+    const title = comment.docsCloud.docTitle.trim() || "Untitled";
+    const quote = comment.diff.trim().replace(/\s+/g, " ");
+    if (!quote) return title;
+    const clipped =
+      quote.length > DOC_QUOTE_LABEL_MAX_CHARS
+        ? `${quote.slice(0, DOC_QUOTE_LABEL_MAX_CHARS - 1).trimEnd()}…`
+        : quote;
+    return `${title} · “${clipped}”`;
+  }
   const pullRequestNumber = pullRequestContextNumber(comment);
   if (isPullRequestSummaryContext(comment) && pullRequestNumber !== null) {
     return `#${pullRequestNumber}`;
@@ -98,10 +110,19 @@ export function pullRequestContextDisplayState(
   return pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state;
 }
 
+/** What the chip calls a review comment: its pull request state, a doc comment, or neither. */
+export function reviewCommentKindLabel(comment: ReviewCommentPresentation): string {
+  if (isPullRequestSummaryContext(comment)) return pullRequestContextKindLabel(comment);
+  return comment.docsCloud !== undefined ? "Doc comment" : "Review comment";
+}
+
 export function pullRequestContextKindLabel(comment: ReviewCommentPresentation): string {
+  const url = comment.pullRequest?.url;
+  const host = url === undefined ? null : sourceControlClients.findByChangeRequestUrl(url);
+  const term = (host ?? sourceControlClients.get(undefined)).changeRequest.singular;
   const state = pullRequestContextDisplayState(comment);
-  if (state === null) return "Pull request";
-  return `${state[0]!.toUpperCase()}${state.slice(1)} pull request`;
+  if (state === null) return capitalizeTerm(term);
+  return `${capitalizeTerm(state)} ${term}`;
 }
 
 export function previewAnnotationContextLabel(annotation: PreviewAnnotationPayload): string {
@@ -203,6 +224,7 @@ export function reviewCommentContextRecord(
     diff: clampContextText(comment.diff, COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS),
     ...(comment.fenceLanguage !== undefined ? { fenceLanguage: comment.fenceLanguage } : {}),
     ...(comment.pullRequest !== undefined ? { pullRequest: comment.pullRequest } : {}),
+    ...(comment.docsCloud !== undefined ? { docsCloud: comment.docsCloud } : {}),
   };
 }
 
@@ -276,7 +298,7 @@ export interface BoundComposerAttachment {
   attachmentId: string;
 }
 
-/** Clipboard payloads may only point at attachments that already exist on the server. */
+/** Returns null until the attachment has a server id. */
 export function uploadedAttachmentContextRecord(
   attachment: ComposerImageAttachment | ComposerFileAttachment,
   upload: AttachmentUploadState | undefined,
@@ -423,6 +445,7 @@ export function reviewCommentFromRecord(record: ReviewCommentContextRecord): Rev
     diff: record.diff,
     ...(record.fenceLanguage !== undefined ? { fenceLanguage: record.fenceLanguage } : {}),
     ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+    ...(record.docsCloud !== undefined ? { docsCloud: record.docsCloud } : {}),
   };
 }
 
@@ -472,11 +495,7 @@ export function previewAnnotationFromRecord(
   };
 }
 
-/**
- * Whether two records carry the same payload, ignoring the label (display text, never
- * identity). Context ids are a folded form of producer ids, so a collision alone does not mean
- * the records are the same excerpt; the paste path compares payloads before de-duplicating.
- */
+/** Labels are display-only; folded ids can collide, so paste deduplication compares payloads. */
 export function isSameComposerContextPayload(
   left: ComposerContextRecord,
   right: ComposerContextRecord,

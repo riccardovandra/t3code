@@ -250,15 +250,15 @@ layer("DocCommentDelivery", (it) => {
     Effect.gen(function* () {
       reset();
       const delivery = yield* DocCommentDelivery.DocCommentDelivery;
-      const results = yield* Effect.all(
-        [1, 2, 3].map((index) =>
+      const results = yield* Effect.forEach(
+        [1, 2, 3],
+        (index) =>
           delivery.create({
             ...anchor,
             docPath: "plans/race.md",
             body: `Fix ${index}`,
             sendFromThreadId: conversation,
           }),
-        ),
         { concurrency: "unbounded" },
       );
       assert.strictEqual(creates.length, 1);
@@ -302,10 +302,10 @@ layer("DocCommentDelivery", (it) => {
       const docs = yield* DocCommentsService.DocCommentsService;
       const docPath = "specs/foreign.md";
 
-      const errors = yield* Effect.all(
-        [foreignThread, ThreadId.make("thread-missing")].map((sendFromThreadId) =>
+      const errors = yield* Effect.forEach(
+        [foreignThread, ThreadId.make("thread-missing")],
+        (sendFromThreadId) =>
           delivery.create({ ...anchor, docPath, body: "Fix", sendFromThreadId }).pipe(Effect.flip),
-        ),
       );
       assert.deepStrictEqual(
         errors.map((error) => error.reason),

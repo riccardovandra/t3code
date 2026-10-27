@@ -63,7 +63,7 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
     case "docs":
       return (
         surface.id === "docs" &&
-        (surface.docPath === undefined || typeof surface.docPath === "string")
+        (surface.cloudPath === undefined || typeof surface.cloudPath === "string")
       );
     case "ai-pm":
       return (

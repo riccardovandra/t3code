@@ -135,6 +135,11 @@ export function createProjectEnvironmentAtoms<R, E>(
           (result, isCurrent) => fileMetadata.rememberEntries(input.cwd, result.entries, isCurrent),
         ),
     }),
+    listIgnoredFiles: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:list-ignored-files",
+      tag: WS_METHODS.projectsListIgnoredFiles,
+      staleTimeMs: 15_000,
+    }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,
@@ -143,7 +148,10 @@ export function createProjectEnvironmentAtoms<R, E>(
       execute: (input) =>
         fileMetadata.seedAfterRead(
           request(WS_METHODS.projectsReadFile, input),
-          (result, isCurrent) => fileMetadata.rememberFile(input.cwd, result, isCurrent),
+          (result, isCurrent) =>
+            result.exists === false
+              ? Effect.void
+              : fileMetadata.rememberFile(input.cwd, result, isCurrent),
         ),
     }),
     optimisticFile: (target: OptimisticProjectFileTarget) =>
@@ -220,6 +228,30 @@ export function createProjectEnvironmentAtoms<R, E>(
           for (const path of writtenFilePaths(input, result))
             fileMetadata.refreshPath(environmentId, path, registry);
         }),
+    }),
+    setEnvVariables: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:set-env-variables",
+      tag: WS_METHODS.projectsSetEnvVariables,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
+      execute: (input) =>
+        requestGuarded(WS_METHODS.projectsSetEnvVariables, input).pipe(
+          Effect.tap((result) =>
+            fileMetadata.invalidate(resolveWorkspaceFilePath(result.relativePath, input.cwd)),
+          ),
+        ),
+      onSuccess: ({ environmentId, input }, registry, result) =>
+        Effect.sync(() =>
+          fileMetadata.refreshPath(
+            environmentId,
+            resolveWorkspaceFilePath(result.relativePath, input.cwd),
+            registry,
+          ),
+        ),
     }),
   };
 }

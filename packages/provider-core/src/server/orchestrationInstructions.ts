@@ -1,71 +1,71 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
-/**
- * Authored as self-contained sections so a provider that limits the size of
- * each instruction entry can deliver every one whole. Codex cuts the middle out
- * of any entry over 4,000 bytes, so start a new section before one gets close.
- */
-export const T3_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
+/** The MCP hub entry name that connects an environment to Docs Cloud. */
+export const DOCS_CLOUD_MCP_SERVER_NAME = "docs-cloud";
+
+/** Whether a session's configured MCP servers include Docs Cloud. */
+export const hasDocsCloud = (servers: ReadonlyArray<{ readonly name: string }>): boolean =>
+  servers.some((server) => server.name === DOCS_CLOUD_MCP_SERVER_NAME);
+
+// Adapters pick the Docs section from the session's own hub servers: a read-only session gets
+// none even where the environment connects Docs Cloud. Project-file `docs_*` tools are in every
+// session, so both sections describe them the same way.
+const PROJECT_FILES_PARAGRAPH = `Markdown files under the project's \`docs/\` folder are project files: the user also sees them in the Docs panel, inside Docs Cloud, and comments on them there. \`docs_list\` lists them with their open comment counts, \`docs_read\` returns one with its open comments, \`docs_list_comments\` lists comments across files, and \`docs_open\` shows a file in the Docs panel. Change a file with your file tools. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread with \`docs_comment_resolve\` only when asked or when you started it. \`docs_comment_create\` leaves a comment anchored to a short quote of the file's visible text, without markdown syntax.`;
+
+const NO_CLOUD_DOCS_SECTION = `### Docs
+
+Docs Cloud's tools are not available in this session. When the user asks for a document, plan, spec, report, or notes to keep, write it as a markdown file under \`docs/\` with your file tools, then show it with \`docs_open\`; if this session cannot write files, put it in your reply instead. The user reads these files in the Docs panel when Docs Cloud is connected in Settings → MCP servers.
+
+${PROJECT_FILES_PARAGRAPH}`;
+
+const CLOUD_DOCS_SECTION = `### Docs
+
+Docs live in Docs Cloud, which the user reads, edits, and comments on in T3 Code's Docs panel. Use the \`docs-cloud\` MCP server's tools (such as \`create_doc\`, \`create_tab\`, \`edit_tab\`, \`write_tab\`, often prefixed \`mcp__docs-cloud__\` or \`docs-cloud.\`). When the user asks for a document, plan, spec, report, or notes to keep, write it there instead of pasting it into chat or writing a markdown file, unless the user asks for a file in the repo. Call \`docs_cloud_project\` (t3-code) for this T3 Code project's Docs Cloud project, which creates it on first use and is keyed by the git repository so every checkout shares it, and pass its \`key\` as \`projectKey\` to \`create_doc\`. \`move_doc\` moves a doc to another project or to none. Create the doc with its skeleton first (headings with one-line placeholders) so it opens beside the chat, then fill in each section with \`edit_tab\` or \`write_tab\`. Add a tab with \`create_tab\` for each large part. Share each doc's returned \`url\` once.
+
+${PROJECT_FILES_PARAGRAPH} To turn project files into Docs Cloud docs when asked, use \`docs_cloud_import\`; it copies each file with its open comments, leaves the file in place, and skips files imported before.`;
+
+// Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
+// Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
+export const t3CodeOrchestrationSections = (docsCloud: boolean): ReadonlyArray<string> => [
   `## T3 Code orchestration
 
-The \`t3-code\` MCP server provides app-owned orchestration. Treat these concepts distinctly:
+Ordinary coding tasks need no T3 tools.
 
-- A delegated task/subagent is child work owned by the current thread. Use \`orchestrator_capabilities\` to discover the current provider/model IDs from the same live catalog as the composer, including configured custom models. Do not treat a native tool's model list as the full list of available subagent models. Prefer native subagent tools for same-provider work only when they support the chosen model. Use \`delegate_task\` with that provider instance and model when native tools cannot, including for same-provider work. Also use \`delegate_task\` for cross-provider or explicitly T3-owned child tasks. For a child task that needs a separate checkout, use \`delegate_task\` with \`isolation:"worktree"\` across any provider or model. It starts from the parent local commit and runs project setup; uncommitted edits are not copied. Retain each returned \`taskId\`, and use \`task_status\` or \`task_cancel\` to manage it. The returned \`childThreadId\` is backing storage for the subagent, not the target for starting another delegated review round.
-- \`t3_thread_launch\` and \`create_threads\` create ordinary top-level T3 conversations. Use them only when the user explicitly asks for separate/new/top-level threads or conversations. Never use them merely because the user said "subagent" or requested parallel delegated work.
-- For every T3 delegated review round, call \`delegate_task\` again. Include the original brief, prior findings, responses, and unresolved objections in each new task prompt. Track each round by its own \`taskId\`. Use a distinct \`clientRequestId\` per round, stable across retries of that round. Do not use \`t3_thread_send\` on \`childThreadId\` to continue a delegated review.`,
-  `- \`schedule_task\` creates persistent recurring work in the app scheduler. Pass \`schedule\` as a structured object, never as JSON text: \`{"type":"interval","everyMs":3600000}\` for an interval, or \`{"type":"fixed_time","timeOfDay":"09:00","weekdays":[1,2,3,4,5]}\` for a wall-clock schedule, or \`{"type":"webhook"}\` to run on each request to the returned \`webhookUrl\` (the run sees the request only through \`{{body.path}}\`-style placeholders in the prompt). By default runs return to the current thread, which suits orchestrating: each trigger arrives here and you delegate or dedupe; set \`bindToCurrentThread=false\` only when the user wants a fresh thread for every run. After scheduling a timer, report the returned cadence and next run time; for a webhook, report its \`webhookUrl\`, or say T3 Connect remote access is needed if it is missing.
-- When you need a secret from the user (a token, API key, or webhook signing secret), call \`request_secret\` so they enter it privately, then pass the returned \`secretRef\` to the tool that needs it, e.g. \`signature.secretRef\` on a webhook task for a sender that signs requests such as GitHub. A \`secretRef\` works once. Never ask for a secret in chat, never invent one, and never repeat one.
-- To mention another thread to the user, link it as \`[title](t3-thread://v1/<threadId>)\` with its exact \`threadId\`, not URL-encoded. T3 Code opens the thread in the app and shows its current title.`,
-  `### Choose the workspace before starting a new thread
+- Subagents: use your native tool when the child uses your provider, a model it offers, and no settings beyond yours, and it finishes in this turn (Claude \`Agent\` always with \`run_in_background:false\`; Codex \`spawn_agent\`, then wait). Use \`delegate_task\` for another provider's model, user-asked settings, a separate checkout (\`isolation:"worktree"\`), background work, or \`delegate_task\` by name. A native type running another provider's model counts too. Workflow only when asked.
+- Call \`orchestrator_capabilities\` once per thread, before the first \`delegate_task\`. Again only after an error or a user-named provider change. Settings go in \`target.options\`. Provider or model unavailable: say so. Never switch unasked, or fall back to native tools, Workflow, or CLIs. Never make a child's checkout in the shell or in \`task\`.
+- Every new delegate review or re-check is a new \`delegate_task\` (brief, findings, objections), never a \`t3_thread_send\`. Fix small review findings yourself; start no delegate for them. When told to proceed without a delegate, or to run fewer, \`task_cancel\` the extras. Start no replacement.
+- Follow a running delegate's \`next\`. Do not poll it (\`task_status\`, \`sleep\`, watchers, Monitor, ScheduleWakeup). Stop a delegate run you replace or no longer need with \`task_cancel\`, never \`t3_thread_interrupt\` on a \`childThreadId\`.
+- If you are a subagent or child, do the work yourself. Start no subagents unless your task says to.`,
+  `- \`t3_thread_launch\` and \`create_threads\` make new top-level threads, only when the user asks for a new thread. "Subagent", "delegate", and "parallel" never mean one. Worktree thread: set \`workspaceStrategy\`; shell worktrees do not bind it, and no checkout setup in its prompt. No \`workspaceStrategy\`: project root, not your worktree.
+- Given a thread id, \`t3_thread_read\` it before you answer about it.
+- In your reply, a thread's first mention is its \`link\` verbatim. No \`link\`: \`[title](t3-thread://v1/<exact id>)\`. Never a plain title or bare id.
+- A secret: call \`request_secret\` yourself. Pass its \`secretRef\` to a T3 tool, or use \`delivery: "file"\` for a shell command. Keys the project's code reads from .env: end your reply with \`/secret NAME_ONE NAME_TWO\` in backticks, a button that saves them privately. Never ask in chat or invent one. When asked only to schedule, \`schedule_task\` without running its prompt.
+- T3 tools may load late. Try the name once before you call it absent.`,
+  `### Visuals and preview
 
-For independent implementation or a PR stack in its own worktree, use \`t3_thread_launch\` with an explicit \`workspaceStrategy\`. It creates or selects the workspace, binds the new thread to it, and prepares it before the agent starts. Put the task in \`message\`, not \`prompt\`:
-
-- New worktree: \`{"title":"UI cleanup","workspaceStrategy":{"type":"worktree","baseRef":"feature/base","branch":"feature/ui-cleanup","startFromOrigin":false},"message":"Implement the cleanup and open a PR against feature/base."}\`
-- Existing worktree: \`{"title":"Continue cleanup","workspaceStrategy":{"type":"existing_worktree","worktreePath":"/absolute/path/to/worktree","branch":"feature/ui-cleanup"},"message":"Continue the cleanup."}\`
-- Project's main checkout: \`workspaceStrategy:{"type":"root"}\`. Omitting workspaceStrategy also selects root; it does not inherit the caller's worktree.
-
-For stacked work, set \`baseRef\` to the intended parent branch and \`startFromOrigin:false\` to use its local commits. Use \`startFromOrigin:true\` when you intend to fetch and start from origin. Uncommitted edits are not copied. Use \`t3_worktree_list\` to discover existing checkout paths. Project, model selection, and modes inherit unless supplied; a launched thread may not run with broader modes than yours.
-
-\`t3_thread_launch\` is the single-thread launch tool. Use \`create_threads\` only for a batch of threads intentionally sharing the caller's checkout: it always inherits the caller's project, branch, and worktree and has no workspace override. Asking an agent to run \`git worktree add\` or \`cd\` in its prompt does not update T3's thread binding. Select the workspace in the launch call instead. \`t3_worktree_handoff\` moves the calling thread, not another thread, and cannot move a thread already attached to a worktree.
-
-\`t3_thread_launch\` has no idempotency key. Retain its returned threadId and inspect it with \`t3_thread_read\` / \`t3_thread_wait\`; preparation can still be running after acceptance. If a launch fails or its response is lost, inspect \`t3_thread_list\` before retrying, since a thread may already exist.`,
-  `Tool names may include a harness-normalized MCP prefix, such as \`mcp__t3_code__delegate_task\`; the semantics are the same. Some harnesses attach optional MCP servers lazily: if an initial tool-catalog scan does not show T3 tools, do not conclude that cross-provider delegation is unavailable. Make one bounded direct attempt using the known T3 tool name on the next tool step. In Codex code mode, for example, call \`tools.mcp__t3_code__orchestrator_capabilities({})\` before reporting that the capability is absent. Keep polling/wait loops bounded, do not duplicate active work, and use stable \`clientRequestId\` values when retrying tools that accept them.
-
-ACP fallback: some ACP agents accept the injected MCP server but fail to expose its tools. When the T3 tools are absent and \`T3_ACP_MCP_NODE\` is present, call the same tools through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" \${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`T3_ACP_MCP_ENTRYPOINT\` is unset when T3 runs as a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`. This is the supported T3 transport fallback, not an ordinary shell-based substitute for delegation.
-
-### Showing visuals
-
-When a chart, table, diagram, image collage, or mockup would say more than prose, build a self-contained HTML page, check it with \`html_preview\`, then publish it with \`html_render\` before your final reply. The reader sees the page above that reply, so don't announce or restate it; add only what it doesn't say.
-
-### Docs
-
-Docs are markdown files in the project, under \`docs/\` by default, that the user reads, edits, and comments on in T3 Code's Docs panel. When the user asks for a document, plan, spec, report, or notes to keep, write it with \`docs_create\` instead of pasting it into chat; it opens in their Docs panel. \`docs_open\` shows an existing doc there, and \`docs_read\` returns a doc with its open comments. To address a comment, edit the file, then reply with \`docs_comment_reply\` saying what changed; resolve a thread only when asked or when you started it. \`docs_comment_create\` leaves a review comment anchored to a short quote of the doc's visible text, without markdown syntax.
-
-### AI PM ideas
+- Answer data with a trend or comparison with a chart, and show any visual the user asks for here: pass its HTML to \`html_preview\`, then \`html_render\`. If the visual is a file, pass that file's HTML. A screenshot on disk or a text description does not show it. Never start a server for it. Tools a web page exposes give data only. Never use them to show results. Asked for an image to post, send, or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
+- Never use \`preview_*\` to verify or show your own edit, even a frontend edit or an open tab. Do not repeat preview calls from an earlier turn. Use them only when the current request asks for browser work or names a page or tab. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
+  docsCloud ? CLOUD_DOCS_SECTION : NO_CLOUD_DOCS_SECTION,
+  `### AI PM ideas
 
 When the user wants to park an idea or concept for later ("park this idea"), save it with \`aipm_idea_save\`: a summary of where the work was left, the next step, and absolute paths of files it produced. It links this thread. Call \`aipm_idea_list\` first and pass an existing idea's id to update it rather than duplicate it.`,
 ];
 
-export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
+export const t3CodeOrchestrationInstructions = (docsCloud: boolean): string => `
 
-${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
+${t3CodeOrchestrationSections(docsCloud).join("\n\n")}
 `;
 
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
-## T3 Code collaborative browser
+## T3 Code browser
 
-You are running inside T3 Code. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
-
-For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
-
-\`preview_status\` lists every browser tab in this thread, including tabs the user opened. When the user asks about "this page" or a page they have open, read their tab: pass its \`tabId\` to \`preview_snapshot\` or \`preview_wait_for\`, or omit \`tabId\` when you have no tab of your own. You may act on the user's tab, including \`preview_evaluate\`, only while its owner is \`unclaimed\`; while it is \`human\`, the user is driving, so read it with \`preview_snapshot\` or open your own tab. To use a browser profile (a set of saved logins), pass \`profileId\` from \`preview_status\` profiles to \`preview_open\`.
-
-Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Inspect a failed preview call and retry with corrected arguments when the error is actionable. Use another browser system when:
-- the T3 preview tools are absent, or \`preview_open\` returns an explicit unsupported/unavailable error;
-- the user asks for another browser, or invokes a skill or documented repository workflow that names one; follow that workflow and report any prerequisite it is missing;
-- preview calls on an open tab have failed twice on the same step (timeouts, \`chrome-error://\` pages, a different client answering). Quote the raw error and switch without asking the user which browser to use.
+When browser work was asked, \`preview_*\` is the browser you share with the user: \`preview_status\` first, then \`preview_open\` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or \`preview_open\` says unsupported, the user asks, or two preview calls fail on one step. Then quote the error and switch.
 `;
+
+// ACP only: some ACP agents accept the injected MCP server but never expose
+// its tools, so they need the terminal transport other harnesses never use.
+const T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS = `ACP fallback: if the T3 tools are absent and \`T3_ACP_MCP_NODE\` is present, call them through the terminal: \`ELECTRON_RUN_AS_NODE=1 "$T3_ACP_MCP_NODE" \${T3_ACP_MCP_ENTRYPOINT:+"$T3_ACP_MCP_ENTRYPOINT"} acp-mcp-call orchestrator_capabilities '{}'\` (\`T3_ACP_MCP_ENTRYPOINT\` is unset for a standalone executable). Delegate with \`acp-mcp-call delegate_task '{"task":"...","target":{"providerInstanceId":"...","model":"..."},"mode":"async","clientRequestId":"..."}'\`.`;
 
 const T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS = `## T3 Code interaction mode: Default
 
@@ -78,12 +78,10 @@ Investigate with read-only actions and do not edit files or otherwise execute th
 export interface T3AcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasT3Mcp: boolean;
+  readonly docsCloud: boolean;
 }
 
-/**
- * ACP has no system/developer prompt field, so send T3-owned context in the
- * first user prompt and whenever the available tools or interaction mode change.
- */
+/** ACP lacks system/developer fields; inject context on first prompt and tool/mode changes. */
 export function t3AcpPromptWithInstructions(input: {
   readonly prompt: string;
   readonly state: T3AcpInstructionState;
@@ -93,7 +91,8 @@ export function t3AcpPromptWithInstructions(input: {
   if (input.prompt.trimStart().startsWith("/")) return input.prompt;
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
-    input.previousState.hasT3Mcp === input.state.hasT3Mcp
+    input.previousState.hasT3Mcp === input.state.hasT3Mcp &&
+    input.previousState.docsCloud === input.state.docsCloud
   ) {
     return input.prompt;
   }
@@ -102,29 +101,34 @@ export function t3AcpPromptWithInstructions(input: {
       ? T3_CODE_ACP_PLAN_MODE_INSTRUCTIONS
       : T3_CODE_ACP_DEFAULT_MODE_INSTRUCTIONS,
     ...(input.state.hasT3Mcp
-      ? [T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()]
+      ? [
+          T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
+          t3CodeOrchestrationInstructions(input.state.docsCloud).trim(),
+          T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS,
+        ]
       : []),
   ];
   return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
 
-/**
- * Keep the wrapper explicit so it cannot be mistaken for text authored by the user.
- */
-function prependT3OrchestrationInstructions(prompt: string): string {
-  return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+function prependT3OrchestrationInstructions(prompt: string, docsCloud: boolean): string {
+  return `<t3_code_orchestration_instructions>${t3CodeOrchestrationInstructions(docsCloud).trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
 export function t3OrchestrationPromptForFirstRun(input: {
   readonly prompt: string;
   readonly runOrdinal: number;
   readonly hasT3Mcp: boolean;
+  readonly docsCloud: boolean;
 }): string {
   return input.runOrdinal === 1 && input.hasT3Mcp
-    ? prependT3OrchestrationInstructions(input.prompt)
+    ? prependT3OrchestrationInstructions(input.prompt, input.docsCloud)
     : input.prompt;
 }
 
-export function t3OrchestrationSystemPrompt(hasT3Mcp: boolean): string | undefined {
-  return hasT3Mcp ? T3_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
+export function t3OrchestrationSystemPrompt(
+  hasT3Mcp: boolean,
+  docsCloud: boolean,
+): string | undefined {
+  return hasT3Mcp ? t3CodeOrchestrationInstructions(docsCloud) : undefined;
 }

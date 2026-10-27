@@ -42,6 +42,7 @@ interface CompactToolOutput {
   status?: "rolled_back";
   htmlRender?: HtmlRenderReference;
   doc?: DocReference;
+  docsCloud?: DocsCloudReference;
   [MCP_APP_OUTPUT_KEY]?: McpAppReference;
   thread?: { threadId: string };
   threads?: Array<{ threadId?: string; status?: "rolled_back" }>;
@@ -54,7 +55,54 @@ export interface DocReference {
   readonly excerpt?: string;
 }
 
+// docs_create is retired; earlier threads still show the docs it created.
 const DOC_OPEN_TOOL_NAMES: ReadonlySet<string> = new Set(["docs_create", "docs_open"]);
+
+/** The tab a Docs Cloud tool result points at; `docTitle` is present when it names the doc too. */
+export interface DocsCloudReference {
+  readonly url: string;
+  readonly docId: string;
+  readonly tabId: string;
+  readonly tabTitle: string;
+  readonly docTitle?: string;
+}
+
+const DOCS_CLOUD_TAB_URL = /^https?:\/\/[^/?#\s]+\/d\/([\w-]{1,128})\/([\w-]{1,128})$/;
+
+/**
+ * Reads a raw `{ doc, tab }` result, or the `docsCloud` reference the server
+ * already compacted it to: clients compact the wire's output again, so the
+ * compacted shape has to survive a second pass.
+ */
+function readDocsCloudReference(
+  data: Record<PropertyKey, unknown>,
+): DocsCloudReference | undefined {
+  const compacted = Predicate.isObject(data.docsCloud) ? data.docsCloud : undefined;
+  const tab = compacted
+    ? { url: compacted.url, tabId: compacted.tabId, title: compacted.tabTitle }
+    : data.tab;
+  const doc = compacted ? { docId: compacted.docId, title: compacted.docTitle } : data.doc;
+  if (!Predicate.isObject(tab)) return undefined;
+  const { url, tabId, title } = tab;
+  if (typeof url !== "string" || url.length > 1024 || typeof title !== "string") return undefined;
+  const match = DOCS_CLOUD_TAB_URL.exec(url);
+  if (!match || match[2] !== tabId || title.length > 512) return undefined;
+  if (compacted && compacted.docId !== match[1]) return undefined;
+  const docTitle =
+    Predicate.isObject(doc) &&
+    doc.docId === match[1] &&
+    typeof doc.title === "string" &&
+    doc.title.length <= 512
+      ? doc.title
+      : undefined;
+  return {
+    url,
+    docId: match[1]!,
+    tabId: match[2]!,
+    tabTitle: title,
+    ...(docTitle === undefined ? {} : { docTitle }),
+  };
+}
 
 function readDocReference(value: unknown): DocReference | undefined {
   if (!Predicate.isObject(value)) return undefined;
@@ -157,6 +205,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
     const doc = readDocReference(data.doc);
     if (doc !== undefined) output.doc = doc;
+    const docsCloud = readDocsCloudReference(data);
+    if (docsCloud !== undefined) output.docsCloud = docsCloud;
     const mcpApp = readMcpAppReference(data[MCP_APP_OUTPUT_KEY]);
     if (mcpApp !== undefined) output[MCP_APP_OUTPUT_KEY] = mcpApp;
     const nestedThreadId = Predicate.isObject(data.thread)
@@ -187,8 +237,7 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
       }
       if (complete) output.threads = threads;
       else {
-        // A partial batch or a top-level ID would turn an unknown creation
-        // count into a confidently wrong one in the existing summary parser.
+        // Partial batches or top-level ids make the summary parser report a false creation count.
         delete output.threadId;
         delete output.status;
       }
@@ -231,13 +280,7 @@ export function docOpenFromToolItem(item: {
   return output?.isError ? null : (output?.doc ?? null);
 }
 
-/**
- * The MCP App a completed tool call carries, if any. The adapter that captured
- * it put the reference in the output, beside the tool's own result. A tool's
- * result can imitate that shape, so the reference only counts when it names
- * the very server and tool the item records: a server can then only ever
- * point at an app of its own.
- */
+/** Accept app references only when server and tool match the item, so tools cannot impersonate another app source. */
 export function mcpAppFromToolItem(item: {
   readonly toolName: string | null | undefined;
   readonly output?: unknown;
@@ -265,10 +308,7 @@ export interface ToolOutputImage {
   readonly data?: string;
 }
 
-/**
- * Only raster types are recognized, so the server never serves an agent's SVG
- * or HTML inline.
- */
+/** Raster types only, so agent SVG/HTML cannot be served inline. */
 export function readToolOutputImage(block: unknown): ToolOutputImage | null {
   if (!Predicate.isObject(block) || block.type !== "image") return null;
   const source = Predicate.isObject(block.source) ? block.source : undefined;
@@ -303,10 +343,7 @@ export function toolOutputImageBlocks(value: unknown): ReadonlyArray<unknown> {
   return blocks;
 }
 
-/**
- * The order is the `tool-output-image` asset index, so servers and clients
- * agree on it.
- */
+/** Order defines the shared tool-output-image asset index. */
 export function toolOutputImages(value: unknown): ReadonlyArray<ToolOutputImage> {
   return toolOutputImageBlocks(value).flatMap((block) => readToolOutputImage(block) ?? []);
 }

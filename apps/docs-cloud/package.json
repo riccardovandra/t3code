@@ -1,0 +1,39 @@
+{
+  "name": "@t3tools/docs-cloud",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp build && wrangler d1 migrations apply DB --local && wrangler dev",
+    "build": "vp build",
+    "deploy": "vp build && node scripts/deploy.ts",
+    "test": "vp test run --config ../../vite.config.ts --dir .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json"
+  },
+  "dependencies": {
+    "@babel/parser": "7.29.8",
+    "@t3tools/shared": "workspace:*",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-code-block": "^3.31.3",
+    "@tiptap/extension-list": "^3.31.3",
+    "@tiptap/extension-table": "3.31.3",
+    "@tiptap/markdown": "3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "dompurify": "^3.4.16",
+    "marked": "17.0.6",
+    "pele": "^1.8.0",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.1",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

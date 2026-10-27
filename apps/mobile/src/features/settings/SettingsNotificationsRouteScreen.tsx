@@ -116,6 +116,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   };
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Reads native notification permission on mount and on every foreground.
     void refreshNotifications();
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshNotifications();
@@ -125,6 +126,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
   useEffect(() => {
     if (!isLoaded) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Live Activity status shows checking until stored preferences load.
       setLiveActivityStatus("checking");
       return;
     }
@@ -209,7 +211,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Continue",
-          onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
+          onPress: () => navigation.navigate("SettingsAuth"),
         },
       ],
     );
@@ -294,9 +296,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     savePreferences({ liveActivitiesEnabled: true });
     refreshManagedRelayEnvironments();
     setLiveActivityStatus("enabled");
-    // The environment link can succeed while this device's own registration
-    // (the push-to-start token the relay needs) has not — don't claim Live
-    // Activities are live until the device is actually registered.
+    // Environment linking can precede device registration; only registered devices can receive Live Activities.
     if (getAgentAwarenessRegistrationStatus() === "registered") {
       Dialog.alert(
         Platform.OS === "android" ? "Ongoing activity enabled" : "Live Activities enabled",
@@ -324,7 +324,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
     Dialog.alert(
       "Disable notifications",
-      "Open system Settings to disable notifications for UP Orchestrator.",
+      "Open system Settings to disable notifications for T3 Code.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -457,7 +457,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(
                     "Couldn't open Settings",
-                    "Open Android Settings, select UP Orchestrator, then enable Live Updates in Notifications.",
+                    "Open Android Settings, select T3 Code, then enable Live Updates in Notifications.",
                   );
                 });
               }}

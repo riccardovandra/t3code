@@ -145,7 +145,7 @@ export function ServerUpdatesAction({
       if (desktopTargets.length > 0) {
         const confirmed =
           (await requestConfirmDialog(
-            `Update the UP Orchestrator desktop apps on ${desktopTargets.map((target) => target.serverLabel).join(", ")}? They will close and relaunch on those machines.`,
+            `Update the T3 Code desktop apps on ${desktopTargets.map((target) => target.serverLabel).join(", ")}? They will close and relaunch on those machines.`,
           )) ?? true;
         if (!confirmed) return;
       }
@@ -198,10 +198,7 @@ export function ServerUpdateProgress({
   );
 }
 
-/**
- * Self-updates delegate their full lifecycle to client-runtime so this component can unmount
- * during reconnect without losing operation state.
- */
+/** client-runtime owns self-updates so unmounting during reconnect preserves operation state. */
 export function ServerUpdateAction({
   environmentId,
   serverLabel,
@@ -256,7 +253,7 @@ export function ServerUpdateAction({
     if (isDesktopAppUpdate) {
       const confirmed =
         (await requestConfirmDialog(
-          `Update the UP Orchestrator desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
+          `Update the T3 Code desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
         )) ?? true;
       if (!confirmed) {
         return;
@@ -330,9 +327,7 @@ export function ServerUpdateAction({
   );
 }
 
-/**
- * Its version comes from the host descriptor because the host never delivers a server config.
- */
+/** Read the host descriptor's version because the host never delivers server config. */
 export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,

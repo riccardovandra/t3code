@@ -6,6 +6,7 @@ import {
   AssetCreateUrlInput,
   AuthAccessReadScope,
   ServerSettingsPatch,
+  type ServerSettings,
   ProviderInstanceMutation,
   requiredScopesForServerSettingsPatch,
   requiredScopesForProjectMutation,
@@ -48,6 +49,9 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.searchThread]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.launchThread]: AuthOrchestrationOperateScope,
@@ -98,8 +102,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthDiagnosticsReadScope,
-  // Load-balancing new threads reads host load; that is part of operating
-  // threads, not of inspecting diagnostics.
+  // Thread load balancing reads host load, so it needs thread scope rather than diagnostics scope.
   [WS_METHODS.serverGetHostResources]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessResourceHistory]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetResourceTelemetryHistory]: AuthDiagnosticsReadScope,
@@ -120,6 +123,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.docsReplyComment]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsSetCommentResolved]: AuthOrchestrationOperateScope,
   [WS_METHODS.docsDeleteComment]: AuthOrchestrationOperateScope,
+  [WS_METHODS.docsCloudListImports]: AuthOrchestrationReadScope,
+  [WS_METHODS.docsCloudImport]: AuthOrchestrationOperateScope,
+  [WS_METHODS.docsCloudSendTo]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksList]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.secretsAnswerRequest]: AuthOrchestrationOperateScope,
@@ -130,6 +136,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsListStats]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsFilterOptions]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSummary]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRouting]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRoutingIdentity]: AuthOrchestrationReadScope,
@@ -143,6 +150,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsFilesViewed]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsChangeBreakdown]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsInvalidate]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsReportState]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsSubscribeRefreshes]: AuthOrchestrationReadScope,
@@ -150,11 +158,29 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsLabelCandidates]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
+  // The server lists skill folders itself; a client never names a path.
+  [WS_METHODS.skillsInspect]: AuthFilesystemReadScope,
+  // A preview unpacks a source into a temp folder and deletes it.
+  [WS_METHODS.skillsPreview]: AuthFilesystemReadScope,
+  // Packs a folder an agent reports for that skill, nothing a client names.
+  [WS_METHODS.skillsExport]: AuthFilesystemReadScope,
+  [WS_METHODS.skillsTrashList]: AuthFilesystemReadScope,
+  // Fork: saved sources and the library previews them like skills.preview.
+  [WS_METHODS.skillSourcesList]: AuthFilesystemReadScope,
+  [WS_METHODS.skillLibraryList]: AuthFilesystemReadScope,
+  // Fork: a yes/no about the server's own update mirror, as public as its version.
+  [WS_METHODS.serverReleaseMirrorPublished]: AuthOrchestrationReadScope,
+  // Listing a server's tools runs its command with its stored secrets, which
+  // only a connection allowed to add that command may do. A read the client
+  // caches as a query, so the client checks the scope itself (no guard entry).
+  [WS_METHODS.mcpServersListTools]: AuthProvidersManageScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
+  [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchContents]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,
+  [WS_METHODS.projectsSetEnvVariables]: AuthFilesystemWriteScope,
   [WS_METHODS.projectsEnsureScratch]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsCreateNew]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
@@ -204,6 +230,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeDiscoveredLocalServers]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceConfigure]: AuthSettingsWriteScope,
   [WS_METHODS.deviceTestHost]: AuthSettingsWriteScope,
+  [WS_METHODS.deviceEasAccount]: AuthSettingsWriteScope,
   [WS_METHODS.deviceList]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.deviceClose]: AuthOrchestrationOperateScope,
@@ -238,28 +265,33 @@ const SettingsUpdate = Schema.Struct({
   patch: ServerSettingsPatch,
   providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
 });
+const decodeSettingsUpdate = Schema.decodeUnknownSync(SettingsUpdate);
 
-const requiredScopesForSettingsUpdate = (payload: unknown) => {
-  const input = Schema.decodeUnknownSync(SettingsUpdate)(payload);
-  const scopes = requiredScopesForServerSettingsPatch(input.patch);
+const requiredScopesForSettingsUpdate = (
+  payload: unknown,
+  current: Pick<ServerSettings, "projectSettingsOverrides"> | undefined,
+) => {
+  const input = decodeSettingsUpdate(payload);
+  const scopes = requiredScopesForServerSettingsPatch(input.patch, current);
   if (input.providerInstanceMutation === undefined) return scopes;
-  // An atomic provider mutation carries an empty patch unless it also changes settings.
   return Object.values(input.patch).every((value) => value === undefined)
     ? [AuthProvidersManageScope]
     : [...new Set([...scopes, AuthProvidersManageScope])];
 };
 
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
+const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
 
 const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
+  currentSettings?: Pick<ServerSettings, "projectSettingsOverrides">,
 ): ReadonlyArray<AuthEnvironmentScope> => {
   if (method === WS_METHODS.serverRetryResourceTelemetry) {
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }
   if (method === WS_METHODS.assetsCreateUrl) {
-    const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
+    const { resource } = decodeAssetCreateUrlInput(payload);
     return [
       resource._tag === "workspace-file" ||
       resource._tag === "media-file" ||
@@ -268,7 +300,9 @@ const requiredScopesForRpcCall = (
         : AuthOrchestrationReadScope,
     ];
   }
-  if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
+  if (method === WS_METHODS.serverUpdateSettings) {
+    return requiredScopesForSettingsUpdate(payload, currentSettings);
+  }
   if (method === WS_METHODS.projectsMutate) {
     return requiredScopesForProjectMutation(decodeProjectMutation(payload));
   }
@@ -278,22 +312,33 @@ const requiredScopesForRpcCall = (
 };
 
 /**
+ * Authorizes every RPC on one connection against that connection's session scopes.
+ * `currentSettings` lets a settings update that only resends a project's stored
+ * MCP servers pass with `settings:write`.
+ *
  * `onAuthorized` runs once after an authorized request succeeds; for a stream
  * RPC, that is when the stream completes. Every RPC passes through here, so it
  * is the one place to observe requests without wrapping each handler.
  */
 export const layer = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
+  currentSettings: Effect.Effect<
+    Pick<ServerSettings, "projectSettingsOverrides"> | undefined
+  > = Effect.undefined,
   onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
 ) =>
-  Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
-    const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
-    const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
-    if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
-    return onAuthorized === undefined
-      ? effect
-      : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
-  });
+  Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) =>
+    Effect.gen(function* () {
+      const settings =
+        rpc._tag === WS_METHODS.serverUpdateSettings ? yield* currentSettings : undefined;
+      const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload, settings);
+      const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
+      if (requiredScope !== undefined) return yield* rpcAuthorizationError(requiredScope);
+      return yield* onAuthorized === undefined
+        ? effect
+        : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
+    }),
+  );
 
 /** Retrying can install or restart tools even though ordinary listing is readable. */
 export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironmentScope =>

@@ -79,6 +79,9 @@ jobs:
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      - name: Apply fork branding
+        run: node scripts/fork-brand.ts
+
       - name: Build JS bundle
         env:
           T3CODE_TELEMETRY_CHANNEL: dev

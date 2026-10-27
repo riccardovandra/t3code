@@ -1,9 +1,15 @@
-import { type DocComment, type DocsError, OrchestratorMcpFailure } from "@t3tools/contracts";
+import {
+  type DocComment,
+  type DocsCloudError,
+  type DocsError,
+  OrchestratorMcpFailure,
+} from "@t3tools/contracts";
 import { DOCS_ROOT, docExcerpt } from "@t3tools/shared/docPaths";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as DocCommentsService from "../../../docs/DocCommentsService.ts";
+import * as DocsCloudImport from "../../../docs/DocsCloudImport.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as WorkspaceDocs from "../../../workspace/WorkspaceDocs.ts";
@@ -60,6 +66,12 @@ const callerCheckout = Effect.fn("mcp.docs.callerCheckout")(function* (operation
   return { ...context, cwd: project.value.workspaceRoot };
 });
 
+const toCloudFailure = (error: DocsCloudError) =>
+  new OrchestratorMcpFailure({
+    code: error.reason === "not_configured" ? "invalid_request" : "orchestration_error",
+    message: error.message,
+  });
+
 const openComments = (comments: ReadonlyArray<DocComment>) =>
   comments.filter((comment) => comment.resolvedAt === null);
 
@@ -104,21 +116,6 @@ const handlers = {
           : {}),
         comments: openComments(comments),
       };
-    }),
-  ),
-  docs_create: McpToolAccess.actsAsCaller((input) =>
-    Effect.gen(function* () {
-      const { cwd } = yield* callerCheckout("docs_create");
-      const files = yield* WorkspaceDocs.WorkspaceDocs;
-      const doc = yield* files
-        .create({
-          cwd,
-          folder: input.folder ?? DOCS_ROOT,
-          title: input.title,
-          markdown: input.markdown,
-        })
-        .pipe(Effect.mapError(toFileFailure));
-      return { doc: { ...doc, excerpt: docExcerpt(input.markdown ?? "") } };
     }),
   ),
   docs_open: McpToolAccess.readsAsCaller((input) =>
@@ -167,6 +164,28 @@ const handlers = {
       return yield* docs
         .setResolved({ projectId, commentId: input.commentId, resolved: input.resolved ?? true })
         .pipe(Effect.mapError(toFailure));
+    }),
+  ),
+  docs_cloud_project: McpToolAccess.actsAsCaller(() =>
+    Effect.gen(function* () {
+      const { projectId } = yield* callerContext("docs_cloud_project");
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      const project = yield* cloud.project({ projectId }).pipe(Effect.mapError(toCloudFailure));
+      return { project };
+    }),
+  ),
+  docs_cloud_import: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const { projectId, cwd } = yield* callerCheckout("docs_cloud_import");
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      return yield* cloud
+        .importDocs({
+          projectId,
+          cwd,
+          ...(input.docPaths ? { docPaths: input.docPaths } : {}),
+          ...(input.update !== undefined ? { update: input.update } : {}),
+        })
+        .pipe(Effect.mapError(toCloudFailure));
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof DocsToolkit.tools>;

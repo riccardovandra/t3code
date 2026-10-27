@@ -36,11 +36,7 @@ function probed(version: string | null | undefined): ProbedOpenCode | undefined 
 export const classifyOpenCodeCliVersion = (output: string) =>
   probed(parseGenericCliVersion(output));
 
-/**
- * Each serves its web UI's HTML with a 200 on the other's path, so only a JSON body counts. Both
- * versions answer a wrong password with a 401 on either path, so a 401 says nothing about the
- * version.
- */
+// Cross-version paths return HTML 200s, so require JSON; either version returns 401 for bad passwords.
 function classifyOpenCodeProbeResponse(
   path: "/api/info" | "/global/health",
   response: {
@@ -86,12 +82,11 @@ const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
   if (result) return result;
   return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
     operation: "probeOpenCodeBinary",
-    detail: `Unable to determine OpenCode version from \`opencode --version\` output. UP Orchestrator requires OpenCode v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
+    detail: `Unable to determine OpenCode version from \`opencode --version\` output. T3 Code requires OpenCode v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
   });
 });
 
-// Server failures reach clients through the provider status, so their details are fixed text:
-// the underlying error can carry the configured URL, its credentials, or the password header.
+// Use fixed status text; underlying errors may expose URLs, credentials, or password headers.
 const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
   serverUrl: string,
   serverPassword: string,
@@ -157,7 +152,7 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
   }
   return yield* new OpenCodeRuntime.OpenCodeRuntimeError({
     operation: "probeOpenCodeServer",
-    detail: `The server did not identify itself as OpenCode. UP Orchestrator requires OpenCode v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
+    detail: `The server did not identify itself as OpenCode. T3 Code requires OpenCode v${OpenCodeRuntime.MINIMUM_OPENCODE_VERSION} or newer.`,
   });
 });
 
