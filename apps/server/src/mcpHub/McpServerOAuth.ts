@@ -174,16 +174,19 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const saveSession = (id: McpServerId, redirectUri: string, tokens: OAuthTokens) =>
-    Effect.gen(function* () {
-      const now = yield* Clock.currentTimeMillis;
-      const session: StoredSession = {
-        tokens,
-        redirectUri,
-        ...(tokens.expires_in === undefined ? {} : { expiresAt: now + tokens.expires_in * 1000 }),
-      };
-      yield* writeText(McpServerRegistry.oauthTokensSecretName(id), encodeJson(session));
-    });
+  const saveSession = Effect.fn("McpServerOAuth.saveSession")(function* (
+    id: McpServerId,
+    redirectUri: string,
+    tokens: OAuthTokens,
+  ) {
+    const now = yield* Clock.currentTimeMillis;
+    const session: StoredSession = {
+      tokens,
+      redirectUri,
+      ...(tokens.expires_in === undefined ? {} : { expiresAt: now + tokens.expires_in * 1000 }),
+    };
+    yield* writeText(McpServerRegistry.oauthTokensSecretName(id), encodeJson(session));
+  });
 
   const loadRegistration = (id: McpServerId) =>
     readText(McpServerRegistry.oauthRegistrationSecretName(id)).pipe(
@@ -196,31 +199,31 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const clientInformation = (config: OAuthServerConfig) =>
-    Effect.gen(function* () {
-      const client = config.auth.client;
-      if (client === undefined) return yield* loadRegistration(config.id);
-      const secret = client.hasClientSecret
-        ? yield* readText(McpServerRegistry.oauthClientSecretName(config.id))
-        : undefined;
-      const information: OAuthClientInformationMixed = {
-        client_id: client.clientId,
-        ...(secret === undefined ? {} : { client_secret: secret }),
-      };
-      return information;
-    });
+  const clientInformation = Effect.fn("McpServerOAuth.clientInformation")(function* (
+    config: OAuthServerConfig,
+  ) {
+    const client = config.auth.client;
+    if (client === undefined) return yield* loadRegistration(config.id);
+    const secret = client.hasClientSecret
+      ? yield* readText(McpServerRegistry.oauthClientSecretName(config.id))
+      : undefined;
+    const information: OAuthClientInformationMixed = {
+      client_id: client.clientId,
+      ...(secret === undefined ? {} : { client_secret: secret }),
+    };
+    return information;
+  });
 
-  const forgetSession = (id: McpServerId) =>
-    Effect.gen(function* () {
-      discoveries.delete(id);
-      yield* Effect.forEach(
-        [
-          McpServerRegistry.oauthTokensSecretName(id),
-          McpServerRegistry.oauthRegistrationSecretName(id),
-        ],
-        (name) => secrets.remove(name).pipe(Effect.ignore({ log: true })),
-      );
-    });
+  const forgetSession = Effect.fn("McpServerOAuth.forgetSession")(function* (id: McpServerId) {
+    discoveries.delete(id);
+    yield* Effect.forEach(
+      [
+        McpServerRegistry.oauthTokensSecretName(id),
+        McpServerRegistry.oauthRegistrationSecretName(id),
+      ],
+      (name) => secrets.remove(name).pipe(Effect.ignore({ log: true })),
+    );
+  });
 
   /** One provider for both halves of a sign-in: building the URL and exchanging the code. */
   const signInProvider = (
@@ -267,44 +270,45 @@ const make = Effect.gen(function* () {
     discoveryState: () => flow.discovery,
   });
 
-  const startSignIn: McpServerOAuth["Service"]["startSignIn"] = (input) =>
-    Effect.gen(function* () {
-      const config = yield* registry.get(input.id);
-      if (config === undefined) return yield* new McpServerError({ reason: "not_found" });
-      if (!isOAuthServer(config)) return yield* new McpServerError({ reason: "not_oauth" });
+  const startSignIn: McpServerOAuth["Service"]["startSignIn"] = Effect.fn(
+    "McpServerOAuth.startSignIn",
+  )(function* (input) {
+    const config = yield* registry.get(input.id);
+    if (config === undefined) return yield* new McpServerError({ reason: "not_found" });
+    if (!isOAuthServer(config)) return yield* new McpServerError({ reason: "not_oauth" });
 
-      const now = yield* Clock.currentTimeMillis;
-      for (const [key, flow] of pending) if (flow.expiresAt <= now) pending.delete(key);
-      const state = Buffer.from(yield* crypto.randomBytes(32).pipe(Effect.orDie)).toString(
-        "base64url",
-      );
-      const flow: PendingSignIn = {
-        serverId: config.id,
-        identity: identityOf(config),
-        redirectUri:
-          config.auth.client?.redirectUri ??
-          `${new URL(input.callbackOrigin).origin}${MCP_CLIENT_OAUTH_CALLBACK_PATH}`,
-        expiresAt: now + PENDING_SIGN_IN_TTL_MS,
-        codeVerifier: undefined,
-        discovery: undefined,
-      };
-      let authorizationUrl: URL | undefined;
-      yield* Effect.tryPromise({
-        try: () =>
-          auth(
-            signInProvider(config, state, flow, (url) => {
-              authorizationUrl = withProviderAuthorizationParams(url);
-            }),
-            { serverUrl: config.transport.url },
-          ),
-        catch: (cause) => new McpServerError({ reason: "sign_in_failed", cause }),
-      });
-      if (authorizationUrl === undefined) {
-        return yield* new McpServerError({ reason: "sign_in_failed" });
-      }
-      pending.set(state, flow);
-      return { authorizationUrl: authorizationUrl.href };
-    }).pipe(Effect.withSpan("McpServerOAuth.startSignIn"));
+    const now = yield* Clock.currentTimeMillis;
+    for (const [key, flow] of pending) if (flow.expiresAt <= now) pending.delete(key);
+    const state = Buffer.from(yield* crypto.randomBytes(32).pipe(Effect.orDie)).toString(
+      "base64url",
+    );
+    const flow: PendingSignIn = {
+      serverId: config.id,
+      identity: identityOf(config),
+      redirectUri:
+        config.auth.client?.redirectUri ??
+        `${new URL(input.callbackOrigin).origin}${MCP_CLIENT_OAUTH_CALLBACK_PATH}`,
+      expiresAt: now + PENDING_SIGN_IN_TTL_MS,
+      codeVerifier: undefined,
+      discovery: undefined,
+    };
+    let authorizationUrl: URL | undefined;
+    yield* Effect.tryPromise({
+      try: () =>
+        auth(
+          signInProvider(config, state, flow, (url) => {
+            authorizationUrl = withProviderAuthorizationParams(url);
+          }),
+          { serverUrl: config.transport.url },
+        ),
+      catch: (cause) => new McpServerError({ reason: "sign_in_failed", cause }),
+    });
+    if (authorizationUrl === undefined) {
+      return yield* new McpServerError({ reason: "sign_in_failed" });
+    }
+    pending.set(state, flow);
+    return { authorizationUrl: authorizationUrl.href };
+  });
 
   const callbackFailure = (description: string, cause?: unknown) =>
     new McpSignInCallbackError({ description, ...(cause === undefined ? {} : { cause }) });
@@ -314,64 +318,65 @@ const make = Effect.gen(function* () {
   const sameEndpoint = (left: URL, right: URL) =>
     left.host === right.host && left.pathname === right.pathname;
 
-  const completeSignIn: McpServerOAuth["Service"]["completeSignIn"] = (callbackUrl) =>
-    Effect.gen(function* () {
-      const params = callbackUrl.searchParams;
-      const state = params.get("state") ?? "";
-      const flow = pending.get(state);
-      // Single use: a replayed callback finds nothing.
-      pending.delete(state);
-      if (flow === undefined || flow.expiresAt <= (yield* Clock.currentTimeMillis)) {
-        return yield* callbackFailure(
-          "This sign-in link expired or was already used. Start sign-in again from T3 Code.",
-        );
-      }
-      if (!sameEndpoint(callbackUrl, new URL(flow.redirectUri))) {
-        return yield* callbackFailure(
-          "This sign-in returned to a different address than the one it started from. Start sign-in again from T3 Code.",
-        );
-      }
-      const providerError = params.get("error");
-      if (providerError !== null) {
-        return yield* callbackFailure(
-          `The provider did not complete the sign-in: ${params.get("error_description") ?? providerError}.`,
-        );
-      }
-      const code = params.get("code");
-      if (code === null || code === "") {
-        return yield* callbackFailure("The provider returned no authorization code.");
-      }
-      const config = yield* registry
-        .get(flow.serverId)
-        .pipe(
-          Effect.mapError((cause) => callbackFailure("Could not read the MCP server list.", cause)),
-        );
-      if (config === undefined || !isOAuthServer(config) || identityOf(config) !== flow.identity) {
-        return yield* callbackFailure(
-          "This MCP server was removed or changed while signing in. Start sign-in again from T3 Code.",
-        );
-      }
-      yield* Effect.tryPromise({
-        try: () =>
-          auth(
-            signInProvider(config, state, flow, () => {
-              throw new Error("The authorization server asked for a second sign-in.");
-            }),
-            { serverUrl: config.transport.url, authorizationCode: code },
-          ),
-        catch: (cause) =>
-          callbackFailure(
-            "The provider rejected the sign-in when T3 Code exchanged the code.",
-            cause,
-          ),
-      });
-      discoveries.delete(config.id);
-      yield* registry.resetConnection(config.id);
-      return { serverName: config.name };
-    }).pipe(Effect.withSpan("McpServerOAuth.completeSignIn"));
+  const completeSignIn: McpServerOAuth["Service"]["completeSignIn"] = Effect.fn(
+    "McpServerOAuth.completeSignIn",
+  )(function* (callbackUrl) {
+    const params = callbackUrl.searchParams;
+    const state = params.get("state") ?? "";
+    const flow = pending.get(state);
+    // Single use: a replayed callback finds nothing.
+    pending.delete(state);
+    if (flow === undefined || flow.expiresAt <= (yield* Clock.currentTimeMillis)) {
+      return yield* callbackFailure(
+        "This sign-in link expired or was already used. Start sign-in again from T3 Code.",
+      );
+    }
+    if (!sameEndpoint(callbackUrl, new URL(flow.redirectUri))) {
+      return yield* callbackFailure(
+        "This sign-in returned to a different address than the one it started from. Start sign-in again from T3 Code.",
+      );
+    }
+    const providerError = params.get("error");
+    if (providerError !== null) {
+      return yield* callbackFailure(
+        `The provider did not complete the sign-in: ${params.get("error_description") ?? providerError}.`,
+      );
+    }
+    const code = params.get("code");
+    if (code === null || code === "") {
+      return yield* callbackFailure("The provider returned no authorization code.");
+    }
+    const config = yield* registry
+      .get(flow.serverId)
+      .pipe(
+        Effect.mapError((cause) => callbackFailure("Could not read the MCP server list.", cause)),
+      );
+    if (config === undefined || !isOAuthServer(config) || identityOf(config) !== flow.identity) {
+      return yield* callbackFailure(
+        "This MCP server was removed or changed while signing in. Start sign-in again from T3 Code.",
+      );
+    }
+    yield* Effect.tryPromise({
+      try: () =>
+        auth(
+          signInProvider(config, state, flow, () => {
+            throw new Error("The authorization server asked for a second sign-in.");
+          }),
+          { serverUrl: config.transport.url, authorizationCode: code },
+        ),
+      catch: (cause) =>
+        callbackFailure(
+          "The provider rejected the sign-in when T3 Code exchanged the code.",
+          cause,
+        ),
+    });
+    discoveries.delete(config.id);
+    yield* registry.resetConnection(config.id);
+    return { serverName: config.name };
+  });
 
-  const signOut: McpServerOAuth["Service"]["signOut"] = (input) =>
-    Effect.gen(function* () {
+  const signOut: McpServerOAuth["Service"]["signOut"] = Effect.fn("McpServerOAuth.signOut")(
+    function* (input) {
       const config = yield* registry.get(input.id);
       if (config === undefined) return yield* new McpServerError({ reason: "not_found" });
       if (!isOAuthServer(config)) return yield* new McpServerError({ reason: "not_oauth" });
@@ -380,86 +385,87 @@ const make = Effect.gen(function* () {
       const entry = (yield* registry.list).servers.find((server) => server.id === config.id);
       if (entry === undefined) return yield* new McpServerError({ reason: "not_found" });
       return entry;
-    }).pipe(Effect.withSpan("McpServerOAuth.signOut"));
+    },
+  );
 
-  const forwardingProvider: McpServerOAuth["Service"]["forwardingProvider"] = (config) =>
-    Effect.gen(function* () {
-      if (!isOAuthServer(config)) return undefined;
-      const session = yield* loadSession(config.id).pipe(Effect.orElseSucceed(() => undefined));
-      if (session === undefined) return undefined;
-      const { id } = config;
-      const serverUrl = config.transport.url;
-      const { redirectUri } = session;
+  const forwardingProvider: McpServerOAuth["Service"]["forwardingProvider"] = Effect.fn(
+    "McpServerOAuth.forwardingProvider",
+  )(function* (config) {
+    if (!isOAuthServer(config)) return undefined;
+    const session = yield* loadSession(config.id).pipe(Effect.orElseSucceed(() => undefined));
+    if (session === undefined) return undefined;
+    const { id } = config;
+    const serverUrl = config.transport.url;
+    const { redirectUri } = session;
 
-      const storedTokens = () => run(loadSession(id).pipe(Effect.map((stored) => stored?.tokens)));
-      const base: OAuthClientProvider = {
-        redirectUrl: redirectUri,
-        clientMetadata: clientMetadata(redirectUri),
-        // No saveClientInformation: forwarding never registers a client on its own.
-        clientInformation: async () => {
-          const information = await run(clientInformation(config));
-          if (information === undefined) throw needsSignIn();
-          return information;
-        },
-        tokens: storedTokens,
-        saveTokens: (tokens) => run(saveSession(id, redirectUri, tokens)),
-        redirectToAuthorization: () => {
-          throw needsSignIn();
-        },
-        saveCodeVerifier: () => undefined,
-        codeVerifier: () => {
-          throw needsSignIn();
-        },
-        invalidateCredentials: (scope) =>
-          run(
-            Effect.gen(function* () {
-              if (scope === "discovery") {
-                discoveries.delete(id);
-                return;
-              }
-              if (scope === "verifier") return;
+    const storedTokens = () => run(loadSession(id).pipe(Effect.map((stored) => stored?.tokens)));
+    const base: OAuthClientProvider = {
+      redirectUrl: redirectUri,
+      clientMetadata: clientMetadata(redirectUri),
+      // No saveClientInformation: forwarding never registers a client on its own.
+      clientInformation: async () => {
+        const information = await run(clientInformation(config));
+        if (information === undefined) throw needsSignIn();
+        return information;
+      },
+      tokens: storedTokens,
+      saveTokens: (tokens) => run(saveSession(id, redirectUri, tokens)),
+      redirectToAuthorization: () => {
+        throw needsSignIn();
+      },
+      saveCodeVerifier: () => undefined,
+      codeVerifier: () => {
+        throw needsSignIn();
+      },
+      invalidateCredentials: (scope) =>
+        run(
+          Effect.gen(function* () {
+            if (scope === "discovery") {
+              discoveries.delete(id);
+              return;
+            }
+            if (scope === "verifier") return;
+            yield* secrets
+              .remove(McpServerRegistry.oauthTokensSecretName(id))
+              .pipe(Effect.ignore({ log: true }));
+            if (scope === "all" || scope === "client") {
+              discoveries.delete(id);
               yield* secrets
-                .remove(McpServerRegistry.oauthTokensSecretName(id))
+                .remove(McpServerRegistry.oauthRegistrationSecretName(id))
                 .pipe(Effect.ignore({ log: true }));
-              if (scope === "all" || scope === "client") {
-                discoveries.delete(id);
-                yield* secrets
-                  .remove(McpServerRegistry.oauthRegistrationSecretName(id))
-                  .pipe(Effect.ignore({ log: true }));
-              }
-            }),
-          ),
-        saveDiscoveryState: (discovery) => {
-          discoveries.set(id, discovery);
-        },
-        discoveryState: () => discoveries.get(id),
-      };
+            }
+          }),
+        ),
+      saveDiscoveryState: (discovery) => {
+        discoveries.set(id, discovery);
+      },
+      discoveryState: () => discoveries.get(id),
+    };
 
-      // Concurrent requests share one refresh, since many servers rotate the
-      // refresh token and a second refresh would present a spent one.
-      const refresh = () => {
-        const existing = refreshes.get(id);
-        if (existing !== undefined) return existing;
-        const flight = auth(base, { serverUrl }).finally(() => refreshes.delete(id));
-        refreshes.set(id, flight);
-        return flight;
-      };
+    // Concurrent requests share one refresh, since many servers rotate the
+    // refresh token and a second refresh would present a spent one.
+    const refresh = () => {
+      const existing = refreshes.get(id);
+      if (existing !== undefined) return existing;
+      const flight = auth(base, { serverUrl }).finally(() => refreshes.delete(id));
+      refreshes.set(id, flight);
+      return flight;
+    };
 
-      const provider: OAuthClientProvider = {
-        ...base,
-        tokens: async () => {
-          const stored = await run(loadSession(id));
-          if (stored === undefined) return undefined;
-          const now = await run(Clock.currentTimeMillis);
-          const expiring =
-            stored.expiresAt !== undefined && now >= stored.expiresAt - EXPIRY_SKEW_MS;
-          if (!expiring || stored.tokens.refresh_token === undefined) return stored.tokens;
-          await refresh();
-          return storedTokens();
-        },
-      };
-      return provider;
-    });
+    const provider: OAuthClientProvider = {
+      ...base,
+      tokens: async () => {
+        const stored = await run(loadSession(id));
+        if (stored === undefined) return undefined;
+        const now = await run(Clock.currentTimeMillis);
+        const expiring = stored.expiresAt !== undefined && now >= stored.expiresAt - EXPIRY_SKEW_MS;
+        if (!expiring || stored.tokens.refresh_token === undefined) return stored.tokens;
+        await refresh();
+        return storedTokens();
+      },
+    };
+    return provider;
+  });
 
   return McpServerOAuth.of({ startSignIn, completeSignIn, signOut, forwardingProvider });
 });

@@ -274,42 +274,43 @@ const make = Effect.gen(function* () {
   );
 
   /** Ask the agents to rescan, so lists and the composer show the change. */
-  const refreshAgents = (target: SkillInstallTarget) =>
-    Effect.gen(function* () {
-      const providers = yield* enabledProviders;
-      // A project's skill list includes the global skills, so a global change
-      // rescans every project an agent has listed, not just its own folders.
-      const scansByCwd = new Map<string, Array<ServerProvider["instanceId"]>>();
-      for (const provider of providers) {
-        const cwds =
-          target.kind === "environment"
-            ? (provider.workspaceSnapshots ?? []).map((snapshot) => snapshot.cwd)
-            : [target.cwd];
-        for (const cwd of cwds)
-          scansByCwd.set(cwd, [...(scansByCwd.get(cwd) ?? []), provider.instanceId]);
-      }
-      yield* Effect.forEach(
-        target.kind === "environment" ? providers : [],
-        (provider) => providerRegistry.refreshInstance(provider.instanceId),
-        { concurrency: "unbounded", discard: true },
-      );
-      // A fresh scan drops every other agent's snapshot of its folder. So one
-      // agent scans fresh, which drops the rest's stale lists (and clears its
-      // own caches), then the others rescan without dropping it in turn. A
-      // scan whose starting snapshot changed is discarded, so one folder's
-      // agents scan one after another. Different folders scan in parallel.
-      yield* Effect.forEach(
-        scansByCwd,
-        ([cwd, instanceIds]) =>
-          Effect.forEach(
-            instanceIds,
-            (instanceId, index) =>
-              providerRegistry.refreshWorkspaceSnapshot({ instanceId, cwd, fresh: index === 0 }),
-            { discard: true },
-          ),
-        { concurrency: "unbounded", discard: true },
-      );
-    });
+  const refreshAgents = Effect.fn("SkillLibrary.refreshAgents")(function* (
+    target: SkillInstallTarget,
+  ) {
+    const providers = yield* enabledProviders;
+    // A project's skill list includes the global skills, so a global change
+    // rescans every project an agent has listed, not just its own folders.
+    const scansByCwd = new Map<string, Array<ServerProvider["instanceId"]>>();
+    for (const provider of providers) {
+      const cwds =
+        target.kind === "environment"
+          ? (provider.workspaceSnapshots ?? []).map((snapshot) => snapshot.cwd)
+          : [target.cwd];
+      for (const cwd of cwds)
+        scansByCwd.set(cwd, [...(scansByCwd.get(cwd) ?? []), provider.instanceId]);
+    }
+    yield* Effect.forEach(
+      target.kind === "environment" ? providers : [],
+      (provider) => providerRegistry.refreshInstance(provider.instanceId),
+      { concurrency: "unbounded", discard: true },
+    );
+    // A fresh scan drops every other agent's snapshot of its folder. So one
+    // agent scans fresh, which drops the rest's stale lists (and clears its
+    // own caches), then the others rescan without dropping it in turn. A
+    // scan whose starting snapshot changed is discarded, so one folder's
+    // agents scan one after another. Different folders scan in parallel.
+    yield* Effect.forEach(
+      scansByCwd,
+      ([cwd, instanceIds]) =>
+        Effect.forEach(
+          instanceIds,
+          (instanceId, index) =>
+            providerRegistry.refreshWorkspaceSnapshot({ instanceId, cwd, fresh: index === 0 }),
+          { discard: true },
+        ),
+      { concurrency: "unbounded", discard: true },
+    );
+  });
 
   /** A skill folder's files, breadth first and bounded; links are listed, never followed. */
   const listFiles = Effect.fnUntraced(function* (root: string) {
@@ -543,37 +544,36 @@ const make = Effect.gen(function* () {
     })),
   });
 
-  const installInto = (
+  const installInto = Effect.fn("SkillLibrary.installInto")(function* (
     target: SkillInstallTarget,
     source: string,
     skills: ReadonlyArray<string>,
     fullDepth = false,
-  ) =>
-    Effect.gen(function* () {
-      const drivers: ReadonlyArray<ProviderDriverKind> = (yield* enabledProviders).map(
-        (provider: ServerProvider) => provider.driver,
-      );
-      const results = yield* runAdd({
-        source,
-        skills,
-        agents: skillsCliInstallAgents(drivers, target.kind === "environment" ? "home" : "project"),
-        global: target.kind === "environment",
-        fullDepth,
-        cwd: targetPaths(target).root,
-      });
-      if (target.kind === "environment") {
-        yield* claudeHomes.linkInto(
-          yield* extraClaudeFolders,
-          results.flatMap((result) =>
-            result.status === "installed" && result.name !== undefined
-              ? [path.join(targetPaths(target).folder, skillFolderName(result.name))]
-              : [],
-          ),
-        );
-      }
-      yield* refreshAgents(target);
-      return outcomes(results);
+  ) {
+    const drivers: ReadonlyArray<ProviderDriverKind> = (yield* enabledProviders).map(
+      (provider: ServerProvider) => provider.driver,
+    );
+    const results = yield* runAdd({
+      source,
+      skills,
+      agents: skillsCliInstallAgents(drivers, target.kind === "environment" ? "home" : "project"),
+      global: target.kind === "environment",
+      fullDepth,
+      cwd: targetPaths(target).root,
     });
+    if (target.kind === "environment") {
+      yield* claudeHomes.linkInto(
+        yield* extraClaudeFolders,
+        results.flatMap((result) =>
+          result.status === "installed" && result.name !== undefined
+            ? [path.join(targetPaths(target).folder, skillFolderName(result.name))]
+            : [],
+        ),
+      );
+    }
+    yield* refreshAgents(target);
+    return outcomes(results);
+  });
 
   const install: SkillLibrary["Service"]["install"] = Effect.fn("SkillLibrary.install")(
     function* (input) {
@@ -605,20 +605,22 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const updateLocked = (target: SkillInstallTarget, name: string) =>
-    Effect.gen(function* () {
-      const { key, entry } = yield* lockedEntry(target, name);
-      const from = lockedInstallSource(entry, target.kind === "environment" ? "home" : "project");
-      if (from === null) {
-        return yield* new SkillLibraryError({
-          reason: "notInstalled",
-          message:
-            "This skill's lock doesn't record which host it came from. Install it again from its URL.",
-        });
-      }
-      // The CLI matches `--skill` against the skill's own name, which the lock keys by.
-      return yield* installInto(target, from.source, [key], from.fullDepth);
-    });
+  const updateLocked = Effect.fn("SkillLibrary.updateLocked")(function* (
+    target: SkillInstallTarget,
+    name: string,
+  ) {
+    const { key, entry } = yield* lockedEntry(target, name);
+    const from = lockedInstallSource(entry, target.kind === "environment" ? "home" : "project");
+    if (from === null) {
+      return yield* new SkillLibraryError({
+        reason: "notInstalled",
+        message:
+          "This skill's lock doesn't record which host it came from. Install it again from its URL.",
+      });
+    }
+    // The CLI matches `--skill` against the skill's own name, which the lock keys by.
+    return yield* installInto(target, from.source, [key], from.fullDepth);
+  });
 
   const remove: SkillLibrary["Service"]["remove"] = Effect.fn("SkillLibrary.remove")(
     function* (input) {
@@ -627,22 +629,24 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const removeLocked = (target: SkillInstallTarget, name: string) =>
-    Effect.gen(function* () {
-      const locked = lockEntryFor(yield* readLock(targetPaths(target).lock), name);
-      if (locked === undefined) return yield* removeUnlocked(target, name);
-      // What `npx skills remove` deletes: the installed folder and each agent's copy or link,
-      // plus links in Claude instances' own homes, which `skillRoots` includes.
-      const paths = targetPaths(target);
-      const folder = skillFolderName(locked.key);
-      const roots = yield* skillRoots(target);
-      return yield* moveToTrash(
-        target,
-        name,
-        [paths.folder, ...roots].map((root) => path.join(root, folder)),
-        { file: paths.lock, key: locked.key },
-      );
-    });
+  const removeLocked = Effect.fn("SkillLibrary.removeLocked")(function* (
+    target: SkillInstallTarget,
+    name: string,
+  ) {
+    const locked = lockEntryFor(yield* readLock(targetPaths(target).lock), name);
+    if (locked === undefined) return yield* removeUnlocked(target, name);
+    // What `npx skills remove` deletes: the installed folder and each agent's copy or link,
+    // plus links in Claude instances' own homes, which `skillRoots` includes.
+    const paths = targetPaths(target);
+    const folder = skillFolderName(locked.key);
+    const roots = yield* skillRoots(target);
+    return yield* moveToTrash(
+      target,
+      name,
+      [paths.folder, ...roots].map((root) => path.join(root, folder)),
+      { file: paths.lock, key: locked.key },
+    );
+  });
 
   const moveToTrash = (
     target: SkillInstallTarget,
@@ -679,76 +683,79 @@ const make = Effect.gen(function* () {
    * the level's agent skill folders, links first. Only reported folders count,
    * so a name can't reach anything else.
    */
-  const removeUnlocked = (target: SkillInstallTarget, name: string) =>
-    Effect.gen(function* () {
-      const roots = yield* skillRoots(target);
-      const wanted = name.trim().toLowerCase();
-      const reported = new Set<string>();
-      for (const provider of yield* enabledProviders) {
-        const lists = [
-          ...(target.kind === "environment" ? [provider.skills] : []),
-          ...(provider.workspaceSnapshots ?? [])
-            .filter((snapshot) => target.kind === "environment" || snapshot.cwd === target.cwd)
-            .map((snapshot) => snapshot.skills),
-        ];
-        for (const skill of lists.flat()) {
-          if (skill.name.trim().toLowerCase() !== wanted || !path.isAbsolute(skill.path)) continue;
-          const folder = path.dirname(skill.path);
-          if (!roots.includes(path.dirname(folder))) continue;
-          reported.add(folder);
-          // A link's folder goes too when it is one of the user's own.
-          const real = yield* realPath(folder);
-          if (roots.includes(path.dirname(real))) reported.add(real);
+  const removeUnlocked = Effect.fn("SkillLibrary.removeUnlocked")(function* (
+    target: SkillInstallTarget,
+    name: string,
+  ) {
+    const roots = yield* skillRoots(target);
+    const wanted = name.trim().toLowerCase();
+    const reported = new Set<string>();
+    for (const provider of yield* enabledProviders) {
+      const lists = [
+        ...(target.kind === "environment" ? [provider.skills] : []),
+        ...(provider.workspaceSnapshots ?? [])
+          .filter((snapshot) => target.kind === "environment" || snapshot.cwd === target.cwd)
+          .map((snapshot) => snapshot.skills),
+      ];
+      for (const skill of lists.flat()) {
+        if (skill.name.trim().toLowerCase() !== wanted || !path.isAbsolute(skill.path)) continue;
+        const folder = path.dirname(skill.path);
+        if (!roots.includes(path.dirname(folder))) continue;
+        reported.add(folder);
+        // A link's folder goes too when it is one of the user's own.
+        const real = yield* realPath(folder);
+        if (roots.includes(path.dirname(real))) reported.add(real);
+      }
+    }
+    if (reported.size === 0) {
+      return yield* new SkillLibraryError({
+        reason: "notInstalled",
+        message: `No skill named ${name} is in the agents' skill folders here.`,
+      });
+    }
+    // Links to it in agent folders no agent reported, such as another Claude
+    // home's, go too, so none is left pointing into the trash.
+    const reals = new Set(yield* Effect.forEach([...reported], realPath));
+    for (const root of roots) {
+      for (const folder of reals) {
+        const candidate = path.join(root, path.basename(folder));
+        if (!reported.has(candidate) && reals.has(yield* realPath(candidate))) {
+          reported.add(candidate);
         }
       }
-      if (reported.size === 0) {
-        return yield* new SkillLibraryError({
-          reason: "notInstalled",
-          message: `No skill named ${name} is in the agents' skill folders here.`,
-        });
-      }
-      // Links to it in agent folders no agent reported, such as another Claude
-      // home's, go too, so none is left pointing into the trash.
-      const reals = new Set(yield* Effect.forEach([...reported], realPath));
-      for (const root of roots) {
-        for (const folder of reals) {
-          const candidate = path.join(root, path.basename(folder));
-          if (!reported.has(candidate) && reals.has(yield* realPath(candidate))) {
-            reported.add(candidate);
-          }
-        }
-      }
-      return yield* moveToTrash(target, name, [...reported]);
-    });
+    }
+    return yield* moveToTrash(target, name, [...reported]);
+  });
 
   /**
    * The folder an enabled agent reports for a skill in one of the level's
    * agent skill folders, after links. Plugin and built-in skills aren't there.
    */
-  const reportedFolder = (target: SkillInstallTarget, name: string) =>
-    Effect.gen(function* () {
-      const wanted = name.trim().toLowerCase();
-      const roots = yield* skillRoots(target);
-      for (const provider of yield* enabledProviders) {
-        const skills =
-          target.kind === "environment"
-            ? provider.skills
-            : (provider.workspaceSnapshots?.find((snapshot) => snapshot.cwd === target.cwd)
-                ?.skills ?? []);
-        for (const skill of skills) {
-          if (skill.name.trim().toLowerCase() !== wanted) continue;
-          if (!path.isAbsolute(skill.path) || path.basename(skill.path) !== "SKILL.md") continue;
-          const folder = path.dirname(skill.path);
-          const real = yield* realPath(folder);
-          if (roots.includes(path.dirname(folder)) || roots.includes(path.dirname(real)))
-            return real;
-        }
+  const reportedFolder = Effect.fn("SkillLibrary.reportedFolder")(function* (
+    target: SkillInstallTarget,
+    name: string,
+  ) {
+    const wanted = name.trim().toLowerCase();
+    const roots = yield* skillRoots(target);
+    for (const provider of yield* enabledProviders) {
+      const skills =
+        target.kind === "environment"
+          ? provider.skills
+          : (provider.workspaceSnapshots?.find((snapshot) => snapshot.cwd === target.cwd)?.skills ??
+            []);
+      for (const skill of skills) {
+        if (skill.name.trim().toLowerCase() !== wanted) continue;
+        if (!path.isAbsolute(skill.path) || path.basename(skill.path) !== "SKILL.md") continue;
+        const folder = path.dirname(skill.path);
+        const real = yield* realPath(folder);
+        if (roots.includes(path.dirname(folder)) || roots.includes(path.dirname(real))) return real;
       }
-      return yield* new SkillLibraryError({
-        reason: "notInstalled",
-        message: `No agent here reports a skill named ${name}.`,
-      });
+    }
+    return yield* new SkillLibraryError({
+      reason: "notInstalled",
+      message: `No agent here reports a skill named ${name}.`,
     });
+  });
 
   const tooLarge = (message: string) => new SkillLibraryError({ reason: "tooLarge", message });
 
@@ -810,84 +817,85 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const importLocked = (target: SkillInstallTarget, bundle: SkillBundle) =>
-    Effect.gen(function* () {
-      const paths = targetPaths(target);
-      const folderName = skillFolderName(bundle.folder);
-      const destination = path.join(paths.folder, folderName);
-      const drivers = (yield* enabledProviders).map((provider) => provider.driver);
-      const links = skillLinkFolders(
-        drivers,
-        target.kind === "environment" ? "home" : "project",
-      ).map((folder) => path.join(paths.root, folder, folderName));
-      const taken = yield* Effect.filter([destination, ...links], (candidate) =>
-        fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false)),
-      );
-      if (taken.length > 0) {
-        return yield* new SkillLibraryError({
-          reason: "exists",
-          message: `A skill named ${bundle.folder} is already at ${taken[0]}.`,
-        });
-      }
-      if (bundle.install !== undefined) {
-        const installed = yield* installInto(
-          target,
-          bundle.install.source,
-          [bundle.install.skill],
-          bundle.install.fullDepth,
-        ).pipe(
-          Effect.map(
-            (result) =>
-              result.outcomes.length > 0 &&
-              result.outcomes.every((outcome) => outcome.status === "installed"),
-          ),
-          Effect.orElseSucceed(() => false),
-        );
-        if (installed) return;
-        // The source may be private or offline from here: the files still work.
-        yield* fileSystem.remove(destination, { recursive: true }).pipe(Effect.ignore);
-      }
-      const failed = (message: string) => cliFailed(message);
-      const write = Effect.gen(function* () {
-        let bytes = 0;
-        for (const file of bundle.files) {
-          // Bundles come from another environment: keep every path inside the folder.
-          const relative = path.normalize(file.path);
-          const absolute = path.resolve(destination, relative);
-          if (path.isAbsolute(relative) || !absolute.startsWith(destination + path.sep)) {
-            return yield* failed(`${file.path} isn't a path inside the skill.`);
-          }
-          const contents = Base64.decode(file.contents);
-          if (contents._tag === "Failure") return yield* failed(`${file.path} isn't valid base64.`);
-          bytes += contents.success.byteLength;
-          if (bytes > MAX_SKILL_BUNDLE_BYTES)
-            return yield* tooLarge(`${bundle.folder} is too large.`);
-          yield* fileSystem.makeDirectory(path.dirname(absolute), { recursive: true });
-          yield* fileSystem.writeFile(absolute, contents.success);
-          if (file.executable) yield* fileSystem.chmod(absolute, 0o755);
-        }
-        for (const link of links) {
-          yield* fileSystem.makeDirectory(path.dirname(link), { recursive: true });
-          yield* fileSystem.symlink(destination, link);
-        }
-      }).pipe(
-        Effect.catchTags({
-          PlatformError: (error) =>
-            Effect.fail(failed(`Couldn't write ${bundle.folder}: ${error.message}`)),
-        }),
-        // A half-written skill is worse than none.
-        Effect.onError(() =>
-          Effect.forEach([...links, destination], (leftover) =>
-            fileSystem.remove(leftover, { recursive: true }).pipe(Effect.ignore),
-          ),
+  const importLocked = Effect.fn("SkillLibrary.importLocked")(function* (
+    target: SkillInstallTarget,
+    bundle: SkillBundle,
+  ) {
+    const paths = targetPaths(target);
+    const folderName = skillFolderName(bundle.folder);
+    const destination = path.join(paths.folder, folderName);
+    const drivers = (yield* enabledProviders).map((provider) => provider.driver);
+    const links = skillLinkFolders(drivers, target.kind === "environment" ? "home" : "project").map(
+      (folder) => path.join(paths.root, folder, folderName),
+    );
+    const taken = yield* Effect.filter([destination, ...links], (candidate) =>
+      fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false)),
+    );
+    if (taken.length > 0) {
+      return yield* new SkillLibraryError({
+        reason: "exists",
+        message: `A skill named ${bundle.folder} is already at ${taken[0]}.`,
+      });
+    }
+    if (bundle.install !== undefined) {
+      const installed = yield* installInto(
+        target,
+        bundle.install.source,
+        [bundle.install.skill],
+        bundle.install.fullDepth,
+      ).pipe(
+        Effect.map(
+          (result) =>
+            result.outcomes.length > 0 &&
+            result.outcomes.every((outcome) => outcome.status === "installed"),
         ),
+        Effect.orElseSucceed(() => false),
       );
-      yield* write;
-      if (target.kind === "environment") {
-        yield* claudeHomes.linkInto(yield* extraClaudeFolders, [destination]);
+      if (installed) return;
+      // The source may be private or offline from here: the files still work.
+      yield* fileSystem.remove(destination, { recursive: true }).pipe(Effect.ignore);
+    }
+    const failed = (message: string) => cliFailed(message);
+    const write = Effect.gen(function* () {
+      let bytes = 0;
+      for (const file of bundle.files) {
+        // Bundles come from another environment: keep every path inside the folder.
+        const relative = path.normalize(file.path);
+        const absolute = path.resolve(destination, relative);
+        if (path.isAbsolute(relative) || !absolute.startsWith(destination + path.sep)) {
+          return yield* failed(`${file.path} isn't a path inside the skill.`);
+        }
+        const contents = Base64.decode(file.contents);
+        if (contents._tag === "Failure") return yield* failed(`${file.path} isn't valid base64.`);
+        bytes += contents.success.byteLength;
+        if (bytes > MAX_SKILL_BUNDLE_BYTES)
+          return yield* tooLarge(`${bundle.folder} is too large.`);
+        yield* fileSystem.makeDirectory(path.dirname(absolute), { recursive: true });
+        yield* fileSystem.writeFile(absolute, contents.success);
+        if (file.executable) yield* fileSystem.chmod(absolute, 0o755);
       }
-      yield* refreshAgents(target);
-    });
+      for (const link of links) {
+        yield* fileSystem.makeDirectory(path.dirname(link), { recursive: true });
+        yield* fileSystem.symlink(destination, link);
+      }
+    }).pipe(
+      Effect.catchTags({
+        PlatformError: (error) =>
+          Effect.fail(failed(`Couldn't write ${bundle.folder}: ${error.message}`)),
+      }),
+      // A half-written skill is worse than none.
+      Effect.onError(() =>
+        Effect.forEach([...links, destination], (leftover) =>
+          fileSystem.remove(leftover, { recursive: true }).pipe(Effect.ignore),
+        ),
+      ),
+    );
+    yield* write;
+    if (target.kind === "environment") {
+      yield* claudeHomes.linkInto(yield* extraClaudeFolders, [destination]);
+    }
+    yield* refreshAgents(target);
+  });
 
   return SkillLibrary.of({
     inspect,

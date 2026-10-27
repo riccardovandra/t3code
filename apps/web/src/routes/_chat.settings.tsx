@@ -24,6 +24,7 @@ import {
   getSettingsSearchTargetScope,
   getThreadAutoSettlementSearchAvailability,
   isSettingsSearchScopeAvailable,
+  movedSettingsPath,
 } from "../components/settings/settingsSearch";
 
 /** Pages that show one environment at a time, so the scope picker selects a single machine. */
@@ -182,6 +183,8 @@ export const Route = createFileRoute("/_chat/settings")({
     if (location.pathname === "/settings") {
       throw redirect({ to: "/settings/general", replace: true });
     }
+    const moved = movedSettingsPath(location.pathname, location.hash);
+    if (moved) throw redirect({ to: moved, search: true, hash: true, replace: true });
   },
   component: SettingsRouteLayout,
 });
