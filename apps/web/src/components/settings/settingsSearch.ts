@@ -786,6 +786,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "usage-limit-failover",
+    title: "Usage limit failover",
+    to: "/settings/providers",
+    searchTerms: [
+      "failover fallback switch account provider instance usage limit exhausted rate limited order",
+    ],
+    providerSettingsOnly: true,
+  },
+  {
     id: "cursor-keychain-usage",
     title: "Cursor account usage",
     to: "/settings/providers",
