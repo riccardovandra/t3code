@@ -9,6 +9,7 @@ import {
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
+  AuthTerminalOperateScope,
   type AuthEnvironmentScope,
 } from "./auth.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
@@ -80,6 +81,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.mcpServersRemove]: AuthSettingsWriteScope,
   [WS_METHODS.mcpServersSetEnabled]: AuthSettingsWriteScope,
   [WS_METHODS.projectsSetEnvVariables]: AuthFilesystemWriteScope,
+  [WS_METHODS.terminalRunCommand]: AuthTerminalOperateScope,
   [WS_METHODS.mcpServersStartSignIn]: AuthSettingsWriteScope,
   [WS_METHODS.mcpServersSignOut]: AuthSettingsWriteScope,
   // A guest link hands thread access to someone outside, like a pairing link.

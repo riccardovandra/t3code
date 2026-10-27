@@ -308,6 +308,9 @@ import {
   TerminalOpenInput,
   TerminalResizeInput,
   TerminalRestartInput,
+  TerminalRunCommandError,
+  TerminalRunCommandInput,
+  TerminalRunCommandResult,
   TerminalSessionSnapshot,
   TerminalWriteInput,
 } from "./terminal.ts";
@@ -611,6 +614,7 @@ export const WS_METHODS = {
   skillLibraryList: "skillLibrary.list",
   serverReleaseMirrorPublished: "server.releaseMirrorPublished",
   projectsSetEnvVariables: "projects.setEnvVariables",
+  terminalRunCommand: "terminal.runCommand",
   scheduledTasksList: "scheduledTasks.list",
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -2084,6 +2088,13 @@ const WsProjectsSetEnvVariablesRpc = Rpc.make(WS_METHODS.projectsSetEnvVariables
   error: Schema.Union([ProjectSetEnvVariablesError, EnvironmentAuthorizationError]),
 });
 
+// Fork: runs a chat code block once and returns its output for the composer.
+const WsTerminalRunCommandRpc = Rpc.make(WS_METHODS.terminalRunCommand, {
+  payload: TerminalRunCommandInput,
+  success: TerminalRunCommandResult,
+  error: Schema.Union([TerminalRunCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsMcpServersListRpc = Rpc.make(WS_METHODS.mcpServersList, {
   payload: Schema.Struct({}),
   success: McpServerListResult,
@@ -2246,6 +2257,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillLibraryListRpc,
   WsServerReleaseMirrorPublishedRpc,
   WsProjectsSetEnvVariablesRpc,
+  WsTerminalRunCommandRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
