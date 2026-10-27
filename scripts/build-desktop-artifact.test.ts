@@ -3,7 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { extractFile } from "@electron/asar";
+import { createPackage, extractFile } from "@electron/asar";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
@@ -48,6 +48,7 @@ import {
   stageBrowserSecret,
   validateWindowsPackagedPayload,
   verifyPackagedBundleIsSelfContained,
+  verifyUnixPackagedRuntime,
   WindowsPrimaryNativeProbeError,
   WindowsDesktopBuildPrerequisitesMissingError,
   WindowsPackagedPayloadValidationError,
@@ -127,6 +128,24 @@ function mockProcess(exitCode: number, stdout = "") {
 }
 
 const WINDOWS_PAYLOAD_FIXTURE_VERSION = "1.2.3";
+
+const makeMacAppFixture = Effect.fn("test.makeMacAppFixture")(function* (
+  serverEntrySource: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mac-app-test-" });
+  const sourceDir = path.join(tempDir, "app-source");
+  const serverEntryPath = path.join(sourceDir, "apps/server/dist/bin.mjs");
+  yield* fs.makeDirectory(path.dirname(serverEntryPath), { recursive: true });
+  yield* fs.writeFileString(serverEntryPath, serverEntrySource);
+
+  const stageDistDir = path.join(tempDir, "dist");
+  const resourcesDir = path.join(stageDistDir, "mac-arm64/T3 Code.app/Contents/Resources");
+  yield* fs.makeDirectory(resourcesDir, { recursive: true });
+  yield* Effect.promise(() => createPackage(sourceDir, path.join(resourcesDir, "app.asar")));
+  return { stageDistDir };
+});
 
 const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(function* (input: {
   readonly copyUnpackedNatives: boolean;
@@ -1302,6 +1321,51 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         Layer.mergeAll(
           Layer.succeed(HostProcess.Platform, "linux"),
           Layer.succeed(HostProcess.Architecture, "x64"),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("rejects a macOS app whose server bundle cannot resolve", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeMacAppFixture('import "t3code-deliberately-missing-package";\n');
+        const error = yield* verifyUnixPackagedRuntime({
+          stageDistDir: fixture.stageDistDir,
+          platform: "mac",
+          targetArch: "arm64",
+          verbose: false,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, BundleNotSelfContainedError);
+        assert.include(error.output, "t3code-deliberately-missing-package");
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, "darwin"),
+          Layer.succeed(HostProcess.Architecture, "arm64"),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("skips the macOS bundle self-check on a host of another architecture", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeMacAppFixture('import "t3code-deliberately-missing-package";\n');
+        yield* verifyUnixPackagedRuntime({
+          stageDistDir: fixture.stageDistDir,
+          platform: "mac",
+          targetArch: "x64",
+          verbose: false,
+        });
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, "darwin"),
+          Layer.succeed(HostProcess.Architecture, "arm64"),
         ),
       ),
     ),

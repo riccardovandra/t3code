@@ -3301,6 +3301,63 @@ export const verifyWindowsPackagedRuntime = Effect.fn(
   yield* verifyPackagedBundleIsSelfContained({ asarPath, verbose: input.verbose });
 });
 
+/**
+ * macOS and Linux run the server from app.asar. Without this probe a missing
+ * runtime dependency only shows once the app is installed and its backend
+ * crashes on launch. Native modules need a host of the target architecture.
+ */
+export const verifyUnixPackagedRuntime = Effect.fn("desktopArtifact.verifyUnixPackagedRuntime")(
+  function* (input: {
+    readonly stageDistDir: string;
+    readonly platform: "mac" | "linux";
+    readonly targetArch: typeof BuildArch.Type;
+    readonly verbose: boolean;
+  }) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const hostPlatform = yield* HostProcess.Platform;
+    const hostArchitecture = yield* HostProcess.Architecture;
+    const targetPlatform = input.platform === "mac" ? "darwin" : "linux";
+    if (
+      hostPlatform !== targetPlatform ||
+      (input.targetArch !== "universal" && hostArchitecture !== input.targetArch)
+    ) {
+      yield* Effect.log(
+        `[desktop-artifact] Skipped the bundle self-check of a ${input.platform}/${input.targetArch} build on a ${hostPlatform}/${hostArchitecture} host.`,
+      );
+      return;
+    }
+
+    const asarPaths: string[] = [];
+    for (const entry of yield* fs.readDirectory(input.stageDistDir)) {
+      const entryPath = path.join(input.stageDistDir, entry);
+      if (input.platform === "linux") {
+        if (entry.endsWith("-unpacked")) asarPaths.push(path.join(entryPath, "resources/app.asar"));
+        continue;
+      }
+      if (!entry.startsWith("mac")) continue;
+      const stat = yield* fs.stat(entryPath).pipe(Effect.orElseSucceed(() => null));
+      if (stat?.type !== "Directory") continue;
+      for (const bundle of yield* fs.readDirectory(entryPath)) {
+        if (bundle.endsWith(".app")) {
+          asarPaths.push(path.join(entryPath, bundle, "Contents/Resources/app.asar"));
+        }
+      }
+    }
+
+    const asarPath = asarPaths[0];
+    if (asarPath === undefined || !(yield* fs.exists(asarPath))) {
+      return yield* new BundleNotSelfContainedError({
+        exitCode: -1,
+        output: `Expected a packaged app.asar under ${input.stageDistDir}.`,
+      });
+    }
+    yield* verifyPackagedBundleIsSelfContained({ asarPath, verbose: input.verbose }).pipe(
+      Effect.scoped,
+    );
+  },
+);
+
 export const validateWindowsPackagedPayload = Effect.fn(
   "desktopArtifact.validateWindowsPackagedPayload",
 )(function* (input: {
@@ -4016,6 +4073,13 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,
       }),
+      verbose: options.verbose,
+    });
+  } else {
+    yield* verifyUnixPackagedRuntime({
+      stageDistDir,
+      platform: options.platform,
+      targetArch: options.arch,
       verbose: options.verbose,
     });
   }
