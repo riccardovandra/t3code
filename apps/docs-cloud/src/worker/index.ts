@@ -1,4 +1,5 @@
 import { handleApi, type ApiDeps } from "./api.ts";
+import { withAssetCaching } from "./assets.ts";
 import { parseOwnerEmails } from "./auth.ts";
 import { parseEmbedOrigins } from "../shared/embed.ts";
 import type { CommentOpResult } from "./comments.ts";
@@ -61,10 +62,13 @@ export default {
     if (pathname === "/mcp" || pathname.startsWith("/mcp/")) {
       return handleMcp(request, apiDeps(env, ctx));
     }
-    return withEmbedPolicy(
-      await env.ASSETS.fetch(request),
-      parseEmbedOrigins(env.FRAME_ANCESTORS),
-      env.PUBLIC_ORIGIN,
+    return withAssetCaching(
+      await withEmbedPolicy(
+        await env.ASSETS.fetch(request),
+        parseEmbedOrigins(env.FRAME_ANCESTORS),
+        env.PUBLIC_ORIGIN,
+      ),
+      pathname,
     );
   },
 } satisfies ExportedHandler<Env>;

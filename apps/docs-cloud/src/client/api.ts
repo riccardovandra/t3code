@@ -42,6 +42,8 @@ async function request<T>(
   return data as T;
 }
 
+let libraryPrefetch: Promise<HomeLibrary> | null = null;
+
 /** Identifies this page's writes, so the DocRoom echo of our own save is recognisable. */
 export const clientId = crypto.randomUUID();
 
@@ -56,7 +58,21 @@ export const api = {
   verifyCode: (email: string, code: string) =>
     request<{ email: string }>("POST", "/api/auth/verify", { email, code }),
   logout: () => request<{ ok: true }>("POST", "/api/auth/logout", {}),
-  library: () => request<HomeLibrary>("GET", "/api/library"),
+  /** Starts the library request before the page asks; the next `library()` takes it. */
+  prefetchLibrary: () => {
+    libraryPrefetch = request<HomeLibrary>("GET", "/api/library");
+    libraryPrefetch.catch(() => undefined);
+  },
+  dropLibraryPrefetch: () => {
+    libraryPrefetch = null;
+  },
+  library: () => {
+    const prefetched = libraryPrefetch;
+    libraryPrefetch = null;
+    const fresh = () => request<HomeLibrary>("GET", "/api/library");
+    // A prefetch made while signed out failed; the signed-in page asks again.
+    return prefetched ? prefetched.catch(fresh) : fresh();
+  },
   /** Tabs whose Markdown contains `query`, in docs the caller is on. */
   search: (query: string, signal?: AbortSignal) =>
     request<{ hits: Array<SearchHit> }>(

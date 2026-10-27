@@ -271,9 +271,9 @@ async function tabWith(ctx: ToolContext, tabId: string, minimum: DocRole): Promi
   return tab;
 }
 
-const scopedLibrary = async (ctx: ToolContext) =>
+const scopedLibrary = (ctx: ToolContext) =>
   Access.scopeLibrary(ctx.deps.db, {
-    library: await Docs.listLibrary(ctx.deps.db),
+    library: Docs.listLibrary(ctx.deps.db),
     userId: ctx.principal.userId,
     owners: ctx.deps.owners,
   });

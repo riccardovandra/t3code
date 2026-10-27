@@ -21,15 +21,18 @@ interface CardRow {
   opened_at: number | null;
 }
 
-/** Adds each doc's preview, member count and the caller's last open to their library. */
+/**
+ * Adds each doc's preview, member count and the caller's last open to their
+ * library, reading the cards while the library itself still loads.
+ */
 export async function homeLibrary(
   db: D1Database,
-  library: AccessibleLibrary,
+  libraryLoad: Promise<AccessibleLibrary>,
   userId: string,
 ): Promise<HomeLibrary> {
   // Only the start of the first top-level tab leaves D1, so a large doc costs
   // the grid no more than a short one.
-  const { results } = await db
+  const cardRows = db
     .prepare(
       `SELECT me.doc_id,
          (SELECT substr(t.markdown, 1, ?) FROM tabs t
@@ -43,6 +46,7 @@ export async function homeLibrary(
     )
     .bind(PREVIEW_SOURCE_LENGTH, userId)
     .all<CardRow>();
+  const [library, { results }] = await Promise.all([libraryLoad, cardRows]);
   const cards = new Map(results.map((row) => [row.doc_id, row]));
   const withCard = (docs: ReadonlyArray<LibraryDoc>): ReadonlyArray<HomeDoc> =>
     docs.map((doc) => {

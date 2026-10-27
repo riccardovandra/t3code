@@ -4,7 +4,8 @@ import { SEARCH_LIMIT, type HomeLibrary, type SearchHit } from "../shared/home.t
 import type { DocWithTabs } from "../shared/protocol.ts";
 import { formatTable } from "../shared/table.ts";
 import { FLOW_EXAMPLE } from "../shared/widget/testing/examples.ts";
-import { makeApiHarness } from "./testing/apiHarness.ts";
+import { handleApi } from "./api.ts";
+import { makeApiHarness, ORIGIN } from "./testing/apiHarness.ts";
 
 async function body<A>(response: Response): Promise<A> {
   return (await response.json()) as A;
@@ -35,6 +36,59 @@ async function setup() {
     api.call("GET", `/api/search?q=${encodeURIComponent(q)}`, { headers: as(cookie) });
   return { api, owner, as, createDoc, libraryDocs, search };
 }
+
+/** Wraps a D1 to record the most queries (or batches) it ever had in flight at once. */
+function trackInFlight(db: D1Database) {
+  let inFlight = 0;
+  const seen = { peak: 0 };
+  const track = <A>(run: () => Promise<A>): Promise<A> => {
+    inFlight += 1;
+    seen.peak = Math.max(seen.peak, inFlight);
+    return run().finally(() => {
+      inFlight -= 1;
+    });
+  };
+  const wrap = (statement: D1PreparedStatement): D1PreparedStatement =>
+    ({
+      ...statement,
+      bind: (...values: Array<unknown>) => wrap(statement.bind(...values)),
+      first: (column?: string) =>
+        track(() => (column === undefined ? statement.first() : statement.first(column))),
+      all: () => track(() => statement.all()),
+      run: () => track(() => statement.run()),
+    }) as D1PreparedStatement;
+  const tracked = {
+    ...db,
+    prepare: (sql: string) => wrap(db.prepare(sql)),
+    batch: (statements: Array<D1PreparedStatement>) => track(() => db.batch(statements)),
+  } as D1Database;
+  return { db: tracked, seen };
+}
+
+describe("home load", () => {
+  it("reads the library, its access and its cards at once, and the account's parts at once", async () => {
+    const { api, owner, as, createDoc } = await setup();
+    const docId = await createDoc("Plan", "# Plan");
+    await api.call("POST", `/api/docs/${docId}/members`, {
+      body: { email: "guest@example.com", role: "viewer" },
+      headers: as(owner),
+    });
+    const guest = await api.signIn("guest@example.com");
+    const { db, seen } = trackInFlight(api.db);
+    const get = (path: string, cookie: string) =>
+      handleApi(new Request(ORIGIN + path, { headers: { Origin: ORIGIN, Cookie: cookie } }), {
+        ...api.deps,
+        db,
+      });
+
+    expect((await get("/api/library", owner)).status).toBe(200);
+    expect(seen.peak).toBe(3);
+    // The admin's addresses come from config; an invited person's are read beside their user row.
+    seen.peak = 0;
+    expect((await get("/api/me", guest)).status).toBe(200);
+    expect(seen.peak).toBe(2);
+  });
+});
 
 describe("home library", () => {
   it("carries a short text preview, member count and the caller's last open", async () => {
