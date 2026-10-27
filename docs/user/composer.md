@@ -245,6 +245,22 @@ provider supports it. Web and desktop also offer compaction from the context met
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).
 
+## Add API keys without sharing them
+
+Type `/secret` to save one or more API keys into a `.env` file in the thread's
+folder. If the thread runs in a worktree, that is the worktree's file. Add a row per key or paste
+`KEY=value` lines, then save. The values go straight to the file and never
+enter the conversation. By default the composer then holds a draft naming the
+keys you added, so the agent knows they exist; edit or delete it before sending.
+
+`/secret OPENAI_API_KEY RESEND_API_KEY` opens the form with those rows filled
+in. Agents end a reply with a `/secret …` button when they need keys; click it
+to open the same form. T3 Code warns you if git doesn't ignore the file.
+
+The agent can still read the file with its own tools; `/secret` keeps keys out
+of the chat history and the model's context, not off the disk. Available on web
+and desktop.
+
 ## Goals
 
 With Codex and Claude, send `/goal` followed by what "done" means, for example

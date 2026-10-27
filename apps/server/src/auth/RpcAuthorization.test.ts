@@ -2,6 +2,7 @@ import {
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
@@ -59,6 +60,15 @@ describe("RPC authorization scopes", () => {
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
     }
+  });
+
+  it("requires file write access to put secrets into a workspace .env", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.projectsSetEnvVariables)).toBe(
+      AuthFilesystemWriteScope,
+    );
+    expect(CLIENT_GUARDED_RPC_SCOPES[WS_METHODS.projectsSetEnvVariables]).toBe(
+      AuthFilesystemWriteScope,
+    );
   });
 
   it("lets readers see doc comments but requires operate access to change them", () => {

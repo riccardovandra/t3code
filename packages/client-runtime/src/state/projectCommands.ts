@@ -229,5 +229,29 @@ export function createProjectEnvironmentAtoms<R, E>(
             fileMetadata.refreshPath(environmentId, path, registry);
         }),
     }),
+    setEnvVariables: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:set-env-variables",
+      tag: WS_METHODS.projectsSetEnvVariables,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.cwd, input.relativePath]),
+      },
+      execute: (input) =>
+        requestGuarded(WS_METHODS.projectsSetEnvVariables, input).pipe(
+          Effect.tap((result) =>
+            fileMetadata.invalidate(resolveWorkspaceFilePath(result.relativePath, input.cwd)),
+          ),
+        ),
+      onSuccess: ({ environmentId, input }, registry, result) =>
+        Effect.sync(() =>
+          fileMetadata.refreshPath(
+            environmentId,
+            resolveWorkspaceFilePath(result.relativePath, input.cwd),
+            registry,
+          ),
+        ),
+    }),
   };
 }

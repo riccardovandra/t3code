@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
   AuthAccessWriteScope,
+  AuthFilesystemWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -78,6 +79,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.mcpServersUpsert]: AuthSettingsWriteScope,
   [WS_METHODS.mcpServersRemove]: AuthSettingsWriteScope,
   [WS_METHODS.mcpServersSetEnabled]: AuthSettingsWriteScope,
+  [WS_METHODS.projectsSetEnvVariables]: AuthFilesystemWriteScope,
   [WS_METHODS.mcpServersStartSignIn]: AuthSettingsWriteScope,
   [WS_METHODS.mcpServersSignOut]: AuthSettingsWriteScope,
   // A guest link hands thread access to someone outside, like a pairing link.

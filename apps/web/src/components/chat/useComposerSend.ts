@@ -57,6 +57,8 @@ import {
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
+import { parseSecretCommand } from "../../secretCommand";
+import { useSecretFormStore } from "../../secretFormStore";
 import { type ChatMessage } from "../../types";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { newMessageId, newThreadId } from "~/lib/utils";
@@ -716,6 +718,15 @@ export function useComposerSend(input: ComposerSendInput) {
       ) {
         handleNewThreadInActiveProject();
       }
+      return;
+    }
+    // `/secret KEY…` opens the private form; sending it would put nothing useful in the thread.
+    const secretNames = parseSecretCommand(trimmed);
+    if (secretNames !== null && composerImages.length === 0 && composerFiles.length === 0) {
+      useSecretFormStore.getState().open(routeThreadKey, secretNames);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
       return;
     }
     const standaloneSlashCommand =

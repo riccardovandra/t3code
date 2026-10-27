@@ -29,6 +29,7 @@ import {
   GlobeIcon,
   ImageIcon,
   InfoIcon,
+  KeyRoundIcon,
   LightbulbIcon,
   MailIcon,
   MessageSquareIcon,
@@ -119,6 +120,9 @@ import {
 } from "./chat/externalLinkContextMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
+import { parseSecretCommand } from "../secretCommand";
+import { useSecretFormStore } from "../secretFormStore";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { recordVisitForThread } from "../browserHistoryStore";
 import {
@@ -1306,8 +1310,15 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   code: function MarkdownCode({ node, children, className, ...props }) {
-    const { cwd, imageBaseDir, inlineCodeFileLinkMetaByText, fileLinkChip, mathEnabled, inline } =
-      use(ChatMarkdownRendererContext);
+    const {
+      cwd,
+      imageBaseDir,
+      inlineCodeFileLinkMetaByText,
+      fileLinkChip,
+      mathEnabled,
+      inline,
+      threadRef,
+    } = use(ChatMarkdownRendererContext);
     const math = mathEnabled ? mathKind(className) : null;
     if (math) {
       return (
@@ -1320,6 +1331,22 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
     if (node?.properties?.dataInlineCode != null) {
       const codeText = nodeToPlainText(children);
+      const secretNames = threadRef && !inline ? parseSecretCommand(codeText) : null;
+      if (threadRef && secretNames !== null) {
+        return (
+          <Button
+            size="xs"
+            variant="outline"
+            title="Open the private form to save these keys to .env"
+            onClick={() =>
+              useSecretFormStore.getState().open(scopedThreadKey(threadRef), secretNames)
+            }
+          >
+            <KeyRoundIcon />
+            {codeText.trim()}
+          </Button>
+        );
+      }
       const fileLinkMeta =
         inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
         resolveInlineCodeFileLinkMeta(codeText, cwd, imageBaseDir ?? cwd);
