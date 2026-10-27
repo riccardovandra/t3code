@@ -253,6 +253,9 @@ async function load<A>(promise: Promise<A>, what: string): Promise<A> {
     if (cause instanceof Access.LastOwnerError) {
       return fail("last_owner", "A doc must keep at least one owner.");
     }
+    if (cause instanceof Access.SelfShareError) {
+      return fail("self", "That address signs in as you, so it already has your access.");
+    }
     throw cause;
   }
 }

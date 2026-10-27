@@ -523,6 +523,7 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
       return json({ error: "forbidden", required: cause.required }, 403);
     }
     if (cause instanceof Access.LastOwnerError) return error(409, "last_owner");
+    if (cause instanceof Access.SelfShareError) return error(409, "self");
     if (cause instanceof Docs.InvalidMoveError) return error(400, "invalid_move");
     if (cause instanceof Docs.LastTabError) return error(409, "last_tab");
     throw cause;

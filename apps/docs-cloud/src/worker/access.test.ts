@@ -311,6 +311,16 @@ describe("roles per route class", () => {
   });
 });
 
+describe("sharing with yourself", () => {
+  it("refuses an address that signs in as the caller instead of changing their role", async () => {
+    const { share, members } = await setup();
+    const response = await share("second@example.com", "commenter");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "self" });
+    expect((await members()).map((m) => [m.email, m.role])).toEqual([[OWNER, "owner"]]);
+  });
+});
+
 describe("last owner", () => {
   it("refuses to demote or remove the last owner, until another owner exists", async () => {
     const { api, owner, docId, members, person } = await setup();

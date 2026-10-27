@@ -36,6 +36,13 @@ export class LastOwnerError extends Error {
   }
 }
 
+/** The address signs in as the person sharing, e.g. one of the admin's other addresses. */
+export class SelfShareError extends Error {
+  constructor() {
+    super("self");
+  }
+}
+
 interface UserRow {
   id: string;
   email: string | null;
@@ -306,6 +313,10 @@ export async function shareDoc(
   },
 ): Promise<{ readonly member: DocMember; readonly created: boolean }> {
   const address = normalizeEmail(input.email);
+  // Without this, sharing to your own other address edits your own role.
+  if ((await userIdForEmail(db, address, input.owners)) === input.addedBy) {
+    throw new SelfShareError();
+  }
   const existing = await findMemberId(db, { ...input, email: address });
   if (existing) {
     return {
