@@ -1,3 +1,5 @@
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import { compileWidget, WIDGET_BUDGET_MESSAGE } from "../../../shared/widget/compile.ts";
@@ -50,5 +52,17 @@ describe("widget sandbox", () => {
     expect(renderInSandbox("export default () => <svg viewBox='0 0 1 1'/>;")).toEqual([
       { source: "t3-widget", type: "rendered", nonce: 1 },
     ]);
+  });
+});
+
+describe("widget frame colour scheme", () => {
+  // `normal` on the iframe follows the page's dark scheme while the srcdoc's
+  // stays light, and Chrome then paints an opaque light canvas behind it.
+  it("gives the iframe and its document the same explicit scheme", () => {
+    const css = NodeFS.readFileSync(new URL("./widget.css", import.meta.url), "utf8");
+    const frameScheme = /\.widget-frame\s*\{[^}]*color-scheme:\s*([\w-]+)/.exec(css)?.[1];
+    const documentScheme = /:root\s*\{\s*color-scheme:\s*([\w-]+)/.exec(WIDGET_SRCDOC)?.[1];
+    expect(documentScheme).toBe("light");
+    expect(frameScheme).toBe(documentScheme);
   });
 });
