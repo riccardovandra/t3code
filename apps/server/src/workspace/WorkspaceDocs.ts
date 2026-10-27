@@ -5,7 +5,7 @@
  *
  * @module WorkspaceDocs
  */
-import { docTitleFromPath, isMarkdownPath } from "@t3tools/shared/docPaths";
+import { docTitleFromPath, isProjectDocPath } from "@t3tools/shared/docPaths";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,9 +15,7 @@ import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
-export const WORKSPACE_DOCS_LIST_LIMIT = 200;
-// Bounds a walk through a folder that is not really a docs folder.
-const MAX_FOLDERS_VISITED = 500;
+const WORKSPACE_DOCS_LIST_LIMIT = 1_000;
 
 export class WorkspaceDocsError extends Schema.TaggedError<WorkspaceDocsError>()(
   "WorkspaceDocsError",
@@ -47,10 +45,13 @@ export interface WorkspaceDoc {
 export class WorkspaceDocs extends Context.Service<
   WorkspaceDocs,
   {
-    /** Markdown files under `folder`, recursively, sorted by path. */
+    /**
+     * Project markdown files under `folder` (the whole checkout when omitted),
+     * recursively, sorted by path, without gitignored files or skipped folders.
+     */
     readonly list: (input: {
       readonly cwd: string;
-      readonly folder: string;
+      readonly folder?: string;
     }) => Effect.Effect<
       { readonly docs: ReadonlyArray<WorkspaceDoc>; readonly truncated: boolean },
       WorkspaceDocsError
@@ -81,41 +82,38 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  // The workspace path index already honours .gitignore and is refreshed by
+  // file writes, so one lookup replaces a folder-by-folder walk.
   const list: WorkspaceDocs["Service"]["list"] = Effect.fn("WorkspaceDocs.list")(function* (input) {
-    const root = yield* relativeWithinRoot(input.cwd, input.folder);
-    const docPaths: Array<string> = [];
-    const pending = [root];
-    let visited = 0;
-    let truncated = false;
-    while (pending.length > 0) {
-      if (visited++ >= MAX_FOLDERS_VISITED) {
-        truncated = true;
-        break;
-      }
-      const directoryPath = pending.shift()!;
-      // A missing docs folder simply has no docs yet.
-      const listing = yield* entries
-        .list({ cwd: input.cwd, directoryPath })
-        .pipe(Effect.orElseSucceed(() => ({ entries: [] })));
-      for (const entry of listing.entries) {
-        if (entry.kind === "directory") pending.push(entry.path);
-        else if (isMarkdownPath(entry.path)) docPaths.push(entry.path);
-      }
-    }
-    docPaths.sort();
-    if (docPaths.length > WORKSPACE_DOCS_LIST_LIMIT) truncated = true;
+    const folder = input.folder ? yield* relativeWithinRoot(input.cwd, input.folder) : "";
+    const listing = yield* entries
+      .list({ cwd: input.cwd })
+      .pipe(
+        Effect.mapError(
+          (cause) => new WorkspaceDocsError({ reason: "failed", path: folder, cause }),
+        ),
+      );
+    const docPaths = listing.entries
+      .filter(
+        (entry) =>
+          entry.kind === "file" &&
+          (folder === "" || entry.path.startsWith(`${folder}/`)) &&
+          isProjectDocPath(entry.path),
+      )
+      .map((entry) => entry.path)
+      .toSorted();
     return {
       docs: docPaths
         .slice(0, WORKSPACE_DOCS_LIST_LIMIT)
         .map((docPath) => ({ docPath, title: docTitleFromPath(docPath) })),
-      truncated,
+      truncated: listing.truncated || docPaths.length > WORKSPACE_DOCS_LIST_LIMIT,
     };
   });
 
   const read: WorkspaceDocs["Service"]["read"] = Effect.fn("WorkspaceDocs.read")(function* (input) {
     // Resolving first keeps an absolute path, which readFile would accept, out.
     const docPath = yield* relativeWithinRoot(input.cwd, input.docPath);
-    if (!isMarkdownPath(docPath)) {
+    if (!isProjectDocPath(docPath)) {
       return yield* new WorkspaceDocsError({ reason: "invalid_path", path: input.docPath });
     }
     const file = yield* files.readFile({ cwd: input.cwd, relativePath: docPath }).pipe(
