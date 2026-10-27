@@ -12,7 +12,14 @@ import { DOC_STATUS_LABEL, DOC_STATUSES, type DocStatus } from "../../shared/pro
 import { api } from "../api.ts";
 import { isEmbedded } from "../embedBridge.ts";
 import { useEmbedProject } from "../embedContext.ts";
-import { DocCard, DocRow, type DocActions, type MoveTarget } from "../home/DocCard.tsx";
+import {
+  DocCard,
+  DocRow,
+  NewDocCard,
+  NewDocRow,
+  type DocActions,
+  type MoveTarget,
+} from "../home/DocCard.tsx";
 import {
   ALL_PROJECTS,
   filterEntries,
@@ -20,11 +27,14 @@ import {
   HOME_TABS,
   homeEntries,
   NO_PROJECT,
+  parsePins,
   parseStoredScope,
+  pinnedFirst,
   restoreScope,
   sameScope,
   searchEntries,
   sortEntries,
+  togglePin,
   type HomeEntry,
   type HomeSort,
   type HomeTab,
@@ -33,7 +43,6 @@ import {
 } from "../home/homeLogic.ts";
 import {
   CloseIcon,
-  DocIcon,
   FilterIcon,
   GridIcon,
   ListIcon,
@@ -61,6 +70,8 @@ import "../home/home.css";
 const SEARCH_DEBOUNCE_MS = 250;
 const VIEW_KEY = "docs-cloud.home.view";
 const SORT_KEY = "docs-cloud.home.sort";
+/** Pins stay on this device: never sent to the server or synced. */
+const PINS_KEY = "docs-cloud.home.pins";
 /** The project pick is remembered separately standalone and inside T3 Code. */
 const scopeKey = (embedded: boolean) =>
   `docs-cloud.home.project.${embedded ? "embedded" : "standalone"}`;
@@ -105,6 +116,7 @@ export function LibraryPage() {
   const [view, setView] = useState<HomeView>(() =>
     readStorage(VIEW_KEY) === "list" ? "list" : "grid",
   );
+  const [pins, setPins] = useState(() => parsePins(readStorage(PINS_KEY)));
   const [statuses, setStatuses] = useState<ReadonlySet<DocStatus>>(() => new Set());
   // A pick holds only while the panel stays on the project it was made in.
   const [picked, setPicked] = useState<{
@@ -154,14 +166,14 @@ export function LibraryPage() {
 
   const projects = useMemo((): ReadonlyArray<SwitcherProject> => {
     const listed = (library?.projects ?? []).map(({ key, name }) => ({ key, name }));
-    // The admin can file docs in the T3 Code project before T3 Code has synced it.
-    if (admin && embedProject && embedKey && !listed.some((project) => project.key === embedKey)) {
+    // Inside T3 Code its project is always offered, even before it has docs here.
+    if (embedProject && embedKey && !listed.some((project) => project.key === embedKey)) {
       listed.push({ key: embedKey, name: embedProject.name });
     }
     return listed.toSorted((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
-  }, [library, admin, embedProject, embedKey]);
+  }, [library, embedProject, embedKey]);
 
   const scope = useMemo((): ProjectScope => {
     if (picked && picked.embedKey === embedKey) return picked.scope;
@@ -197,9 +209,14 @@ export function LibraryPage() {
       return next;
     });
 
+  const pinned = useMemo(() => new Set(pins), [pins]);
   const visible = useMemo(
-    () => sortEntries(filterEntries(entries, { tab, userId, scope, statuses }), sort),
-    [entries, tab, userId, scope, statuses, sort],
+    () =>
+      pinnedFirst(
+        sortEntries(filterEntries(entries, { tab, userId, scope, statuses }), sort),
+        pinned,
+      ),
+    [entries, tab, userId, scope, statuses, sort, pinned],
   );
   const hits = serverHits?.query === trimmedQuery ? serverHits.hits : [];
   const results = useMemo(
@@ -236,18 +253,32 @@ export function LibraryPage() {
         }
         void api.deleteDoc(entry.id).then(reload, reload);
       },
+      onTogglePin: (entry: HomeEntry) =>
+        setPins((current) => {
+          const next = togglePin(current, entry.id);
+          writeStorage(PINS_KEY, JSON.stringify(next));
+          return next;
+        }),
     }),
     [moveTargets, reload],
   );
 
+  const scopeProject =
+    scope.kind === "project"
+      ? library?.projects.find((candidate) => candidate.key === scope.key)
+      : undefined;
+  // Only the admin creates projects, so others start docs outside a project T3 Code has not synced.
+  const createsProject =
+    scopeProject === undefined &&
+    admin &&
+    embedProject !== null &&
+    scope.kind === "project" &&
+    scope.key === embedKey;
+
   const createDoc = async (title: string) => {
-    let projectId: string | null = null;
-    if (scope.kind === "project") {
-      const project = library?.projects.find((candidate) => candidate.key === scope.key);
-      if (project) projectId = project.id;
-      else if (embedProject && scope.key === embedKey) {
-        projectId = (await api.createProject(embedProject.name, embedKey)).project.id;
-      }
+    let projectId = scopeProject?.id ?? null;
+    if (createsProject && embedProject && embedKey) {
+      projectId = (await api.createProject(embedProject.name, embedKey)).project.id;
     }
     const created = await api.createDoc(projectId, title);
     navigate(docPath(created.doc.id));
@@ -271,7 +302,8 @@ export function LibraryPage() {
   if (!library) return null;
 
   const scopeLabel = scopeName(scope, projects);
-  const createIn = scope.kind === "project" ? scopeLabel : "No project";
+  const createIn = scopeProject || createsProject ? scopeLabel : "No project";
+  const startDoc = () => setCreating(true);
   const filtering = statuses.size > 0;
 
   return (
@@ -443,38 +475,24 @@ export function LibraryPage() {
             type="button"
             className="home-icon-button"
             aria-label="New doc"
-            onClick={() => setCreating(true)}
+            onClick={startDoc}
           >
             <PlusIcon />
           </button>
         </div>
       </div>
 
-      <section className="home-new" aria-label="Make something new">
-        <h2 className="home-section-label">Make something new</h2>
-        <button type="button" className="home-new-card" onClick={() => setCreating(true)}>
-          <span className="home-new-tile" aria-hidden="true">
-            <DocIcon size={46} />
-          </span>
-          <span className="home-new-label">Docs</span>
-        </button>
-      </section>
-
-      {localFiles ? <LocalFilesSection query={trimmedQuery} /> : null}
-
-      {results.length === 0 ? (
-        <EmptyState
-          query={trimmedQuery}
-          tab={tab}
-          scopeLabel={scope.kind === "all" ? null : scopeLabel}
-          filtering={filtering}
-          libraryEmpty={entries.length === 0}
-          admin={admin}
-        />
-      ) : view === "grid" ? (
+      {view === "grid" ? (
         <div className="doc-grid">
+          <NewDocCard detail={`In ${createIn}`} onCreate={startDoc} />
           {results.map(({ entry, snippet }) => (
-            <DocCard key={entry.id} entry={entry} snippet={snippet} actions={actions} />
+            <DocCard
+              key={entry.id}
+              entry={entry}
+              snippet={snippet}
+              pinned={pinned.has(entry.id)}
+              actions={actions}
+            />
           ))}
         </div>
       ) : (
@@ -491,12 +509,32 @@ export function LibraryPage() {
             </tr>
           </thead>
           <tbody>
+            <NewDocRow detail={`In ${createIn}`} onCreate={startDoc} />
             {results.map(({ entry, snippet }) => (
-              <DocRow key={entry.id} entry={entry} snippet={snippet} actions={actions} />
+              <DocRow
+                key={entry.id}
+                entry={entry}
+                snippet={snippet}
+                pinned={pinned.has(entry.id)}
+                actions={actions}
+              />
             ))}
           </tbody>
         </table>
       )}
+
+      {results.length === 0 ? (
+        <EmptyState
+          query={trimmedQuery}
+          tab={tab}
+          scopeLabel={scope.kind === "all" ? null : scopeLabel}
+          filtering={filtering}
+          libraryEmpty={entries.length === 0}
+          admin={admin}
+        />
+      ) : null}
+
+      {localFiles ? <LocalFilesSection query={trimmedQuery} /> : null}
 
       {creating ? (
         <TitleDialog
@@ -536,7 +574,7 @@ function EmptyState(props: {
   let message: string;
   if (props.libraryEmpty) {
     message = props.admin
-      ? "No docs yet. Start one with Docs above."
+      ? "No docs yet. Start one with New doc."
       : "Nothing has been shared with you yet. Docs you create or are invited to show up here.";
   } else if (props.query) {
     message = `No docs match "${props.query}".`;
