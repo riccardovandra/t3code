@@ -70,6 +70,12 @@ const makeDocsCloud = (
     if (request.headers["authorization"] !== "Bearer dct_good" || state.mode === "unauthorized") {
       return respond(request, 401, { error: "unauthorized" });
     }
+    if (pathname === "/api/library" && request.method === "GET") {
+      return respond(request, 200, {
+        projects: state.projects.map((project) => ({ ...project, createdAt: 0, docs: [] })),
+        noProjectDocs: [],
+      });
+    }
     if (pathname === "/api/projects/sync") {
       const synced = (body.projects as Array<{ key: string; name: string }>).map((entry) => {
         const existing = state.projects.find((project) => project.key === entry.key);
@@ -319,6 +325,38 @@ describe("DocsCloudImport", () => {
       assert.deepStrictEqual(
         again.map((project) => project.key),
         ["github.com/riccardovandra/t3code", "title:herbox netherlands"],
+      );
+    }).pipe(Effect.provide(makeLayer(docsCloud, { shells, remotes })));
+  });
+
+  it.effect("catch-up sync creates only missing projects and never renames", () => {
+    const docsCloud = makeDocsCloud({
+      projects: [{ id: "eden", key: "github.com/up/eden-clone", name: "Uplifted Content" }],
+    });
+    const shells = [
+      { title: "Eden Clone", workspaceRoot: "/eden" },
+      { title: "Bugfixo", workspaceRoot: "/bugfixo" },
+    ];
+    const remotes = { "/eden": identity("github.com/up/eden-clone") };
+    return Effect.gen(function* () {
+      const cloud = yield* DocsCloudImport.DocsCloudImport;
+      const created = yield* cloud.syncMissingProjects;
+      const again = yield* cloud.syncMissingProjects;
+      assert.deepStrictEqual(
+        created.map((project) => project.key),
+        ["title:bugfixo"],
+      );
+      assert.deepStrictEqual(again, []);
+      assert.deepStrictEqual(
+        docsCloud.state.projects.map(({ key, name }) => [key, name]),
+        [
+          ["github.com/up/eden-clone", "Uplifted Content"],
+          ["title:bugfixo", "Bugfixo"],
+        ],
+      );
+      assert.strictEqual(
+        docsCloud.state.requests.filter((request) => request === "POST /api/projects/sync").length,
+        1,
       );
     }).pipe(Effect.provide(makeLayer(docsCloud, { shells, remotes })));
   });
