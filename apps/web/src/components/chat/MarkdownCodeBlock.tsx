@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide";
-import { PlayIcon, WrapTextIcon } from "lucide-react";
+import { MessageSquareShareIcon, PlayIcon, WrapTextIcon } from "lucide-react";
 import { toHtml } from "hast-util-to-html";
 import React, { use, useEffect, useState, type ReactNode } from "react";
 
@@ -19,12 +19,14 @@ import {
 } from "../../pierre-icons";
 import { MorphIcon } from "../MorphIcon";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { HighlightedCodeLines } from "./HighlightedCodeLines";
 import {
   createHighlightCacheKey,
   estimateHighlightedSize,
   extractFenceLanguage,
+  type RunShellCommand,
 } from "./MarkdownCodeBlock.logic";
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -144,7 +146,7 @@ export function MarkdownCodeBlock({
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
-  onRunShellCommand?: ((command: string) => void) | undefined;
+  onRunShellCommand?: RunShellCommand | undefined;
   isStreaming: boolean;
   viewToggle?: ReactNode;
   canWrap?: boolean;
@@ -164,6 +166,7 @@ export function MarkdownCodeBlock({
       ),
   });
   const [wrapped, setWrapped] = useState(() => getClientSettings().wordWrap);
+  const [reporting, setReporting] = useState(false);
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
   const command = code.trim();
@@ -179,6 +182,15 @@ export function MarkdownCodeBlock({
     !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
 
   const handleCopy = () => copyToClipboard(code);
+  const runAndReport = async (run: RunShellCommand) => {
+    setReporting(true);
+    try {
+      await run(command, "chat");
+    } finally {
+      setReporting(false);
+    }
+  };
+  const reportLabel = reporting ? "Running…" : "Run and add result to chat";
 
   const copyButton = (
     <Tooltip>
@@ -247,7 +259,7 @@ export function MarkdownCodeBlock({
                     type="button"
                     variant="ghost-muted"
                     size="icon-xs"
-                    onClick={() => onRunShellCommand(command)}
+                    onClick={() => onRunShellCommand(command, "terminal")}
                     aria-label="Run in terminal"
                   />
                 }
@@ -255,6 +267,25 @@ export function MarkdownCodeBlock({
                 <PlayIcon className="size-3" />
               </TooltipTrigger>
               <TooltipPopup side="top">Run in terminal</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {canRun ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost-muted"
+                    size="icon-xs"
+                    disabled={reporting}
+                    onClick={() => void runAndReport(onRunShellCommand)}
+                    aria-label={reportLabel}
+                  />
+                }
+              >
+                {reporting ? <Spinner size="xs" /> : <MessageSquareShareIcon className="size-3" />}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{reportLabel}</TooltipPopup>
             </Tooltip>
           ) : null}
           {viewToggle}

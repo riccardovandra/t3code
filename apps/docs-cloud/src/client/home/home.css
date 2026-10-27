@@ -352,12 +352,6 @@
   background: var(--border);
 }
 
-/* Make something new */
-
-.home-new {
-  margin-top: 2.25rem;
-}
-
 .home-section-label {
   margin: 0 0 0.75rem;
   font-family: var(--font-sans);
@@ -367,51 +361,7 @@
   color: var(--muted);
 }
 
-.home-new-card {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  font: inherit;
-  color: var(--text);
-  background: none;
-  border: none;
-  padding: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.home-new-tile {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 11.25rem;
-  height: 8rem;
-  overflow: hidden;
-  border-radius: 14px;
-  color: color-mix(in srgb, var(--accent) 30%, white);
-  background: var(--home-tint);
-}
-
-.home-new-card:hover .home-new-tile {
-  background: color-mix(in srgb, var(--accent) 72%, var(--bg));
-}
-
-.home-new-card:focus-visible {
-  outline: none;
-}
-
-.home-new-card:focus-visible .home-new-tile {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.home-new-label {
-  padding-left: 0.2rem;
-  font-size: 1.02rem;
-}
-
-/* The faint squiggle behind tiles and previews, as in Claude's. */
-.home-new-tile::before,
+/* The faint squiggle behind previews, as in Claude's. */
 .doc-card-paper::before {
   content: "";
   position: absolute;
@@ -423,10 +373,6 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 128' fill='none' stroke='black' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 60c8 22 14 40 20 40s8-30 14-30 6 24 12 24 10-44 18-44'/%3E%3Cpath d='M128 112c4-14 10-30 16-30s6 18 12 18 8-26 16-26'/%3E%3C/svg%3E")
     center / cover no-repeat;
   pointer-events: none;
-}
-
-.home-new-tile > svg {
-  position: relative;
 }
 
 /* Card grid */
@@ -601,7 +547,7 @@
   font-size: 0.92rem;
 }
 
-.doc-card-shared {
+.doc-card-mark {
   flex: none;
   display: inline-grid;
   color: var(--muted);
@@ -626,6 +572,39 @@
 .doc-card-menu .home-icon-button:focus-visible,
 .doc-card-menu .home-icon-button[aria-expanded="true"] {
   opacity: 1;
+}
+
+/* The grid's first tile, sized and styled like a doc card. */
+.doc-card-new {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.doc-card-new:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.doc-card-new-paper {
+  display: grid;
+  place-items: center;
+}
+
+.doc-card-new-paper::after {
+  content: none;
+}
+
+.doc-card-new-paper > svg {
+  position: relative;
+}
+
+.doc-card-new:hover .doc-card-new-paper {
+  background: color-mix(in srgb, var(--accent) 72%, var(--bg));
 }
 
 /* The card's menu must not be clipped by its own overflow. */
@@ -727,6 +706,35 @@
   color: var(--muted);
 }
 
+.doc-grid + .home-empty,
+.doc-table + .home-empty {
+  margin-top: 1.5rem;
+}
+
+.doc-row-new button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.doc-row-new button > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.doc-row-new button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* New doc and rename */
 
 .title-dialog {
@@ -781,96 +789,4 @@
   .doc-table td:nth-child(n + 3):not(:last-child) {
     display: none;
   }
-}
-
-/* Project files, when T3 Code serves them */
-
-.local-files {
-  margin-top: 2.25rem;
-}
-
-.local-files-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.local-files-new {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--muted);
-  background: none;
-  border: none;
-  border-radius: 8px;
-  padding: 0.25rem 0.5rem;
-  cursor: pointer;
-}
-
-.local-files-new:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.local-files .home-empty {
-  margin-top: 0;
-}
-
-.local-files-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
-  gap: 0.25rem 1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.local-file {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  padding: 0.45rem 0.6rem;
-  border-radius: 8px;
-  color: var(--text);
-  text-decoration: none;
-}
-
-.local-file:hover {
-  background: var(--hover);
-}
-
-.local-file svg {
-  flex: none;
-  color: var(--muted);
-}
-
-.local-file-title,
-.local-file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.local-file-title {
-  flex: none;
-  max-width: 60%;
-}
-
-.local-file-badge {
-  flex: none;
-  margin-left: auto;
-  font-size: 0.7rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.local-file-path {
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-subtle);
 }

@@ -19,7 +19,7 @@
  * other. A request kind is added by extending `LocalDocRequest`,
  * `LocalDocResults` and the two parser tables below.
  */
-import { DOCS_ROOT, isMarkdownPath } from "./docPaths.ts";
+import { isProjectDocPath } from "./docPaths.ts";
 
 export const LOCAL_FILES_FEATURE = "local-files";
 export const LOCAL_COMMENTS_FEATURE = "local-comments";
@@ -204,25 +204,13 @@ const isCount = (value: unknown): value is number =>
 const isCloudDocId = (value: unknown): value is string => isText(value, MAX_CLOUD_DOC_ID_LENGTH);
 
 /**
- * Only markdown under the project's docs folder crosses the bridge, so a
- * misbehaving frame cannot read or overwrite anything else in the checkout.
+ * Only repo-relative markdown crosses the bridge, outside `.git`,
+ * `node_modules` and private tool state, so a misbehaving frame cannot read or
+ * overwrite source, config or secrets in the checkout. New files still go to
+ * `docs/` only. The T3 server applies the same rule to what it lists and reads.
  */
 export function isLocalDocPath(path: unknown): path is string {
-  if (!isText(path, MAX_PATH_LENGTH) || !isMarkdownPath(path)) return false;
-  const segments = path.split("/");
-  return (
-    segments[0] === DOCS_ROOT &&
-    segments.length > 1 &&
-    segments.every(
-      (segment) =>
-        segment !== "" &&
-        segment !== "." &&
-        segment !== ".." &&
-        // Control characters and backslashes have no place in a docs path.
-        // oxlint-disable-next-line no-control-regex
-        !/[\\\u0000-\u001f\u007f]/.test(segment),
-    )
-  );
+  return isText(path, MAX_PATH_LENGTH) && isProjectDocPath(path);
 }
 
 /** Changes with the text. Not cryptographic: it only has to notice an edit on disk. */

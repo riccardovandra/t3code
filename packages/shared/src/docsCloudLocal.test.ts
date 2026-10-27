@@ -14,11 +14,23 @@ const request = (body: unknown) =>
   parseLocalRequestMessage({ type: "t3-docs:local-request", requestId: "r1", request: body });
 
 describe("isLocalDocPath", () => {
-  it("allows only markdown under docs/", () => {
+  it("allows repo-relative markdown outside skipped folders", () => {
     expect(isLocalDocPath("docs/plan.md")).toBe(true);
     expect(isLocalDocPath("docs/a/b/Plan.MD")).toBe(true);
-    expect(isLocalDocPath("README.md")).toBe(false);
+    expect(isLocalDocPath("README.md")).toBe(true);
+    expect(isLocalDocPath("apps/x/README.md")).toBe(true);
+    expect(isLocalDocPath(".github/notes.md")).toBe(true);
     expect(isLocalDocPath("docs/plan.txt")).toBe(false);
+    expect(isLocalDocPath("package.json")).toBe(false);
+    expect(isLocalDocPath("../x.md")).toBe(false);
+    expect(isLocalDocPath("./x.md")).toBe(false);
+    expect(isLocalDocPath(".repos/effect/README.md")).toBe(false);
+    expect(isLocalDocPath("node_modules/x/README.md")).toBe(false);
+    expect(isLocalDocPath("apps/web/node_modules/x/README.md")).toBe(false);
+    expect(isLocalDocPath(".git/x.md")).toBe(false);
+    expect(isLocalDocPath(".t3/notes.md")).toBe(false);
+    expect(isLocalDocPath(".plans/plan.md")).toBe(false);
+    expect(isLocalDocPath(`${"a/".repeat(300)}x.md`)).toBe(false);
     expect(isLocalDocPath("docs/../package.md")).toBe(false);
     expect(isLocalDocPath("docs//x.md")).toBe(false);
     expect(isLocalDocPath("/docs/x.md")).toBe(false);
@@ -39,10 +51,10 @@ describe("parseLocalRequestMessage", () => {
     ).toEqual({ kind: "file.write", path: "docs/a.md", markdown: "", baseVersion: "v1" });
   });
 
-  it("refuses unknown kinds, paths outside docs and missing fields", () => {
+  it("refuses unknown kinds, skipped folders and missing fields", () => {
     expect(request({ kind: "file.delete", path: "docs/a.md" })).toBeNull();
     expect(request({ kind: "toString" })).toBeNull();
-    expect(request({ kind: "file.read", path: "src/secret.md" })).toBeNull();
+    expect(request({ kind: "file.read", path: ".t3/secret.md" })).toBeNull();
     expect(request({ kind: "file.write", path: "docs/a.md", markdown: "x" })).toBeNull();
     expect(
       parseLocalRequestMessage({ type: "t3-docs:local-request", request: { kind: "files.list" } }),
@@ -69,15 +81,22 @@ describe("parseLocalResponseMessage and parseLocalResult", () => {
     ).toBeNull();
   });
 
-  it("drops listed files outside docs", () => {
+  it("drops listed files outside the project's markdown", () => {
     expect(
       parseLocalResult("files.list", {
         files: [
           { path: "docs/a.md", title: "a" },
+          { path: "README.md", title: "README" },
           { path: "../etc/passwd.md", title: "x" },
+          { path: ".repos/x/README.md", title: "x" },
         ],
       }),
-    ).toEqual({ files: [{ path: "docs/a.md", title: "a", cloudDocId: null }] });
+    ).toEqual({
+      files: [
+        { path: "docs/a.md", title: "a", cloudDocId: null },
+        { path: "README.md", title: "README", cloudDocId: null },
+      ],
+    });
   });
 
   it("carries a listed file's Docs Cloud doc, dropping a malformed one", () => {
@@ -147,13 +166,13 @@ describe("comment requests and results", () => {
     });
   });
 
-  it("refuses comments the T3 server would refuse, and files outside docs", () => {
+  it("refuses comments the T3 server would refuse, and files in skipped folders", () => {
     const create = { kind: "comment.create", path: "docs/a.md", ...anchor, sendToAgent: false };
     expect(request({ ...create, body: "  " })).toBeNull();
     expect(request({ ...create, body: "x".repeat(10_001) })).toBeNull();
     expect(request({ ...create, body: "x", quote: "q".repeat(2_001) })).toBeNull();
     expect(request({ ...create, body: "x", prefix: "p".repeat(201) })).toBeNull();
-    expect(request({ ...create, body: "x", path: "src/a.md" })).toBeNull();
+    expect(request({ ...create, body: "x", path: "node_modules/a.md" })).toBeNull();
     expect(request({ kind: "comment.create", path: "docs/a.md", ...anchor, body: "x" })).toBeNull();
     expect(request({ kind: "comment.resolve", path: "docs/a.md", commentId: "c1" })).toBeNull();
     expect(request({ kind: "comment.delete", path: "docs/a.md", commentId: "" })).toBeNull();
@@ -194,7 +213,9 @@ describe("local routes", () => {
     const path = "docs/plans/Q3 roadmap.md";
     expect(localDocAppPath(path)).toBe("/local/docs/plans/Q3%20roadmap.md");
     expect(localDocPathFromAppPath(localDocAppPath(path))).toBe(path);
-    expect(localDocPathFromAppPath("/local/src/x.md")).toBeNull();
+    expect(localDocPathFromAppPath("/local/src/x.md")).toBe("src/x.md");
+    expect(localDocPathFromAppPath("/local/src/x.ts")).toBeNull();
+    expect(localDocPathFromAppPath("/local/node_modules/x.md")).toBeNull();
     expect(localDocPathFromAppPath("/local/docs/%E0%A4%A.md")).toBeNull();
     expect(localDocPathFromAppPath("/d/doc-1")).toBeNull();
   });
@@ -208,7 +229,7 @@ describe("localDocVersion", () => {
 });
 
 describe("create and import", () => {
-  it("accepts a title to create and a docs path to import", () => {
+  it("accepts a title to create and a markdown path to import", () => {
     expect(request({ kind: "file.create", title: "Q3 plan" })?.request).toEqual({
       kind: "file.create",
       title: "Q3 plan",
@@ -220,11 +241,11 @@ describe("create and import", () => {
     });
   });
 
-  it("refuses a blank or long title and imports outside docs", () => {
+  it("refuses a blank or long title and imports outside the project's markdown", () => {
     expect(request({ kind: "file.create", title: "   " })).toBeNull();
     expect(request({ kind: "file.create", title: "x".repeat(201) })).toBeNull();
     expect(request({ kind: "file.create" })).toBeNull();
-    expect(request({ kind: "file.import", path: "README.md", update: false })).toBeNull();
+    expect(request({ kind: "file.import", path: ".plans/a.md", update: false })).toBeNull();
     expect(request({ kind: "file.import", path: "docs/a.md" })).toBeNull();
   });
 

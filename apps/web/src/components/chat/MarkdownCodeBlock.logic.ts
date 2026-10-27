@@ -117,3 +117,9 @@ export function createHighlightCacheKey(
 export function estimateHighlightedSize(html: string, code: string): number {
   return Math.max(html.length * 2, code.length * 3);
 }
+
+/** A chat code block runs in a visible terminal, or once with its result added to the composer. */
+export type RunShellCommand = (
+  command: string,
+  target: "terminal" | "chat",
+) => void | Promise<void>;

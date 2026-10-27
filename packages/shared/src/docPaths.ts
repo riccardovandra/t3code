@@ -39,6 +39,33 @@ export function isMarkdownPath(path: string): boolean {
   return /\.md$/i.test(path);
 }
 
+/** Folders whose markdown is tooling, vendored code or private state, never project docs. */
+const SKIPPED_DOC_FOLDERS: ReadonlySet<string> = new Set([
+  ".git",
+  "node_modules",
+  ".repos",
+  ".t3",
+  ".plans",
+]);
+
+/**
+ * A repo-relative markdown path the Docs views may list, read and write: plain
+ * `/`-separated segments, none of them in a skipped folder.
+ */
+export function isProjectDocPath(path: string): boolean {
+  // The server trims paths before resolving them.
+  if (!isMarkdownPath(path) || path !== path.trim()) return false;
+  return path.split("/").every(
+    (segment) =>
+      segment !== "" &&
+      segment !== "." &&
+      segment !== ".." &&
+      // Case-insensitive disks, and Windows dropping trailing dots and spaces.
+      !SKIPPED_DOC_FOLDERS.has(segment.toLowerCase().replace(/[. ]+$/, "")) &&
+      !/[\\\u0000-\u001f\u007f]/.test(segment),
+  );
+}
+
 /**
  * The editors' markdown converters drop structure they have no node for.
  * Saving such a doc from a rich editor would silently rewrite it, so these
