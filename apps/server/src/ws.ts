@@ -214,6 +214,7 @@ import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceEnvFile from "./workspace/WorkspaceEnvFile.ts";
+import * as ChatCommandRunner from "./terminal/ChatCommandRunner.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as McpServerTools from "./mcpServers/McpServerTools.ts";
 import * as SkillLibrary from "./skills/SkillLibrary.ts";
@@ -606,6 +607,7 @@ const FORK_RPC_METHODS = [
   WS_METHODS.skillLibraryList,
   WS_METHODS.serverReleaseMirrorPublished,
   WS_METHODS.projectsSetEnvVariables,
+  WS_METHODS.terminalRunCommand,
 ] as const;
 
 const ServerWsRpcGroupCore = ServerWsRpcGroup.omit(...FORK_RPC_METHODS);
@@ -1361,6 +1363,15 @@ const layerEnvFileRpc = Layer.unwrap(
     );
   }),
 );
+
+const layerChatCommandRpc = Layer.unwrap(
+  Effect.gen(function* () {
+    const runner = yield* ChatCommandRunner.ChatCommandRunner;
+    return ServerWsRpcGroup.toLayerHandler(WS_METHODS.terminalRunCommand, (input) =>
+      runner.run(input),
+    );
+  }),
+).pipe(Layer.provide(ChatCommandRunner.layer.pipe(Layer.provide(ProcessRunner.layer))));
 
 const layerAiPmDocsRpc = Layer.unwrap(
   Effect.gen(function* () {
@@ -3585,7 +3596,7 @@ export const layer = Layer.unwrap(
               Layer.merge(layerSkillTrashRpc),
               Layer.merge(layerSkillSourcesRpc),
               Layer.merge(layerReleaseMirrorRpc),
-              Layer.merge(layerEnvFileRpc),
+              Layer.merge(Layer.mergeAll(layerEnvFileRpc, layerChatCommandRpc)),
               Layer.provideMerge(RpcSerialization.layerJson),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),

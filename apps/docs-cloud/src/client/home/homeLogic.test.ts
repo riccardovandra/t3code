@@ -7,12 +7,15 @@ import {
   filterEntries,
   homeEntries,
   NO_PROJECT,
+  parsePins,
   parseStoredScope,
+  pinnedFirst,
   previewBlocks,
   projectMonogram,
   restoreScope,
   searchEntries,
   sortEntries,
+  togglePin,
   type HomeEntry,
 } from "./homeLogic.ts";
 
@@ -160,10 +163,20 @@ describe("restoreScope", () => {
     ).toEqual(embedScope);
   });
 
-  it("falls back to All projects for a project the person cannot see", () => {
-    expect(restoreScope({ stored: null, embedKey: "title:secret", projectKeys: keys })).toEqual(
-      ALL_PROJECTS,
-    );
+  it("stays on the panel's project before the person can see it in the library", () => {
+    const unseen = { kind: "project" as const, key: "title:new" };
+    expect(restoreScope({ stored: null, embedKey: unseen.key, projectKeys: keys })).toEqual(unseen);
+    // A pick of a project that has since gone falls back to the panel's project.
+    expect(
+      restoreScope({
+        stored: { embedKey: project.key, scope: { kind: "project", key: "gone" } },
+        embedKey: project.key,
+        projectKeys: keys,
+      }),
+    ).toEqual(embedScope);
+  });
+
+  it("falls back to All projects standalone for a project the person cannot see", () => {
     expect(
       restoreScope({
         stored: { embedKey: null, scope: { kind: "project", key: "gone" } },
@@ -181,6 +194,23 @@ describe("restoreScope", () => {
     expect(parseStoredScope('{"scope":{"kind":"project"}}')).toBeNull();
     expect(parseStoredScope("not json")).toBeNull();
     expect(parseStoredScope(null)).toBeNull();
+  });
+});
+
+describe("pins", () => {
+  it("puts pinned docs first and keeps the sort within each group", () => {
+    const entries = [doc("a"), doc("b"), doc("c"), doc("d")];
+    const ordered = pinnedFirst(entries, new Set(["d", "b", "deleted"]));
+    expect(ordered.map((entry) => entry.id)).toEqual(["b", "d", "a", "c"]);
+  });
+
+  it("toggles a pin and reads only well-formed stored pins", () => {
+    expect(togglePin(["a"], "b")).toEqual(["a", "b"]);
+    expect(togglePin(["a", "b"], "a")).toEqual(["b"]);
+    expect(parsePins('["a",1,"b"]')).toEqual(["a", "b"]);
+    expect(parsePins('{"a":1}')).toEqual([]);
+    expect(parsePins("not json")).toEqual([]);
+    expect(parsePins(null)).toEqual([]);
   });
 });
 
