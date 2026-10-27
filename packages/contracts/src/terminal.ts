@@ -378,3 +378,31 @@ export const TerminalError = Schema.Union([
   TerminalResizeError,
 ]);
 export type TerminalError = typeof TerminalError.Type;
+
+// Fork: a chat code block run once, outside any terminal, so its result can go back to the agent.
+export const TerminalRunCommandInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  command: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(65_536)),
+});
+export type TerminalRunCommandInput = typeof TerminalRunCommandInput.Type;
+
+export const TerminalRunCommandResult = Schema.Struct({
+  exitCode: Schema.NullOr(Schema.Int),
+  stdout: Schema.String,
+  stderr: Schema.String,
+  truncated: Schema.Boolean,
+  timedOut: Schema.Boolean,
+});
+export type TerminalRunCommandResult = typeof TerminalRunCommandResult.Type;
+
+export class TerminalRunCommandError extends Schema.TaggedError<TerminalRunCommandError>()(
+  "TerminalRunCommandError",
+  {
+    cwd: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message() {
+    return `Failed to run command in ${this.cwd}`;
+  }
+}

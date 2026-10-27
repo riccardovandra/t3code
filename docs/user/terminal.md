@@ -17,6 +17,17 @@ then copy. Cmd+A on macOS and Ctrl+Shift+A elsewhere select the same output.
 Ctrl+A still moves to the beginning of shell input on Windows and Linux.
 Jump to latest in the context menu returns to the current output.
 
+## Run shell code from chat
+
+Shell code blocks in an agent's reply have two run buttons. **Run in terminal**
+types the command into the thread's terminal. **Run and add result to chat** runs
+it once in the thread's folder and adds the command, its exit code, and its
+output to the composer, so you can review it before sending it to the agent.
+
+The second button is for commands that finish on their own. The command can't
+read input, stops after 2 minutes, and keeps up to 64 KB of output. Long output
+is shortened to its last 200 lines.
+
 ## fish
 
 T3 Code starts fish with `no-query-term`, avoiding startup waits for terminal
