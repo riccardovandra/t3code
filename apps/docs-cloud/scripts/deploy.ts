@@ -30,7 +30,6 @@ if (publicOrigin.protocol !== "https:") {
   console.error("PUBLIC_ORIGIN must be an https:// origin, such as https://docs.example.com.");
   process.exit(1);
 }
-const hubUrl = env("HUB_URL");
 
 // JSON with comments and trailing commas is a valid JavaScript expression.
 const config = NodeVM.runInNewContext(
@@ -45,7 +44,6 @@ config.vars = {
   OWNER_EMAILS: env("OWNER_EMAILS"),
   EMAIL_FROM: env("EMAIL_FROM"),
   PUBLIC_ORIGIN: publicOrigin.origin,
-  ...(hubUrl ? { HUB_URL: hubUrl } : {}),
 };
 NodeFS.writeFileSync(deployConfig, `${JSON.stringify(config, null, 2)}\n`);
 

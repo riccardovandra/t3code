@@ -8,7 +8,6 @@ import { ChevronDown, CommentIcon, SparkIcon } from "../toolbar/icons.tsx";
 import { InlineRename, MenuItem, MenuLabel, MenuSeparator, Popover } from "../toolbar/Popover.tsx";
 import type { DocAbilities } from "./docAbilities.ts";
 import { HomeLink } from "../../home/HomeLink.tsx";
-import { HubLink } from "../../home/HubLink.tsx";
 import { MoveToProject } from "./MoveToProject.tsx";
 
 /**
@@ -50,7 +49,6 @@ export const DocHeader = memo(function DocHeader(props: {
   return (
     <header className="doc-header">
       <div className="doc-header-title">
-        <HubLink />
         <HomeLink />
         <span className="doc-header-crumb" aria-hidden="true">
           /
