@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App.tsx";
 import { startEmbedBridge } from "./embedBridge.ts";
+import { startOpenTabs } from "./OpenTabsStrip.tsx";
 import "./styles.css";
 import { startTheme } from "./theme.ts";
 
 startTheme();
 startEmbedBridge();
+startOpenTabs();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

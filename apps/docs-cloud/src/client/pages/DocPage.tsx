@@ -48,6 +48,7 @@ import { SelectionToolbar } from "../editor/SelectionToolbar.tsx";
 import { TabEditor } from "../editor/TabEditor.tsx";
 import { WIDGET_PICK_EVENT, type WidgetPickDetail } from "../editor/widget/WidgetView.ts";
 import { postToEmbedParent, subscribeParentMessages, useEmbedFeatures } from "../embedBridge.ts";
+import { leaveDoc, setDocTabTitle } from "../openTabs.ts";
 import { docPath, navigate } from "../router.ts";
 import { useMe } from "../me.ts";
 import { canonicalDocUrl } from "../share/ShareDialog.tsx";
@@ -90,8 +91,11 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   }, [props.docId, loadComments]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load().catch((cause: unknown) => {
+      if (!(cause instanceof ApiError && cause.status === 404)) throw cause;
+      leaveDoc(props.docId);
+    });
+  }, [load, props.docId]);
 
   const tabList = [...tabs.values()];
   const activeTab =
@@ -153,7 +157,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
         return;
       }
       if (message.type === "doc.deleted") {
-        navigate("/", { replace: true });
+        leaveDoc(props.docId);
         return;
       }
       if (message.type === "doc.threads") {
@@ -435,7 +439,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
     )
       return;
     void api.deleteDoc(props.docId).then(
-      () => navigate("/", { replace: true }),
+      () => leaveDoc(props.docId),
       () => setNotice("Could not delete the doc. Reload and try again."),
     );
   });
@@ -469,7 +473,7 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
           setOwner(loaded.owner);
         },
         (cause: unknown) => {
-          if (cause instanceof ApiError && cause.status === 404) navigate("/", { replace: true });
+          if (cause instanceof ApiError && cause.status === 404) leaveDoc(props.docId);
         },
       ),
   );
@@ -536,6 +540,9 @@ export function DocPage(props: { readonly docId: string; readonly tabId: string 
   const toolbarTabs = useMemo(() => tabList, [tabShape]);
 
   const docTitle = doc?.title ?? "";
+  useEffect(() => {
+    if (docTitle) setDocTabTitle(props.docId, docTitle);
+  }, [props.docId, docTitle]);
   const exports = useMemo(
     () =>
       exportActions({
