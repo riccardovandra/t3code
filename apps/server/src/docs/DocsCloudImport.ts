@@ -103,6 +103,9 @@ const SyncedProjects = Schema.Struct({
     Schema.Struct({ id: Schema.String, key: Schema.String, name: Schema.String }),
   ),
 });
+const Library = Schema.Struct({
+  projects: Schema.Array(Schema.Struct({ key: Schema.String })),
+});
 const TabRef = Schema.Struct({ id: Schema.String, version: Schema.Number });
 const DocWithTabs = Schema.Struct({
   doc: Schema.Struct({ id: Schema.String }),
@@ -134,6 +137,12 @@ export class DocsCloudImport extends Context.Service<
     }) => Effect.Effect<DocsCloudProject | null, DocsCloudError>;
     /** Upserts every project of this environment into Docs Cloud, renaming them to match. */
     readonly syncProjects: Effect.Effect<ReadonlyArray<DocsCloudProject>, DocsCloudError>;
+    /**
+     * Creates only the projects Docs Cloud lacks, leaving existing names alone,
+     * so environments that title one repository differently do not rename it
+     * back and forth.
+     */
+    readonly syncMissingProjects: Effect.Effect<ReadonlyArray<DocsCloudProject>, DocsCloudError>;
     /** The checkout's docs, and those already imported into the configured Docs Cloud. */
     readonly listImports: (
       input: DocsCloudImportsInput,
@@ -280,6 +289,18 @@ const make = Effect.gen(function* () {
     const conn = yield* connection;
     return yield* upsert(conn, docsCloudSyncEntries(yield* syncedShells));
   }).pipe(Effect.withSpan("DocsCloudImport.syncProjects"));
+
+  const syncMissingProjects: DocsCloudImport["Service"]["syncMissingProjects"] = Effect.gen(
+    function* () {
+      const conn = yield* connection;
+      const library = yield* call(conn, "GET", "/api/library", Library);
+      const known = new Set(library.projects.map((project) => project.key));
+      const missing = docsCloudSyncEntries(yield* syncedShells).filter(
+        (entry) => !known.has(entry.key),
+      );
+      return missing.length === 0 ? [] : yield* upsert(conn, missing);
+    },
+  ).pipe(Effect.withSpan("DocsCloudImport.syncMissingProjects"));
 
   const docUrl = (origin: string, docId: string) => `${origin}/d/${docId}`;
   const toRecord = (origin: string, row: ImportRow): DocsCloudImportRecord => ({
@@ -497,18 +518,26 @@ const make = Effect.gen(function* () {
     return { project: cloudProject, results };
   });
 
-  return DocsCloudImport.of({ project, syncProjects, listImports, importDocs });
+  return DocsCloudImport.of({
+    project,
+    syncProjects,
+    syncMissingProjects,
+    listImports,
+    importDocs,
+  });
 });
 
 export const layer = Layer.effect(DocsCloudImport, make);
 
 /** Bursts of project edits, and a Docs Cloud sign-in, settle into one sync. */
 const SYNC_DEBOUNCE = Duration.seconds(2);
+/** How often a server that missed a sync (Docs Cloud down or set up later) catches up. */
+const SYNC_INTERVAL = Duration.minutes(15);
 
 /**
  * Syncs this environment's projects into Docs Cloud once the server is ready,
- * then whenever a project is created or renamed or Docs Cloud is connected.
- * Best effort: a failure is logged and the next trigger tries again; nothing
+ * then whenever a project is created or renamed or Docs Cloud is connected,
+ * and every SYNC_INTERVAL creates any project still missing. Best effort: a failure is logged and the next trigger tries again; nothing
  * waits on it.
  */
 export const layerProjectSync = Layer.effectDiscard(
@@ -518,24 +547,31 @@ export const layerProjectSync = Layer.effectDiscard(
     const events = yield* OrchestrationEventStore.OrchestrationEventStore;
     const connection = yield* DocsCloudConnection.DocsCloudConnection;
 
-    const sync = cloud.syncProjects.pipe(
-      Effect.tap((synced) =>
-        Effect.logDebug("Docs Cloud projects synced", { count: synced.length }),
-      ),
-      Effect.catch((error) =>
-        error.reason === "not_configured"
-          ? Effect.void
-          : Effect.logWarning("Docs Cloud project sync failed", {
-              reason: error.reason,
-              detail: error.detail,
-            }),
-      ),
+    const logged = (run: typeof cloud.syncProjects) =>
+      run.pipe(
+        Effect.tap((synced) =>
+          Effect.logDebug("Docs Cloud projects synced", { count: synced.length }),
+        ),
+        Effect.catch((error) =>
+          error.reason === "not_configured"
+            ? Effect.void
+            : Effect.logWarning("Docs Cloud project sync failed", {
+                reason: error.reason,
+                detail: error.detail,
+              }),
+        ),
+      );
+    const sync = logged(cloud.syncProjects);
+    const catchUp = Effect.sleep(SYNC_INTERVAL).pipe(
+      Effect.andThen(logged(cloud.syncMissingProjects)),
+      Effect.forever,
     );
 
     yield* Effect.gen(function* () {
       yield* startup.awaitCommandReady;
       const afterSequence = yield* events.latestApplicationSequence;
       yield* sync;
+      yield* Effect.forkScoped(catchUp);
       const projectChanges = events
         .streamApplicationEvents({ afterSequence })
         .pipe(
