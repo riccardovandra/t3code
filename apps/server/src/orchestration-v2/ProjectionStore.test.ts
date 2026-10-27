@@ -3467,6 +3467,9 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             pendingRuntimeRequest: null,
             limitRecovery: sqlShell.limitRecovery,
             snoozedUntil: sqlShell.snoozedUntil,
+            projectId: sqlShell.projectId,
+            providerInstanceId: sqlShell.providerInstanceId,
+            modelSelection: sqlShell.modelSelection,
           });
         } else assert.isUndefined(candidate);
         assert.isUndefined(candidates.find((row) => row.id === otherThreadId));
@@ -3624,7 +3627,20 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           (row) => row.id === threadId,
         ),
       );
+      assert.isDefined(
+        (yield* store.getLimitRecoveryCandidates({ ...recoveryOptions, failover: true })).find(
+          (row) => row.id === threadId,
+        ),
+      );
       const reset = DateTime.makeUnsafe(limitItem.failure.resetAt);
+      // Failover only applies while the account is still limited.
+      assert.isUndefined(
+        (yield* store.getLimitRecoveryCandidates({
+          ...recoveryOptions,
+          now: reset,
+          failover: true,
+        })).find((row) => row.id === threadId),
+      );
       const recovery = {
         runId: original.id,
         resetAt: limitItem.failure.resetAt,

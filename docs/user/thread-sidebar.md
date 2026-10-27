@@ -215,6 +215,16 @@ the snooze. Enable **Snooze limited threads** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
+To keep working instead of waiting, enable **Switch provider on usage limit** in
+**Settings → Providers** on web and desktop and list provider instances in the
+order to try them. A limited thread continues immediately on the next listed
+instance after its current one, and its transcript notes the switch. Another
+account of the same provider keeps the model; a different provider starts on its
+default model. Each thread only moves forward through the list, so when the last
+entry is limited too, the thread falls back to the reset choices above. Moving to
+an instance with a separate account carries the conversation as a
+[portable handoff](./portable-handoffs.md).
+
 On web and desktop, use **Agents** to follow work delegated to subagents.
 Stop on a thread also stops the subagents it delegated to.
 

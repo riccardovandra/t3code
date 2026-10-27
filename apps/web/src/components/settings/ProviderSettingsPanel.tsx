@@ -98,6 +98,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
+import { UsageLimitFailoverSettings } from "./UsageLimitFailoverSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
@@ -1101,6 +1102,20 @@ export function EnvironmentProviderSettings({
         environmentLabel={environmentLabel}
         sources={settings.usageLimitSources}
         cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
+        readOnly={readOnly}
+      />
+
+      <UsageLimitFailoverSettings
+        environmentId={environmentId}
+        enabled={settings.usageLimitFailoverEnabled}
+        order={settings.usageLimitFailoverOrder}
+        instances={rows.map((row) => ({
+          instanceId: row.instanceId,
+          label:
+            row.explicitInstance?.displayName?.trim() ||
+            providerClients.get(row.driver)?.label ||
+            String(row.instanceId),
+        }))}
         readOnly={readOnly}
       />
 

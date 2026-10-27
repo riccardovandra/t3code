@@ -1,4 +1,15 @@
-import { CommandId, MessageId, type OrchestrationV2Command } from "@t3tools/contracts";
+import {
+  CommandId,
+  DEFAULT_MODEL_BY_PROVIDER,
+  isProviderDriverKind,
+  MessageId,
+  type ModelSelection,
+  type OrchestrationV2Command,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
+  resolveProjectProviderInstanceEnabled,
+  type ServerSettings as ServerSettingsValue,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -70,6 +81,94 @@ export function limitRecoveryCommand(
   };
 }
 
+function instanceDriver(
+  settings: Pick<ServerSettingsValue, "providerInstances">,
+  instanceId: ProviderInstanceId,
+): ProviderDriverKind | null {
+  if (Object.hasOwn(settings.providerInstances, instanceId))
+    return settings.providerInstances[instanceId]!.driver;
+  // Unconfigured built-in instances use their driver kind as the instance id.
+  return isProviderDriverKind(instanceId) ? instanceId : null;
+}
+
+const instanceLabel = (
+  settings: Pick<ServerSettingsValue, "providerInstances">,
+  instanceId: ProviderInstanceId,
+): string =>
+  (Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]!.displayName
+    : undefined) ?? instanceId;
+
+/**
+ * Moves a freshly limited thread to the next enabled instance after its current
+ * one in the failover order. Same-driver targets keep the model and options; a
+ * different driver starts on that driver's default model.
+ */
+export function limitFailoverCommand(
+  thread: ProjectionStore.ProjectionLimitRecoveryCandidate,
+  settings: Pick<
+    ServerSettingsValue,
+    | "usageLimitFailoverEnabled"
+    | "usageLimitFailoverOrder"
+    | "providerInstances"
+    | "projectSettingsOverrides"
+  >,
+  nowMs: number,
+): OrchestrationV2Command | null {
+  if (
+    !settings.usageLimitFailoverEnabled ||
+    thread.status !== "failed" ||
+    thread.lastErrorClass !== "usage_limit" ||
+    !thread.latestRunId ||
+    !thread.usageLimitResetAt ||
+    thread.archivedAt !== null ||
+    thread.settledOverride === "settled" ||
+    thread.pendingRuntimeRequest !== null ||
+    // An armed recovery means the thread already took the wait-for-reset path.
+    thread.limitRecovery?.runId === thread.latestRunId
+  )
+    return null;
+  const resetMs = Date.parse(thread.usageLimitResetAt);
+  if (
+    !Number.isFinite(resetMs) ||
+    resetMs <= nowMs ||
+    resetMs <= DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt)
+  )
+    return null;
+  const currentDriver = instanceDriver(settings, thread.providerInstanceId);
+  const order = settings.usageLimitFailoverOrder;
+  // Only moving forward keeps a chain of limited accounts from cycling.
+  for (const instanceId of order.slice(order.indexOf(thread.providerInstanceId) + 1)) {
+    if (instanceId === thread.providerInstanceId) continue;
+    if (!resolveProjectProviderInstanceEnabled(settings, thread.projectId, instanceId)) continue;
+    const driver = instanceDriver(settings, instanceId);
+    if (driver === null) continue;
+    let modelSelection: ModelSelection;
+    if (driver === currentDriver) {
+      modelSelection = { ...thread.modelSelection, instanceId };
+    } else {
+      const model = DEFAULT_MODEL_BY_PROVIDER[driver];
+      if (model === undefined) continue;
+      modelSelection = { instanceId, model };
+    }
+    const identity = `${thread.id}:${thread.latestRunId}:${instanceId}`;
+    return {
+      type: "message.dispatch",
+      commandId: CommandId.make(`limit-failover:${identity}`),
+      messageId: MessageId.make(`limit-failover:${identity}`),
+      threadId: thread.id,
+      manualContinuationOfRunId: thread.latestRunId,
+      modelSelection,
+      text: `Usage limit reached on ${instanceLabel(settings, thread.providerInstanceId)}, switched to ${instanceLabel(settings, instanceId)}. Continue where you left off.`,
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "server",
+    };
+  }
+  return null;
+}
+
 const makeSweep = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -81,9 +180,24 @@ const makeSweep = Effect.gen(function* () {
       now,
       autoResume: preferences.autoResumeLimitedThreads,
       snooze: preferences.snoozeLimitedThreads,
+      failover: preferences.usageLimitFailoverEnabled,
     });
     const nowMs = DateTime.toEpochMillis(now);
     for (const thread of candidates) {
+      const failover = limitFailoverCommand(thread, preferences, nowMs);
+      if (failover !== null) {
+        const moved = yield* threads.dispatch(failover).pipe(
+          Effect.as(true),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("orchestration-v2.limit-failover.dispatch-failed", {
+              threadId: thread.id,
+              cause,
+            }).pipe(Effect.as(false)),
+          ),
+        );
+        // A rejected failover falls back to the wait-for-reset path below.
+        if (moved) continue;
+      }
       const command = limitRecoveryCommand(
         thread,
         preferences.autoResumeLimitedThreads,
