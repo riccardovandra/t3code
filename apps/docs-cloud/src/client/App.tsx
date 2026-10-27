@@ -16,8 +16,9 @@ const DocPage = lazy(() => loadDocPage().then((module) => ({ default: module.Doc
 const LocalDocPage = lazy(() =>
   loadLocalDocPage().then((module) => ({ default: module.LocalDocPage })),
 );
+const loadSettingsPage = () => import("./pages/SettingsPage.tsx");
 const SettingsPage = lazy(() =>
-  import("./pages/SettingsPage.tsx").then((module) => ({ default: module.SettingsPage })),
+  loadSettingsPage().then((module) => ({ default: module.SettingsPage })),
 );
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
     if (first === "library") api.prefetchLibrary();
     if (first === "doc") void loadDocPage();
     if (first === "local") void loadLocalDocPage();
+    if (first === "settings") void loadSettingsPage();
     api
       .me()
       .then(setMe, () => setMe(null))
