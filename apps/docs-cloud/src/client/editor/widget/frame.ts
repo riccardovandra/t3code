@@ -147,8 +147,10 @@ const RUNTIME = String.raw`
 `;
 
 // Paper is always light: the frame's own print rule wins over posted colours.
+// The scheme must match .widget-frame's in widget.css, or Chrome paints an
+// opaque canvas behind the transparent frame.
 const STYLE = `
-:root { color-scheme: normal; }
+:root { color-scheme: light; }
 html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
 svg { display: block; width: 100%; height: auto; font-family: var(--widget-font, system-ui, sans-serif); }
 body.editable [data-claude-text-id] { cursor: text; }
