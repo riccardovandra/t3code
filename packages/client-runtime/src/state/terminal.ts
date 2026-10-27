@@ -103,6 +103,10 @@ export function createTerminalEnvironmentAtoms<R, E>(
       label: "environment-data:terminal:write",
       tag: WS_METHODS.terminalWrite,
     }),
+    runCommand: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:run-command",
+      tag: WS_METHODS.terminalRunCommand,
+    }),
     resize: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:resize",
       tag: WS_METHODS.terminalResize,

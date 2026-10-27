@@ -46,6 +46,10 @@ import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { previewEnvironment } from "../../state/preview";
 import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { terminalEnvironment } from "../../state/terminal";
+import { formatChatCommandReport } from "../../lib/chatCommandReport";
+import { useComposerDraftStore } from "../../composerDraftStore";
+import type { RunShellCommand } from "./MarkdownCodeBlock.logic";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
@@ -99,6 +103,8 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     setThreadError,
   } = input;
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const runCommand = useAtomCommand(terminalEnvironment.runCommand, { reportFailure: false });
+  const readActiveThreadRef = useStableCallback(() => activeThreadRef);
 
   const hasTerminalWriteAccess = () =>
     readEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -304,7 +310,53 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   };
   const runProjectScriptStable = useStableCallback(runProjectScript);
 
-  const runShellCommand = (command: string) => {
+  // The result lands in the composer rather than going straight to the agent: output can hold
+  // secrets, and the user decides whether a running turn should see it.
+  const runShellCommandForChat = async (command: string) => {
+    if (!hasTerminalWriteAccess() || !activeProject || !activeThreadRef) return;
+    const originThreadRef = activeThreadRef;
+    const result = await runCommand({
+      environmentId,
+      input: { cwd: gitCwd ?? activeProject.workspaceRoot, command },
+    });
+    if (result._tag !== "Success") {
+      if (isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not run the command",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+      return;
+    }
+    const report = formatChatCommandReport(command, result.value);
+    const current = readActiveThreadRef();
+    // The mounted composer belongs to whichever thread is open now, which may not be the one
+    // that ran the command; a thread left mid-run gets the result in its stored draft instead.
+    if (
+      current?.environmentId !== originThreadRef.environmentId ||
+      current.threadId !== originThreadRef.threadId
+    ) {
+      const drafts = useComposerDraftStore.getState();
+      const draft = drafts.getComposerDraft(originThreadRef)?.prompt ?? "";
+      drafts.setPrompt(originThreadRef, draft.trim() ? `${draft.trimEnd()}\n\n${report}` : report);
+      return;
+    }
+    if (!composerRef.current?.insertTextAtEnd(report, { ensureLeadingBoundary: true })) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Unable to add to chat",
+          description: "The composer is busy; try again once it is ready.",
+        }),
+      );
+    }
+  };
+
+  const runShellCommand: RunShellCommand = (command, target) => {
+    if (target === "chat") return runShellCommandForChat(command);
     void runProjectScript(
       {
         id: "chat-code-block",
