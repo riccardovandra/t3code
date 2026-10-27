@@ -190,6 +190,56 @@ const EDITS: ReadonlyArray<Edit> = [
     find: 'artifactName: "T3-Code-${version}-${arch}.${ext}"',
     replace: 'artifactName: "UP-Orchestrator-${version}-${arch}.${ext}"',
   },
+  // Stable fork builds are just the product name; Dev and Nightly keep their stage.
+  // Squirrel.Mac swaps the bundle in place, so the installed .app path survives the rename.
+  {
+    file: "apps/desktop/package.json",
+    find: `"productName": "${BRAND_NAME} (Beta)"`,
+    replace: `"productName": "${BRAND_NAME}"`,
+  },
+  {
+    file: "apps/desktop/scripts/electron-launcher.mjs",
+    find: `: "${BRAND_NAME} (Beta)";`,
+    replace: `: "${BRAND_NAME}";`,
+  },
+  {
+    file: "apps/desktop/src/app/DesktopEnvironment.ts",
+    find: "displayName: `${APP_BASE_NAME} (${stageLabel})`,",
+    replace:
+      'displayName: stageLabel === "Beta" ? APP_BASE_NAME : `${APP_BASE_NAME} (${stageLabel})`,',
+  },
+  {
+    file: "apps/desktop/src/app/DesktopAppIdentity.ts",
+    find: "`${environment.branding.baseName} ${environment.branding.stageLabel}`,",
+    replace:
+      'environment.branding.stageLabel === "Beta" ? environment.branding.baseName : `${environment.branding.baseName} ${environment.branding.stageLabel}`,',
+  },
+  {
+    file: "apps/web/index.html",
+    find: `<title>${BRAND_NAME} (Beta)</title>`,
+    replace: `<title>${BRAND_NAME}</title>`,
+  },
+  // formatAppDisplayName drops the suffix for "Latest", the hosted stable channel's label.
+  {
+    file: "apps/web/src/branding.ts",
+    find: '(import.meta.env.DEV ? "Dev" : "Beta")',
+    replace: '(import.meta.env.DEV ? "Dev" : "Latest")',
+  },
+  {
+    file: "apps/mobile/src/components/BrandMark.tsx",
+    find: '<View className="rounded-full bg-subtle px-2 py-1">',
+    replace: '{stageLabel !== "Beta" ? (<View className="rounded-full bg-subtle px-2 py-1">',
+  },
+  {
+    file: "apps/mobile/src/components/BrandMark.tsx",
+    find: /(\{stageLabel\}\s*<\/Text>\s*<\/View>)/,
+    replace: "$1) : null}",
+  },
+  {
+    file: "apps/mobile/src/components/CompactBrandTitle.tsx",
+    find: "{showStage ? (",
+    replace: '{showStage && stageLabel !== "Beta" ? (',
+  },
   // Spotlight indexes kMDItemAlternateNames, so searching the old name still finds the app.
   {
     file: "scripts/build-desktop-artifact.ts",

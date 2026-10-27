@@ -28,6 +28,7 @@ describe("fork-brand", () => {
     assert.include(branded.get("apps/desktop/package.json"), `"productName": "${BRAND_NAME}`);
 
     for (const [file, content] of branded) {
+      assert.notInclude(content, `${BRAND_NAME} (Beta)`, `${file} still names the Beta stage`);
       for (const text of PROTECTED) {
         assert.equal(
           content.includes(text),
@@ -36,5 +37,29 @@ describe("fork-brand", () => {
         );
       }
     }
+  });
+
+  it("names stable builds without the Beta stage", () => {
+    const { branded } = planForkBranding();
+    assert.include(branded.get("apps/desktop/package.json"), `"productName": "${BRAND_NAME}"`);
+    assert.include(branded.get("apps/web/index.html"), `<title>${BRAND_NAME}</title>`);
+    assert.include(branded.get("apps/desktop/scripts/electron-launcher.mjs"), `: "${BRAND_NAME}";`);
+    assert.include(branded.get("apps/web/src/branding.ts"), `"Dev" : "Latest"`);
+    assert.include(
+      branded.get("apps/desktop/src/app/DesktopEnvironment.ts"),
+      'stageLabel === "Beta" ? APP_BASE_NAME',
+    );
+    assert.include(
+      branded.get("apps/desktop/src/app/DesktopAppIdentity.ts"),
+      'environment.branding.stageLabel === "Beta"',
+    );
+    assert.include(
+      branded.get("apps/mobile/src/components/BrandMark.tsx"),
+      'stageLabel !== "Beta"',
+    );
+    assert.include(
+      branded.get("apps/mobile/src/components/CompactBrandTitle.tsx"),
+      'showStage && stageLabel !== "Beta"',
+    );
   });
 });
