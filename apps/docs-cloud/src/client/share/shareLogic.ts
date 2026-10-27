@@ -121,6 +121,7 @@ export const memberLabel = (member: DocMember) =>
 
 const ERROR_TEXT: Readonly<Record<string, string>> = {
   last_owner: "A doc needs at least one owner. Make someone else an owner first.",
+  self: "That address signs in as you, so it already has your access.",
   forbidden: "Only owners can change who has access.",
   invalid_email: "That is not a valid email address.",
   invalid_role: "Pick a role.",
