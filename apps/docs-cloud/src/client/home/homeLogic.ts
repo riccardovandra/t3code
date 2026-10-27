@@ -237,9 +237,9 @@ export function parseStoredScope(raw: string | null): StoredScope | null {
 
 /**
  * The project the home page opens on. Inside T3 Code it is the panel's
- * project, unless the person picked something else while in that project;
- * standalone it is the last pick. A project not in `projectKeys` (gone, or
- * not visible to this person) falls back to All projects.
+ * project, even before it has any docs, unless the person picked something
+ * else while in that project; standalone it is the last pick. A picked project
+ * not in `projectKeys` (gone, or not visible to this person) is dropped.
  */
 export function restoreScope(input: {
   readonly stored: StoredScope | null;
@@ -250,9 +250,31 @@ export function restoreScope(input: {
   const usable = (scope: ProjectScope): boolean =>
     scope.kind !== "project" || projectKeys.has(scope.key);
   if (stored && stored.embedKey === embedKey && usable(stored.scope)) return stored.scope;
-  if (embedKey !== null) {
-    const embedScope: ProjectScope = { kind: "project", key: embedKey };
-    return usable(embedScope) ? embedScope : ALL_PROJECTS;
+  return embedKey === null ? ALL_PROJECTS : { kind: "project", key: embedKey };
+}
+
+/** Pinned doc ids, kept on this device only. Anything malformed reads as no pins. */
+export function parsePins(raw: string | null): ReadonlyArray<string> {
+  if (raw === null) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
   }
-  return ALL_PROJECTS;
+}
+
+export const togglePin = (pins: ReadonlyArray<string>, docId: string): ReadonlyArray<string> =>
+  pins.includes(docId) ? pins.filter((id) => id !== docId) : [...pins, docId];
+
+/** Pinned docs first, each group keeping the order `entries` came in. */
+export function pinnedFirst<A extends HomeDoc>(
+  entries: ReadonlyArray<A>,
+  pins: ReadonlySet<string>,
+): ReadonlyArray<A> {
+  if (pins.size === 0) return entries;
+  return [
+    ...entries.filter((entry) => pins.has(entry.id)),
+    ...entries.filter((entry) => !pins.has(entry.id)),
+  ];
 }

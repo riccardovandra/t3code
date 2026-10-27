@@ -3,7 +3,7 @@ import { memo, useState } from "react";
 import { canEdit, canShare, displayName } from "../../shared/access.ts";
 import { DOC_STATUS_LABEL } from "../../shared/protocol.ts";
 import { docPath, navigate } from "../router.ts";
-import { DocIcon, MoreIcon, PeopleIcon } from "./icons.tsx";
+import { DocIcon, MoreIcon, PeopleIcon, PinIcon, PlusIcon } from "./icons.tsx";
 import { activityLabel, formatDay, previewBlocks, type HomeEntry } from "./homeLogic.ts";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "./Menu.tsx";
 import { NoProjectBadge, ProjectBadge, type SwitcherProject } from "./ProjectSwitcher.tsx";
@@ -19,6 +19,7 @@ export interface DocActions {
   readonly onCopyLink: (entry: HomeEntry) => void;
   readonly onRename: (entry: HomeEntry) => void;
   readonly onDelete: (entry: HomeEntry) => void;
+  readonly onTogglePin: (entry: HomeEntry) => void;
 }
 
 const open = (docId: string) => (event: { preventDefault: () => void }) => {
@@ -59,10 +60,21 @@ function Preview(props: { readonly entry: HomeEntry }) {
   );
 }
 
-function DocMenu(props: { readonly entry: HomeEntry; readonly actions: DocActions }) {
+function DocMenu(props: {
+  readonly entry: HomeEntry;
+  readonly pinned: boolean;
+  readonly actions: DocActions;
+}) {
   return (
     <Menu label={`Actions for ${props.entry.title}`} trigger={<MoreIcon size={16} />}>
-      {(close) => <DocMenuBody entry={props.entry} actions={props.actions} close={close} />}
+      {(close) => (
+        <DocMenuBody
+          entry={props.entry}
+          pinned={props.pinned}
+          actions={props.actions}
+          close={close}
+        />
+      )}
     </Menu>
   );
 }
@@ -75,10 +87,11 @@ const focusMenuView = (view: HTMLDivElement | null) => {
 /** Mounted only while the menu is open, so it always reopens on the main view. */
 function DocMenuBody(props: {
   readonly entry: HomeEntry;
+  readonly pinned: boolean;
   readonly actions: DocActions;
   readonly close: () => void;
 }) {
-  const { entry, actions, close } = props;
+  const { entry, pinned, actions, close } = props;
   const [moving, setMoving] = useState(false);
   const editable = canEdit(entry.role);
 
@@ -130,6 +143,14 @@ function DocMenuBody(props: {
           <MenuItem
             onSelect={() => {
               close();
+              actions.onTogglePin(entry);
+            }}
+          >
+            {pinned ? "Unpin" : "Pin"}
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              close();
               actions.onCopyLink(entry);
             }}
           >
@@ -166,8 +187,14 @@ function DocMenuBody(props: {
   );
 }
 
+const PinnedMark = () => (
+  <span className="doc-card-mark" aria-label="Pinned">
+    <PinIcon size={16} />
+  </span>
+);
+
 const SharedMark = () => (
-  <span className="doc-card-shared" aria-label="Shared">
+  <span className="doc-card-mark" aria-label="Shared">
     <PeopleIcon size={16} />
   </span>
 );
@@ -175,6 +202,7 @@ const SharedMark = () => (
 export const DocCard = memo(function DocCard(props: {
   readonly entry: HomeEntry;
   readonly snippet: string | null;
+  readonly pinned: boolean;
   readonly actions: DocActions;
 }) {
   const { entry } = props;
@@ -190,11 +218,12 @@ export const DocCard = memo(function DocCard(props: {
             <span className="doc-card-title">{entry.title}</span>
             <span className="doc-card-meta">{props.snippet ?? activityLabel(entry)}</span>
           </span>
+          {props.pinned ? <PinnedMark /> : null}
           {entry.memberCount > 1 ? <SharedMark /> : null}
         </div>
       </a>
       <div className="doc-card-menu">
-        <DocMenu entry={entry} actions={props.actions} />
+        <DocMenu entry={entry} pinned={props.pinned} actions={props.actions} />
       </div>
     </article>
   );
@@ -203,6 +232,7 @@ export const DocCard = memo(function DocCard(props: {
 export const DocRow = memo(function DocRow(props: {
   readonly entry: HomeEntry;
   readonly snippet: string | null;
+  readonly pinned: boolean;
   readonly actions: DocActions;
 }) {
   const { entry } = props;
@@ -215,6 +245,7 @@ export const DocRow = memo(function DocRow(props: {
             <span>{entry.title}</span>
             {props.snippet ? <span className="doc-row-snippet">{props.snippet}</span> : null}
           </span>
+          {props.pinned ? <PinnedMark /> : null}
           {entry.memberCount > 1 ? <SharedMark /> : null}
         </a>
       </td>
@@ -231,8 +262,42 @@ export const DocRow = memo(function DocRow(props: {
       <td className="doc-row-muted">{entry.openedAt ? formatDay(entry.openedAt) : "Never"}</td>
       <td className="doc-row-muted">{formatDay(entry.updatedAt)}</td>
       <td className="doc-row-actions" onClick={(event) => event.stopPropagation()}>
-        <DocMenu entry={entry} actions={props.actions} />
+        <DocMenu entry={entry} pinned={props.pinned} actions={props.actions} />
       </td>
     </tr>
   );
 });
+
+/** The grid's first tile: a card-sized way to start a doc in the current project. */
+export function NewDocCard(props: { readonly detail: string; readonly onCreate: () => void }) {
+  return (
+    <button type="button" className="doc-card doc-card-new" onClick={props.onCreate}>
+      <span className="doc-card-paper doc-card-new-paper" aria-hidden="true">
+        <PlusIcon size={46} />
+      </span>
+      <span className="doc-card-footer">
+        <span className="doc-card-icon">
+          <DocIcon size={18} />
+        </span>
+        <span className="doc-card-text">
+          <span className="doc-card-title">New doc</span>
+          <span className="doc-card-meta">{props.detail}</span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+export function NewDocRow(props: { readonly detail: string; readonly onCreate: () => void }) {
+  return (
+    <tr className="doc-row doc-row-new">
+      <td className="doc-row-title" colSpan={7}>
+        <button type="button" onClick={props.onCreate}>
+          <PlusIcon size={16} />
+          <span>New doc</span>
+          <span className="doc-row-muted">{props.detail}</span>
+        </button>
+      </td>
+    </tr>
+  );
+}
