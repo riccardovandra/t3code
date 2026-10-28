@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Comment } from "../../shared/protocol.ts";
 import { AGENT_AUTHOR_PREFIX, isAgentAuthor, type CommentThread } from "../../shared/threads.ts";
@@ -60,6 +60,13 @@ export function CommentComposer(props: {
   const [busy, setBusy] = useState(false);
   const [addToChat, setAddToChat] = useState(!props.offerSendToAgent);
   const [sendToAgent, setSendToAgent] = useState(true);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // Not the autoFocus attribute: it focuses during commit, before the margin has
+  // positioned the card, so the browser scrolls to the card's unplaced spot at
+  // the top of the doc. The card ends up beside the passage, which is on screen.
+  useEffect(() => {
+    if (props.autoFocus) textarea.current?.focus({ preventScroll: true });
+  }, [props.autoFocus]);
   const submit = async () => {
     const text = body.trim();
     if (!text || busy) return;
@@ -94,11 +101,11 @@ export function CommentComposer(props: {
       }}
     >
       <textarea
+        ref={textarea}
         value={body}
         rows={2}
         placeholder={props.placeholder}
         aria-label={props.placeholder}
-        autoFocus={props.autoFocus}
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={onKeyDown}
       />
