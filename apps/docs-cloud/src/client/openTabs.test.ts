@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { closeTab, parseOpenTabs, retitleTab, visitTab, type OpenTab } from "./openTabs.ts";
+import { closeTab, parseTabSets, retitleTab, visitTab, type OpenTab } from "./openTabs.ts";
 
 const spec: OpenTab = { key: "doc:spec", path: "/d/spec", title: "Spec" };
 const plan: OpenTab = { key: "doc:plan", path: "/d/plan/t2", title: "Build plan" };
@@ -56,9 +56,23 @@ it("retitles a tab once its doc loads", () => {
   expect(retitleTab(tabs, "doc:plan", "Build plan v2")).toBe(tabs);
 });
 
-it("drops stored tabs that are malformed or point elsewhere", () => {
-  const stored = JSON.stringify([spec, { key: "doc:x", path: "/d/y", title: "x" }, { key: 1 }]);
-  expect(parseOpenTabs(stored)).toEqual([spec]);
-  expect(parseOpenTabs("not json")).toEqual([]);
-  expect(parseOpenTabs(null)).toEqual([]);
+describe("parseTabSets", () => {
+  it("keeps each project's tabs apart", () => {
+    const stored = JSON.stringify({ "github.com/a/app": [spec], "": [plan] });
+    expect(parseTabSets(stored)).toEqual({ "github.com/a/app": [spec], "": [plan] });
+  });
+
+  it("drops stored tabs that are malformed or point elsewhere", () => {
+    const stored = JSON.stringify({
+      "github.com/a/app": [spec, { key: "doc:x", path: "/d/y", title: "x" }, { key: 1 }],
+      broken: "nope",
+    });
+    expect(parseTabSets(stored)).toEqual({ "github.com/a/app": [spec], broken: [] });
+    expect(parseTabSets("not json")).toEqual({});
+    expect(parseTabSets(null)).toEqual({});
+  });
+
+  it("files tabs saved before projects under no project", () => {
+    expect(parseTabSets(JSON.stringify([spec, run]))).toEqual({ "": [spec, run] });
+  });
 });
