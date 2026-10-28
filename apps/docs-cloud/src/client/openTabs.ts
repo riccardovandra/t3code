@@ -56,19 +56,31 @@ export function closeTab(
   return { tabs: rest, next: rest[Math.min(index, rest.length - 1)]?.path ?? "/" };
 }
 
-export function parseOpenTabs(raw: string | null): ReadonlyArray<OpenTab> {
+function parseOpenTabs(value: unknown): ReadonlyArray<OpenTab> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (tab): tab is OpenTab =>
+      typeof tab?.key === "string" &&
+      typeof tab.path === "string" &&
+      typeof tab.title === "string" &&
+      openTabKey(parseRoute(tab.path)) === tab.key,
+  );
+}
+
+/** Open tabs by T3 Code project key, "" for no project. */
+type TabSets = Readonly<Record<string, ReadonlyArray<OpenTab>>>;
+
+export function parseTabSets(raw: string | null): TabSets {
   try {
-    const value: unknown = JSON.parse(raw ?? "[]");
-    if (!Array.isArray(value)) return [];
-    return value.filter(
-      (tab): tab is OpenTab =>
-        typeof tab?.key === "string" &&
-        typeof tab.path === "string" &&
-        typeof tab.title === "string" &&
-        openTabKey(parseRoute(tab.path)) === tab.key,
+    const value: unknown = JSON.parse(raw ?? "{}");
+    // Tabs stored before they were kept per project had no project to go with.
+    if (Array.isArray(value)) return { "": parseOpenTabs(value) };
+    if (typeof value !== "object" || value === null) return {};
+    return Object.fromEntries(
+      Object.entries(value).map(([project, tabs]) => [project, parseOpenTabs(tabs)]),
     );
   } catch {
-    return [];
+    return {};
   }
 }
 
@@ -83,23 +95,31 @@ const storage = (): Storage | null => {
   }
 };
 
-let current: ReadonlyArray<OpenTab> | null = null;
+const NO_TABS: ReadonlyArray<OpenTab> = [];
+let sets: TabSets | null = null;
+// Null until T3 Code says which project the panel is in, so no visit lands in the wrong one.
+let project: string | null = null;
 const listeners = new Set<() => void>();
 
+const notify = () => {
+  for (const listener of listeners) listener();
+};
+
 function read(): ReadonlyArray<OpenTab> {
-  current ??= parseOpenTabs(storage()?.getItem(STORAGE_KEY) ?? null);
-  return current;
+  if (project === null) return NO_TABS;
+  sets ??= parseTabSets(storage()?.getItem(STORAGE_KEY) ?? null);
+  return sets[project] ?? NO_TABS;
 }
 
 function write(next: ReadonlyArray<OpenTab>): void {
-  if (next === read()) return;
-  current = next;
+  if (project === null || next === read()) return;
+  sets = { ...sets, [project]: next };
   try {
-    storage()?.setItem(STORAGE_KEY, JSON.stringify(next));
+    storage()?.setItem(STORAGE_KEY, JSON.stringify(sets));
   } catch {
     // Private modes can refuse storage; the tabs still last until reload.
   }
-  for (const listener of listeners) listener();
+  notify();
 }
 
 const subscribe = (listener: () => void) => {
@@ -109,6 +129,24 @@ const subscribe = (listener: () => void) => {
 
 export function useOpenTabs(): ReadonlyArray<OpenTab> {
   return useSyncExternalStore(subscribe, read);
+}
+
+/**
+ * Shows the tabs of the panel's project. The doc on screen joins them when the
+ * panel first loads; after a project switch it stays only if already open there.
+ */
+export function setTabsProject(key: string): void {
+  if (key === project) return;
+  const first = project === null;
+  project = key;
+  notify();
+  const path = window.location.pathname;
+  const tabKey = openTabKey(parseRoute(path));
+  if (first || tabKey === null || read().some((tab) => tab.key === tabKey)) {
+    rememberTab(path);
+  } else {
+    navigate("/", { replace: true });
+  }
 }
 
 /** Adds or updates the tab for `path` without navigating, e.g. for a background tab. */

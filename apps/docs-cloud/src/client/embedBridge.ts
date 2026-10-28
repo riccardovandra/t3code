@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import {
   EMBED_ORIGINS_META,
   parseParentMessage,
+  titleProjectKey,
   type EmbedFeature,
   type EmbedFrameMessage,
   type EmbedParentMessage,
@@ -11,6 +12,7 @@ import { api } from "./api.ts";
 import { setAddToChatHandler } from "./comments/addToChat.ts";
 import { setEmbedProject } from "./embedContext.ts";
 import { embedTransport, type EmbedTransport } from "./embedTransport.ts";
+import { setTabsProject } from "./openTabs.ts";
 import { navigate, parseRoute, subscribePathname } from "./router.ts";
 import { applyTheme } from "./theme.ts";
 
@@ -120,6 +122,11 @@ export function startEmbedBridge(): void {
         message.projectName === null
           ? null
           : { name: message.projectName, key: message.projectKey },
+      );
+      setTabsProject(
+        message.projectName === null
+          ? ""
+          : (message.projectKey ?? titleProjectKey(message.projectName)),
       );
     } else if (message.type === "t3-docs:theme") {
       applyTheme(message);
