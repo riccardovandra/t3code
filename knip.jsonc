@@ -115,10 +115,6 @@
       // React Native codegen discovers component specifications by filename.
       "entry": ["src/*NativeComponent.ts!"],
     },
-    "apps/docs-cloud": {
-      // Wrangler loads the Worker by path from wrangler.jsonc; index.html loads the SPA.
-      "entry": ["src/worker/index.ts!", "src/client/main.tsx!"],
-    },
     "infra/task-cache": {
       "ignore": ["vendor/**"],
       // The bootstrap and Vite+ hook are loaded by shell/package configuration.
