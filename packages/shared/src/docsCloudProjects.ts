@@ -7,13 +7,12 @@
  */
 
 /** Titles compare ignoring case and spacing. */
-export const projectNameKey = (name: string): string =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
+const projectNameKey = (name: string): string => name.trim().replace(/\s+/g, " ").toLowerCase();
 
 const TITLE_KEY_PREFIX = "title:";
-export const MAX_PROJECT_KEY_LENGTH = 300;
+const MAX_PROJECT_KEY_LENGTH = 300;
 
-export const titleProjectKey = (name: string): string => TITLE_KEY_PREFIX + projectNameKey(name);
+const titleProjectKey = (name: string): string => TITLE_KEY_PREFIX + projectNameKey(name);
 
 interface ProjectRepository {
   readonly canonicalKey: string;
