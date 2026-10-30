@@ -330,7 +330,7 @@ export function DocsCloudPanel(props: {
         ref={frame}
         title="Docs Cloud"
         src={src}
-        allow="clipboard-read; clipboard-write"
+        allow="clipboard-read; clipboard-write; fullscreen; autoplay"
         // Keeps the app's session, downloads and print, but not navigating T3 Code
         // away. It is cross-origin, so allow-same-origin cannot lift the sandbox.
         // oxlint-disable-next-line react/iframe-missing-sandbox
