@@ -13,7 +13,7 @@
  * another window, and the page listens for it only inside the app's WebView.
  */
 
-export const NATIVE_HOST_EVENT = "t3-docs:host";
+const NATIVE_HOST_EVENT = "t3-docs:host";
 export const NATIVE_READY_TYPE = "t3-docs:ready";
 
 /** The script the app injects to hand `message` to a Docs Cloud page at `origin`. */

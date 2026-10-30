@@ -41,8 +41,8 @@ const MAX_CLOUD_DOC_ID_LENGTH = 200;
 const MAX_LOCAL_TITLE_LENGTH = 200;
 // The T3 server's limits for a comment.
 const MAX_COMMENT_BODY_LENGTH = 10_000;
-export const MAX_LOCAL_QUOTE_LENGTH = 2_000;
-export const MAX_LOCAL_CONTEXT_LENGTH = 200;
+const MAX_LOCAL_QUOTE_LENGTH = 2_000;
+const MAX_LOCAL_CONTEXT_LENGTH = 200;
 /** Above the server's read cap, so any file it serves whole can be saved back. */
 const MAX_LOCAL_MARKDOWN_LENGTH = 5_000_000;
 
