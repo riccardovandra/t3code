@@ -5,8 +5,8 @@ import type { SkippedMachine } from "./updateEverything.logic";
 
 /**
  * Where a server's update comes from decides what must be published before it can install it.
- * A desktop-managed server follows its own app's feed; a release-mirror server (fork:
- * `T3CODE_RELEASE_BASE_URL`) downloads from a mirror that publishes nothing to npm.
+ * A release-mirror server (fork: `T3CODE_RELEASE_BASE_URL`) downloads from a mirror, so it waits
+ * for the version to land there. Others install as soon as they are asked to.
  */
 export type ServerReleaseSource = "desktop-app" | "npm" | "release-mirror";
 
@@ -22,7 +22,6 @@ export function gateServersOnRelease(input: {
   readonly servers: ReadonlyArray<ServerUpdateTarget>;
   readonly targetVersion: string;
   readonly releaseMirrors: ReadonlySet<EnvironmentId>;
-  readonly npmPublished: boolean;
   readonly mirrorPublished: ReadonlySet<EnvironmentId>;
 }): { readonly servers: ServerUpdateTarget[]; readonly skipped: SkippedMachine[] } {
   const servers: ServerUpdateTarget[] = [];
@@ -30,11 +29,9 @@ export function gateServersOnRelease(input: {
   for (const server of input.servers) {
     const source = serverReleaseSource(server, input.releaseMirrors);
     const reason =
-      source === "npm" && !input.npmPublished
-        ? `t3@${input.targetVersion} is not on npm yet`
-        : source === "release-mirror" && !input.mirrorPublished.has(server.environmentId)
-          ? `T3 Code ${input.targetVersion} is not on its release mirror yet`
-          : null;
+      source === "release-mirror" && !input.mirrorPublished.has(server.environmentId)
+        ? `T3 Code ${input.targetVersion} is not on its release mirror yet`
+        : null;
     if (reason === null) {
       servers.push(server);
     } else {

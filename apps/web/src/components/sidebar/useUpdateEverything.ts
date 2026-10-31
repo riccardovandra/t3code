@@ -5,7 +5,6 @@ import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
-import { useNpmReleasePublished } from "~/state/npmRelease";
 import { useReleaseMirrorPublished } from "~/state/releaseMirror";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
@@ -14,16 +13,18 @@ import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
 import {
+  type ChannelSwitchRelease,
   closeFinishedUpdateRun,
+  collectChannelSwitchTargets,
   collectRestartingMachines,
   collectServerUpdateTargets,
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
-  type SkippedMachine,
   type UpdateRunMachine,
 } from "./updateEverything.logic";
 import { gateServersOnRelease, serverReleaseSource } from "./releaseGate";
+import type { SkippedMachine } from "./updateEverything.logic";
 import {
   clearSavedUpdateEverythingResult,
   saveUpdateEverythingResult,
@@ -36,9 +37,24 @@ import {
 
 const UPDATE_RESTART_DELAY_MS = 5_000;
 
+/** Servers this desktop app runs; they update with it. */
+export function isHostedByThisApp(
+  environment: ReturnType<typeof useEnvironments>["environments"][number],
+) {
+  return (
+    isElectron &&
+    (environment.entry.target._tag === "PrimaryConnectionTarget" ||
+      isDesktopLocalConnectionTarget(environment.entry.target))
+  );
+}
+
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
-export function useUpdateEverything(localUpdateVersion: string | null) {
+/** `channelSwitch` makes the run move the fleet to that release's track instead of updating it. */
+export function useUpdateEverything(
+  localUpdateVersion: string | null,
+  channelSwitch?: ChannelSwitchRelease,
+) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
@@ -49,48 +65,50 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     label: environment.label,
     serverConfig: environment.serverConfig,
     connected: environment.connection.phase === "connected",
-    hostedByThisApp:
-      isElectron &&
-      (environment.entry.target._tag === "PrimaryConnectionTarget" ||
-        isDesktopLocalConnectionTarget(environment.entry.target)),
+    hostedByThisApp: isHostedByThisApp(environment),
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  const { targets: behindServers, skipped: unreachable } = collectServerUpdateTargets(
-    machines,
-    targetVersion,
-  );
-  // A desktop-managed server installs from its own app's update feed, and a release-mirror
-  // server from its mirror, so only the rest wait for npm to publish the version.
+  const { targets: behindServers, skipped: unreachable } = channelSwitch
+    ? collectChannelSwitchTargets(machines, channelSwitch)
+    : collectServerUpdateTargets(machines, targetVersion);
+  // A release-mirror server downloads from its mirror, so it waits for the version to land there.
   const releaseMirrors = new Set(
     machines
       .filter((machine) => machine.serverConfig?.environment.capabilities.serverReleaseMirror)
       .map((machine) => machine.environmentId),
   );
-  const sources = behindServers.map((server) => serverReleaseSource(server, releaseMirrors));
-  const npmPublished = useNpmReleasePublished(sources.includes("npm") ? targetVersion : null);
   const mirrorPublished = useReleaseMirrorPublished(
     targetVersion,
-    behindServers
-      .filter((_, index) => sources[index] === "release-mirror")
-      .map((server) => server.environmentId),
+    channelSwitch
+      ? []
+      : behindServers
+          .filter((server) => serverReleaseSource(server, releaseMirrors) === "release-mirror")
+          .map((server) => server.environmentId),
   );
-  const gated = gateServersOnRelease({
-    servers: behindServers,
-    targetVersion,
-    releaseMirrors,
-    npmPublished,
-    mirrorPublished,
-  });
+  const gated = channelSwitch
+    ? { servers: behindServers, skipped: [] }
+    : gateServersOnRelease({
+        servers: behindServers,
+        targetVersion,
+        releaseMirrors,
+        mirrorPublished,
+      });
   const servers = gated.servers;
   const skipped: ReadonlyArray<SkippedMachine> = [...unreachable, ...gated.skipped];
-  const restarts = collectRestartingMachines(machines, servers, localUpdateVersion !== null);
-  const providers = useProviderUpdates();
+  // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
+  const moving = servers.filter((server) => server.trackOnly !== true);
+  const restarts = collectRestartingMachines(machines, moving, localUpdateVersion !== null);
+  const providerUpdates = useProviderUpdates();
+  // A track switch moves app and servers only; provider updates stay a separate choice.
+  const providers = channelSwitch ? { machines: [], updateAll: async () => [] } : providerUpdates;
   const updateServer = useServerUpdate();
 
-  const { summary, lines } = describeUpdateEverything({
+  const view = describeUpdateEverything({
     localVersion: localUpdateVersion,
-    servers,
+    localMachines: machines.filter((machine) => machine.hostedByThisApp),
+    servers: moving,
+    skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
       label: machine.label,
@@ -102,10 +120,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    summary,
-    lines,
+    ...view,
     restarts,
-    skipped,
     run: async ({
       downloadLocal,
       installLocal,
@@ -148,6 +164,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       }
       const localVersion = installLocal ? localUpdateVersion : null;
       setUpdateEverythingRun(() => ({
+        ...(channelSwitch ? { trackSwitch: true } : {}),
         localVersion,
         phase: "providers",
         restartAt: null,

@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import * as ServerConfig from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
@@ -88,6 +89,7 @@ const layerTest = WorkspaceEnvFile.layer.pipe(
     ),
   ),
   Layer.provide(VcsProcess.layer),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-env-file-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 

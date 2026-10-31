@@ -66,7 +66,7 @@ export function isProjectDocPath(path: string): boolean {
   );
 }
 
-export const DOC_EXCERPT_MAX_LENGTH = 280;
+const DOC_EXCERPT_MAX_LENGTH = 280;
 
 /**
  * A short plain-text preview for a doc card in the conversation. The leading

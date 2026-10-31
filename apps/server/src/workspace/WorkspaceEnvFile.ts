@@ -123,7 +123,7 @@ const failureReason = (
   }
 };
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const workspaceFiles = yield* WorkspaceFileSystem.WorkspaceFileSystem;
   const vcsProcess = yield* VcsProcess.VcsProcess;
   // Read, merge and write must not interleave, or one save drops another's keys.

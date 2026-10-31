@@ -43,7 +43,7 @@ export function chatCommandEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * Keeps the last `maxBytes` of a stream: build and test failures print at the end, and the
  * runner's own capture keeps the start and returns nothing on timeout.
  */
-export function outputTail(maxBytes: number) {
+function outputTail(maxBytes: number) {
   const chunks: Array<Uint8Array> = [];
   let bytes = 0;
   let dropped = false;
@@ -69,7 +69,7 @@ export function outputTail(maxBytes: number) {
   };
 }
 
-export function chatCommandInvocation(
+function chatCommandInvocation(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
   command: string,
@@ -81,7 +81,7 @@ export function chatCommandInvocation(
   return { command: env.SHELL ?? "/bin/sh", args: ["-lc", command] };
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const platform = yield* HostProcess.Platform;
 
