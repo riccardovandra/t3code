@@ -35,6 +35,7 @@ import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as McpServerOAuth from "./McpServerOAuth.ts";
 import * as McpServerRegistry from "./McpServerRegistry.ts";
 import * as McpUpstreamClients from "./McpUpstreamClients.ts";
@@ -177,10 +178,16 @@ interface JsonRpcResponse {
 const setup = Effect.gen(function* () {
   const upstream = yield* fakeUpstream;
   const hub = yield* Layer.build(layerHub);
-  yield* HttpRouter.serve(McpHttpServer.layerUpstreamRoute.pipe(Layer.provide(layerSessions)), {
-    disableListenLog: true,
-    disableLogger: true,
-  }).pipe(Layer.provide(Layer.succeedContext(hub)), Layer.build);
+  yield* HttpRouter.serve(
+    McpHttpServer.layerUpstreamRoute.pipe(
+      Layer.provide(layerSessions),
+      Layer.provide(ServerSettings.layerTest()),
+    ),
+    {
+      disableListenLog: true,
+      disableLogger: true,
+    },
+  ).pipe(Layer.provide(Layer.succeedContext(hub)), Layer.build);
   const registry = Context.get(hub, McpServerRegistry.McpServerRegistry);
   const httpClient = yield* HttpClient.HttpClient;
 

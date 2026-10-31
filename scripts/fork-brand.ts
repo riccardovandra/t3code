@@ -2,20 +2,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- A plain file rewriter run before fork builds.
 
 /**
- * Applies the UP Orchestrator brand to the working tree right before a fork build.
- *
- * Source stays worded like upstream T3 Code so daily upstream merges do not
- * conflict on product-name strings. Icons are the one part of the brand that
- * stays committed: they are binary and upstream rarely touches them.
- *
- * Internal identifiers keep the upstream name so existing installs, links and
- * updates keep working: bundle id, t3code:// schemes, data directories,
- * storage keys, the t3 CLI, the MCP server name and agent-facing prompts. That
- * is why server and package code is branded from an explicit file list rather
- * than everywhere.
- *
- *   node scripts/fork-brand.ts           brand the working tree (CI checkouts)
- *   node scripts/fork-brand.ts --check   verify every rule still applies, write nothing
+ * Applies the UP Orchestrator brand right before a fork build. Source keeps upstream's wording so
+ * merges stay clean; internal identifiers (bundle id, schemes, data dirs) keep the upstream name.
+ * `node scripts/fork-brand.ts` brands the tree; `--check` verifies every rule and writes nothing.
  */
 
 import * as NodeFS from "node:fs";
@@ -89,7 +78,6 @@ const BRANDED_FILES = [
   "apps/server/src/project/ManagedProjectFolders.ts",
   "apps/server/src/provider/AntigravityProvider.ts",
   "apps/server/src/provider/ClaudeProvider.ts",
-  "apps/server/src/provider/CodexAuthCallback.ts",
   "apps/server/src/provider/CodexAuthCallbackPage.ts",
   "apps/server/src/provider/CodexInstallation.ts",
   "apps/server/src/provider/CodexProvider.ts",

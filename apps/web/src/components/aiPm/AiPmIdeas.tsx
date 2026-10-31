@@ -252,8 +252,11 @@ function IdeaCard({
           {idea.threads.map((thread) => (
             <li key={thread.id} className="min-w-0 truncate">
               <MarkdownThreadLink
-                environmentId={(thread.environment as EnvironmentId | undefined) ?? environmentId}
-                threadId={thread.id as ThreadId}
+                environmentId={environmentId}
+                link={{
+                  environmentId: (thread.environment as EnvironmentId | undefined) ?? null,
+                  threadId: thread.id as ThreadId,
+                }}
                 label={thread.title ?? thread.id}
               />
             </li>
@@ -403,7 +406,7 @@ function IdeaDialog({
   const submit = async () => {
     // Accept pasted thread links as well as bare ids.
     const threadIds = [
-      ...new Set(lines(threadText).map((line) => parseThreadLinkHref(line) ?? line)),
+      ...new Set(lines(threadText).map((line) => parseThreadLinkHref(line)?.threadId ?? line)),
     ];
     const threads = threadIds.map(
       (id): AiPmIdeaThread =>

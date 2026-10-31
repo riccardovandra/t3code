@@ -1,6 +1,5 @@
 import { ENV_VARIABLE_NAME_PATTERN } from "@t3tools/contracts";
 
-export const SECRET_COMMAND = "secret";
 export const DEFAULT_SECRET_ENV_FILE = ".env";
 
 const SECRET_COMMAND_PATTERN = /^\/secret(?:\s+([^\n]*))?$/i;

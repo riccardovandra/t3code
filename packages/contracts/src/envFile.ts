@@ -4,7 +4,7 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /** The names shells and dotenv loaders accept without quoting. */
 export const ENV_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-export const ENV_VARIABLES_MAX_PER_WRITE = 50;
+const ENV_VARIABLES_MAX_PER_WRITE = 50;
 
 export const EnvVariableName = Schema.String.check(
   Schema.isPattern(ENV_VARIABLE_NAME_PATTERN),
