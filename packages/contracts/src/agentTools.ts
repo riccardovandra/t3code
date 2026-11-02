@@ -20,7 +20,10 @@ const MCP_SERVER_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const MCP_SERVER_NAME_MAX_CHARS = 48;
 /** T3's own server, which every session already gets. */
 export const T3_MCP_SERVER_NAME = "t3-code";
-const RESERVED_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([T3_MCP_SERVER_NAME]);
+const RESERVED_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
+  T3_MCP_SERVER_NAME,
+  `${T3_MCP_SERVER_NAME}-direct`,
+]);
 
 export const McpServerName = TrimmedNonEmptyString.check(
   Schema.isMaxLength(MCP_SERVER_NAME_MAX_CHARS),
@@ -35,11 +38,9 @@ export const isValidMcpServerName: (name: unknown) => name is McpServerName =
   Schema.is(McpServerName);
 
 /**
- * An environment variable or HTTP header. A `sensitive` value is moved into
- * the environment's secret store on save; settings and clients then see an
- * empty value with `valueRedacted` set, and sending that back keeps it.
- * A client that renamed the server or the variable sends `storedAs`, the
- * names the secret was saved under, so the save moves it instead of losing it.
+ * A `sensitive` value moves to the secret store on save; clients then see an
+ * empty value with `valueRedacted`, and sending that back keeps it. `storedAs`
+ * names the secret's saved location, so a rename moves it instead of losing it.
  */
 export const McpServerVariable = Schema.Struct({
   name: TrimmedNonEmptyString,
