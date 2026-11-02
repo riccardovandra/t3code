@@ -14,6 +14,7 @@ export type McpServerId = typeof McpServerId.Type;
  */
 export const RESERVED_MCP_SERVER_NAMES: ReadonlySet<string> = new Set([
   "t3-code",
+  "t3-code-direct",
   "t3_code",
   "t3code",
 ]);
