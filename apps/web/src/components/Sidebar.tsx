@@ -61,7 +61,14 @@ import {
 } from "@t3tools/contracts";
 import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
 
-import { ChevronDownIcon, FolderIcon, ListFilterIcon, PlusIcon, SettingsIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FolderIcon,
+  ListFilterIcon,
+  PlusIcon,
+  SettingsIcon,
+} from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -126,7 +133,17 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useBoringSidebarEnabled, useClientSettings } from "../hooks/useSettings";
+import {
+  updateClientSettings,
+  useBoringSidebarEnabled,
+  useClientSettings,
+} from "../hooks/useSettings";
+import {
+  groupProjectScopeItems,
+  nextProjectScopeKeysForFolder,
+  resolveProjectFolder,
+  type ProjectFolderSettingsLookup,
+} from "../projectFolders";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -843,6 +860,14 @@ function useSidebarLookups() {
       label: project.displayName,
     })),
   ];
+  const folderSettings: ProjectFolderSettingsLookup = (environmentId) =>
+    serverConfigs.get(environmentId)?.settings;
+  const folderByProjectKey = new Map(
+    projectGroups.flatMap((group) => {
+      const folder = resolveProjectFolder(group.memberProjects, folderSettings);
+      return folder ? [[group.projectKey, folder] as const] : [];
+    }),
+  );
   return {
     projects,
     serverConfigs,
@@ -853,6 +878,7 @@ function useSidebarLookups() {
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
+    folderByProjectKey,
   };
 }
 
@@ -918,6 +944,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     projectDisplayNameByKey,
     projectGroupByScopeKey,
     projectScopeItems: lookupProjectScopeItems,
+    folderByProjectKey,
   } = useSidebarLookups();
   const delegatedUnderParent = useDelegatedUnderParent();
   const router = useRouter();
@@ -1183,12 +1210,57 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? null
       : (projectScopeItems.find((item) => item.value === (projectScopeKeys[0] ?? "all")) ??
         projectScopeItems[0]!);
-  const filteredProjectScopeItems = filterSidebarProjectScopeItems({
-    items: projectScopeItems,
-    query: projectScopeMenuState.query,
-    matches: (item, query) =>
-      projectScopeFilter.contains(item, query, (candidate) => candidate.label),
+  const collapsedProjectFolders = useClientSettings(
+    (settings) => settings.sidebarCollapsedProjectFolders,
+  );
+  const projectScopeEntries = groupProjectScopeItems({
+    items: projectScopeItems.filter((item) => item.value !== "all"),
+    folderByProjectKey,
+    collapsedFolders: new Set(collapsedProjectFolders),
   });
+  const projectFolderByScopeValue = new Map(
+    projectScopeEntries.flatMap((entry) =>
+      entry.kind === "folder" ? [[entry.value, entry] as const] : [],
+    ),
+  );
+  const projectFolderScopeItems = [...projectFolderByScopeValue.values()].map((folder) => ({
+    value: folder.value,
+    label: folder.label,
+  }));
+  const pickerProjectScopeItems = [...projectScopeItems, ...projectFolderScopeItems];
+  // Searching lists matching projects flat, including ones in collapsed folders.
+  const filteredProjectScopeItems =
+    projectScopeMenuState.query.trim().length > 0
+      ? filterSidebarProjectScopeItems({
+          items: projectScopeItems,
+          query: projectScopeMenuState.query,
+          matches: (item, query) =>
+            projectScopeFilter.contains(item, query, (candidate) => candidate.label),
+        })
+      : [
+          ...projectScopeItems.filter((item) => item.value === "all"),
+          ...projectScopeEntries.map((entry) =>
+            entry.kind === "folder" ? { value: entry.value, label: entry.label } : entry.item,
+          ),
+        ];
+  const toggleProjectFolderCollapsed = (folderKey: string) =>
+    void updateClientSettings({
+      sidebarCollapsedProjectFolders: collapsedProjectFolders.includes(folderKey)
+        ? collapsedProjectFolders.filter((key) => key !== folderKey)
+        : [...collapsedProjectFolders, folderKey],
+    });
+  const selectProjectFolder = (folderValue: string, toggle: boolean) => {
+    const folder = projectFolderByScopeValue.get(folderValue);
+    if (!folder) return false;
+    setProjectScopeKeys(
+      nextProjectScopeKeysForFolder({
+        current: projectScopeKeys,
+        folderProjectKeys: folder.projectKeys,
+        toggle,
+      }),
+    );
+    return true;
+  };
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
@@ -3003,7 +3075,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               hasProjects={projectGroups.length > 0}
               projectScope={
                 <Combobox
-                  items={projectScopeItems}
+                  items={pickerProjectScopeItems}
                   filteredItems={filteredProjectScopeItems}
                   autoHighlight
                   itemToStringLabel={(item) => item.label}
@@ -3024,7 +3096,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       return;
                     }
                     if (!item) return;
-                    if (item.value === "all") {
+                    if (projectFolderByScopeValue.has(item.value)) {
+                      const toggle = isProjectScopeToggleEvent(eventDetails.event);
+                      if (toggle) eventDetails.cancel();
+                      selectProjectFolder(item.value, toggle);
+                    } else if (item.value === "all") {
                       setProjectScopeKeys([]);
                     } else if (isProjectScopeToggleEvent(eventDetails.event)) {
                       // Canceling skips Base UI's commit, which would freeze the search query, and its close.
@@ -3106,6 +3182,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         }
                         if (event.ctrlKey || event.altKey || event.metaKey) return;
                         if (event.shiftKey && event.key === "Enter") {
+                          if (scopeKey && selectProjectFolder(scopeKey, true)) {
+                            event.preventDefault();
+                            return;
+                          }
                           if (!project) return;
                           event.preventDefault();
                           toggleProjectScopeKey(project.projectKey);
@@ -3129,6 +3209,53 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
                     <ComboboxList aria-multiselectable>
                       {(item: (typeof projectScopeItems)[number]) => {
+                        const folder = projectFolderByScopeValue.get(item.value);
+                        if (folder) {
+                          const selectedCount = folder.projectKeys.filter((key) =>
+                            projectScopeKeys.includes(key),
+                          ).length;
+                          return (
+                            <ComboboxItem
+                              key={item.value}
+                              hideIndicator
+                              value={item}
+                              aria-selected={selectedCount === folder.projectKeys.length}
+                              data-selected={undefined}
+                              className="mt-1 first:mt-0"
+                            >
+                              <span data-project-scope-toggle className="-m-1 flex shrink-0 p-1">
+                                <CheckboxMark
+                                  checked={selectedCount === folder.projectKeys.length}
+                                />
+                              </span>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                aria-label={`${folder.collapsed ? "Expand" : "Collapse"} ${folder.label}`}
+                                className="-m-1 flex shrink-0 p-1 text-muted-foreground"
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  toggleProjectFolderCollapsed(folder.folderKey);
+                                }}
+                              >
+                                {folder.collapsed ? (
+                                  <ChevronRightIcon className="size-3.5" />
+                                ) : (
+                                  <ChevronDownIcon className="size-3.5" />
+                                )}
+                              </button>
+                              <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
+                                {folder.label}
+                              </span>
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {folder.projectKeys.length}
+                              </span>
+                            </ComboboxItem>
+                          );
+                        }
                         const project = projectGroupByScopeKey.get(item.value) ?? null;
                         const isSelected = project
                           ? projectScopeKeys.includes(item.value)

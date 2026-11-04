@@ -62,6 +62,20 @@ back. On mobile, both are in **Settings → Projects → Organize**.
 
 A project on several machines must have every machine connected to pin or archive it.
 
+## Project folders
+
+Group projects into folders such as Clients or Internal Tooling. Select the project, open
+Project, and choose a **Folder**, or **New folder…** to name one. The sidebar project filter then
+lists projects under each folder, with projects in no folder under **Unfiled**. Select a folder
+row to show threads from all its projects, or tick its box to add them to the current filter.
+The arrow on a folder row collapses it on that device.
+
+Folders are saved on each machine, so every device connected to it sees them, and folders with
+the same name on different machines show as one. A folder exists while a project is in it.
+Rename or delete folders in **Settings → General → Project folders**; deleting a folder moves
+its projects to Unfiled. Agents can do the same with the `t3_project_folders_list` and
+`t3_project_folder_set` tools. Mobile does not show folders yet.
+
 ## Worktree branch names
 
 In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,

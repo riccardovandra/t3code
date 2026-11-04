@@ -14,6 +14,7 @@ import {
   ProjectCreatePayload,
   ProjectUpdatePayload,
   ProjectId,
+  ProjectFolderName,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
@@ -94,6 +95,32 @@ const ProjectUpdateTool = Tool.make("t3_project_update", {
     ...ProjectUpdatePayload.fields,
   }),
 }).annotate(Tool.Destructive, true);
+const ProjectFoldersListTool = Tool.make("t3_project_folders_list", {
+  ...shared,
+  description:
+    "List this environment's project folders, each with its projects' ids. Projects in no folder are unfiled.",
+  parameters: Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget }),
+  success: Schema.Struct({
+    folders: Schema.Array(
+      Schema.Struct({ name: ProjectFolderName, projectIds: Schema.Array(ProjectId) }),
+    ),
+  }),
+  dependencies: [...shared.dependencies, ServerSettings.ServerSettingsService],
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
+const ProjectFolderSetTool = Tool.make("t3_project_folder_set", {
+  ...shared,
+  description:
+    "Put a project in a sidebar folder by name; a folder exists while a project uses it. `folder: null` unfiles the project. Rename a folder by setting the new name on each of its projects.",
+  parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    projectId: ProjectId,
+    folder: Schema.NullOr(ProjectFolderName),
+  }),
+  success: Schema.Struct({ projectId: ProjectId, folder: Schema.NullOr(ProjectFolderName) }),
+  dependencies: [...shared.dependencies, ServerSettings.ServerSettingsService],
+}).annotate(Tool.Destructive, false);
 const ProjectDeleteTool = Tool.make("t3_project_delete", {
   ...shared,
   description: "Delete one project. Nonempty needs `force: true`. Folder on disk stays.",
@@ -182,6 +209,8 @@ export const ProjectToolkit = Toolkit.make(
   ProjectReadTool,
   ProjectCreateTool,
   ProjectUpdateTool,
+  ProjectFoldersListTool,
+  ProjectFolderSetTool,
   ProjectDeleteTool,
   ProjectCloneTool,
 );
