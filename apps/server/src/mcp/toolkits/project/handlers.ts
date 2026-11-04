@@ -4,6 +4,7 @@ import {
   ThreadId,
   OrchestratorMcpFailure,
   ProjectId,
+  type ProjectFolderName,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -360,6 +361,39 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       return yield* projects
         .update({ ...input, commandId: yield* newCommandId() })
         .pipe(Effect.mapError(projectFailure));
+    }),
+  ),
+  t3_project_folders_list: McpToolAccess.reads(() =>
+    Effect.gen(function* () {
+      yield* access;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const { projectFolders } = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
+      const byName = new Map<ProjectFolderName, ProjectId[]>();
+      for (const projectId of Object.keys(projectFolders) as ProjectId[]) {
+        const name = projectFolders[projectId]!;
+        byName.set(name, [...(byName.get(name) ?? []), projectId]);
+      }
+      return {
+        folders: [...byName]
+          .toSorted(([a], [b]) => a.localeCompare(b))
+          .map(([name, projectIds]) => ({ name, projectIds })),
+      };
+    }),
+  ),
+  t3_project_folder_set: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      const projects = yield* access;
+      const project = yield* projects.getById(input.projectId).pipe(Effect.mapError(unavailable));
+      if (Option.isNone(project))
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "The project was not found.",
+        });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings
+        .updateSettings({ projectFolders: { [input.projectId]: input.folder } })
+        .pipe(Effect.mapError(unavailable));
+      return { projectId: input.projectId, folder: input.folder };
     }),
   ),
   t3_project_delete: McpToolAccess.writesEnvironment((input) =>

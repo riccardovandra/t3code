@@ -505,6 +505,9 @@ export const ClientSettingsSchema = Schema.Struct({
     TrimmedNonEmptyString,
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  sidebarCollapsedProjectFolders: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -1068,6 +1071,9 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
 
 /** Absent keys inherit; null is a value for nullable settings.
  * providerInstances overrides fields per instance; other keys replace the whole setting. */
+export const ProjectFolderName = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+export type ProjectFolderName = typeof ProjectFolderName.Type;
+
 export const ProjectSettingsOverrides = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -1244,6 +1250,11 @@ export const ServerSettings = Schema.Struct({
     ProjectId,
     keepUnknownOverrideKeys(ProjectSettingsOverrides),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Folders are names, not records: clients merge same-named folders across environments, and a
+  // folder exists while a project uses it.
+  projectFolders: Schema.Record(ProjectId, ProjectFolderName).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   /** Fold once so restarts cannot undo later UI resets. */
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 
@@ -1635,6 +1646,8 @@ export const ServerSettingsPatch = Schema.Struct({
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   fallbackModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  /** Sets each listed project's folder; null removes it. Unlisted projects keep theirs. */
+  projectFolders: Schema.optionalKey(Schema.Record(ProjectId, Schema.NullOr(ProjectFolderName))),
   /** Replaces each project's override set; null removes it. Omitted providerInstances retains its stored value. */
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(
@@ -1863,6 +1876,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
+  sidebarCollapsedProjectFolders: Schema.optionalKey(Schema.Array(Schema.String)),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   timestampFormat: Schema.optionalKey(TimestampFormat),

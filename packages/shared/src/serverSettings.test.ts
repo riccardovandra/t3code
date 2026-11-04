@@ -31,6 +31,28 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
+describe("projectFolders patch", () => {
+  it("sets and clears listed projects and keeps the rest", () => {
+    const a = ProjectId.make("a");
+    const b = ProjectId.make("b");
+    const c = ProjectId.make("c");
+    const current = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
+      projectFolders: decodeServerSettingsPatch({ projectFolders: { a: "Clients", b: "Clients" } })
+        .projectFolders!,
+    });
+    const next = applyServerSettingsPatch(
+      current,
+      decodeServerSettingsPatch({ projectFolders: { b: null, c: "Internal Tooling" } }),
+    );
+    expect(next.projectFolders).toEqual({ [a]: "Clients", [c]: "Internal Tooling" });
+    expect(next.projectFolders[b]).toBeUndefined();
+  });
+
+  it("rejects blank folder names", () => {
+    expect(() => decodeServerSettingsPatch({ projectFolders: { a: "   " } })).toThrow();
+  });
+});
+
 describe("fallbackTextGenerationModelSelection", () => {
   it("uses Big Pickle when only OpenCode is enabled", () => {
     expect(

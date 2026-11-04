@@ -1,8 +1,10 @@
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import { expect, it } from "@effect/vitest";
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
+  type ServerSettings as ServerSettingsSchema,
   ProviderInstanceId,
   ProviderDriverKind,
   type ServerProvider,
@@ -22,6 +24,7 @@ import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
@@ -663,5 +666,52 @@ it.effect("deleting a project through MCP also discards its clone record", () =>
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
     expect(discarded).toEqual([harness.projectId]);
+  }),
+);
+
+it.effect("agents file projects into folders and list them back", () =>
+  Effect.gen(function* () {
+    let settings: ServerSettingsSchema = DEFAULT_SERVER_SETTINGS;
+    const harness = clientLaunchHarness({ runtimeModeCeiling: "full-access", launched: [] });
+    const dependencies = Layer.merge(
+      harness.dependencies,
+      Layer.mock(ServerSettings.ServerSettingsService)({
+        getSettings: Effect.sync(() => settings),
+        updateSettings: (patch) =>
+          Effect.sync(() => (settings = applyServerSettingsPatch(settings, patch))),
+      }),
+    );
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const call = <Name extends "t3_project_folder_set" | "t3_project_folders_list">(
+      name: Name,
+      params: Parameters<typeof toolkit.handle<Name>>[1],
+    ) =>
+      toolkit
+        .handle(name, params)
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+
+    const set = yield* call("t3_project_folder_set", {
+      projectId: harness.projectId,
+      folder: "Clients",
+    });
+    expect(set.at(-1)?.result).toEqual({ projectId: harness.projectId, folder: "Clients" });
+    const listed = yield* call("t3_project_folders_list", {});
+    expect(listed.at(-1)?.result).toEqual({
+      folders: [{ name: "Clients", projectIds: [harness.projectId] }],
+    });
+
+    yield* call("t3_project_folder_set", { projectId: harness.projectId, folder: null });
+    expect(settings.projectFolders).toEqual({});
+
+    const missing = yield* call("t3_project_folder_set", {
+      projectId: ProjectId.make("project:missing"),
+      folder: "Clients",
+    });
+    expect(missing.at(-1)?.result).toMatchObject({ code: "invalid_request" });
+    expect(settings.projectFolders).toEqual({});
   }),
 );

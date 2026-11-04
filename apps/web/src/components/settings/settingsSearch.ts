@@ -426,6 +426,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
+    id: "project-folders",
+    title: "Project folders",
+    to: "/settings/general",
+    searchTerms: ["folders group projects clients sidebar picker rename delete"],
+  },
+  {
     id: "project-order",
     title: "Project order",
     to: "/settings/general",

@@ -350,6 +350,19 @@ function patchedIdleCompaction(
   return globalIdleCompaction(current) === "off" ? "off" : "onReturn";
 }
 
+function mergeProjectFoldersPatch(
+  current: ServerSettings["projectFolders"],
+  patch: NonNullable<ServerSettingsPatch["projectFolders"]>,
+): ServerSettings["projectFolders"] {
+  const next = { ...current };
+  for (const projectId of Object.keys(patch) as ProjectId[]) {
+    const folder = patch[projectId];
+    if (folder === null || folder === undefined) delete next[projectId];
+    else next[projectId] = folder;
+  }
+  return next;
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,
@@ -376,6 +389,7 @@ export function applyServerSettingsPatch(
     mcpServers: mcpServersPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
+    projectFolders: projectFoldersPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -538,6 +552,9 @@ export function applyServerSettingsPatch(
             ),
           },
         }
+      : {}),
+    ...(projectFoldersPatch !== undefined
+      ? { projectFolders: mergeProjectFoldersPatch(current.projectFolders, projectFoldersPatch) }
       : {}),
     ...(projectSettingsOverridesPatch !== undefined
       ? {

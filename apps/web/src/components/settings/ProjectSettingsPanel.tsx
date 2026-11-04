@@ -44,6 +44,7 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
+import { ProjectFolderRow } from "./ProjectFolderSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import {
   defaultProjectIcon,
@@ -562,6 +563,7 @@ function ProjectDetail({
               />
             </>
           ) : null}
+          <ProjectFolderRow members={group.memberProjects} disabled={!canEditGroup} />
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
