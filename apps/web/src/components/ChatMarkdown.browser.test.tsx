@@ -1,7 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { type ReactElement } from "react";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../test/render";
@@ -100,6 +100,13 @@ vi.mock(import("../hooks/useSettings"), async (original) => {
   }
   return { ...actual, useClientSettings };
 });
+
+const { openDocsCloudInPanel } = vi.hoisted(() => ({ openDocsCloudInPanel: vi.fn() }));
+vi.mock(import("./docs/docsCloud"), async (original) => ({
+  ...(await original()),
+  useDocsCloudBaseUrl: () => "https://docs.example.com",
+  openDocsCloudInPanel,
+}));
 
 import ChatMarkdown from "./ChatMarkdown";
 import { AudioPreview } from "./files/AudioPreview";
@@ -456,5 +463,41 @@ describe("ChatMarkdown Windows file links", () => {
       expect(container.innerHTML).not.toContain("d:alert");
       expect(fileHrefs(container)).toEqual([]);
     }
+  });
+});
+
+describe("ChatMarkdown Docs Cloud links", () => {
+  const threadRef = {
+    environmentId: EnvironmentId.make("workspace"),
+    threadId: ThreadId.make("thread"),
+  };
+
+  it("opens links into this environment's Docs Cloud in the Docs panel", async () => {
+    setup();
+    openDocsCloudInPanel.mockReset();
+    await using screen = await renderText(
+      "[Plan](https://docs.example.com/d/doc-1/tab-2) and [Elsewhere](https://other.example.com/d/doc-1)",
+      { threadRef },
+    );
+    const plan = screen.getByRole("link", { name: "Plan" });
+
+    await userEvent.click(plan);
+    expect(openDocsCloudInPanel).toHaveBeenCalledExactlyOnceWith(threadRef, "/d/doc-1/tab-2", {
+      maximized: false,
+    });
+
+    // Runs after React's root listener, so the browser does not follow the links it lets through.
+    const stopNavigation = (event: Event) => event.preventDefault();
+    window.addEventListener("click", stopNavigation);
+    onTestFinished(() => window.removeEventListener("click", stopNavigation));
+    const modifiedClick = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+    });
+    plan.element().dispatchEvent(modifiedClick);
+    const otherClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    screen.getByRole("link", { name: "Elsewhere" }).element().dispatchEvent(otherClick);
+    expect(openDocsCloudInPanel).toHaveBeenCalledTimes(1);
   });
 });
