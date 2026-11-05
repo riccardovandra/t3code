@@ -24,6 +24,7 @@ import {
   encodeComposerContextClipboardHtml,
 } from "@t3tools/shared/composerContextClipboard";
 import {
+  CloudIcon,
   FileSpreadsheetIcon,
   FileTextIcon,
   GlobeIcon,
@@ -180,6 +181,7 @@ import {
 } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePullRequestPreviewTarget } from "@t3tools/client-runtime/change-request-links";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { docsCloudPath } from "@t3tools/client-runtime/docs-cloud";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -209,6 +211,7 @@ import {
   markdownImageCopy,
 } from "./chat/ChatMarkdownMedia";
 import { MarkdownExternalLinkContent } from "./chat/MarkdownExternalLink";
+import { openDocsCloudInPanel, useDocsCloudBaseUrl } from "./docs/docsCloud";
 import { MarkdownFileLink } from "./chat/MarkdownFileLink";
 import { canUseMarkdownFileShellActions } from "./chat/MarkdownFileLink.logic";
 import { rehypeChipPunctuation } from "./chat/markdownChipPunctuation";
@@ -562,6 +565,7 @@ function useChatMarkdownState({
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
   const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
+  const docsCloudBaseUrl = useDocsCloudBaseUrl(environmentId);
   const remoteOpen = useRemoteOpenResolution(environmentId);
   const canUseShellActions =
     canOperateHost &&
@@ -902,6 +906,7 @@ function useChatMarkdownState({
     canOperatePreview,
     cwd,
     diffThemeName,
+    docsCloudBaseUrl,
     environmentId,
     expandMedia,
     fileLinkChip,
@@ -1068,6 +1073,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       canOperateHost,
       canOperatePreview,
       cwd,
+      docsCloudBaseUrl,
       environmentId,
       imageBaseDir,
       markdownFileLinkMetaByHref,
@@ -1140,6 +1146,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
           })
         : null;
       const isSameDocumentLink = href?.startsWith("#") ?? false;
+      // Links into this environment's Docs Cloud open beside the chat, like the Docs Cloud card.
+      const docsCloudPanelPath =
+        href && threadRef && docsCloudBaseUrl !== null
+          ? docsCloudPath(href, docsCloudBaseUrl)
+          : null;
       const onClick = props.onClick;
       const canOpenInPreview =
         canOperatePreview && Boolean(threadRef && isPreviewAvailableFor(threadRef.environmentId));
@@ -1179,6 +1190,20 @@ const CHAT_MARKDOWN_COMPONENTS = {
                   ? event.target
                   : event.currentTarget.querySelector("img"),
               );
+              return;
+            }
+            if (
+              threadRef &&
+              docsCloudPanelPath !== null &&
+              !event.defaultPrevented &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              !event.shiftKey &&
+              !event.altKey
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              openDocsCloudInPanel(threadRef, docsCloudPanelPath, { maximized: false });
               return;
             }
             if (
@@ -1276,7 +1301,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
           }}
         >
           {faviconHost && hasText && !isPullRequestAutolink ? (
-            <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
+            <MarkdownExternalLinkContent
+              host={faviconHost}
+              plainText={plainHastText(node)}
+              icon={docsCloudPanelPath !== null ? CloudIcon : undefined}
+            >
               {linkChildren}
             </MarkdownExternalLinkContent>
           ) : (

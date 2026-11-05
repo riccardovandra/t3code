@@ -1,5 +1,5 @@
 import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
-import { GlobeIcon } from "lucide-react";
+import { GlobeIcon, type LucideIcon } from "lucide-react";
 import { Children, memo, useState, type ReactNode } from "react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -18,9 +18,19 @@ function sourceControlHostIcon(host: string): ReactNode {
   return <Icon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />;
 }
 
-const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
+const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({
+  host,
+  icon: Icon,
+}: {
+  host: string;
+  icon: LucideIcon | undefined;
+}) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
-  const brandIcon = sourceControlHostIcon(host);
+  const brandIcon = Icon ? (
+    <Icon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
+  ) : (
+    sourceControlHostIcon(host)
+  );
   const faviconUrl = brandIcon ? null : faviconUrlForOrigin(`https://${host}`);
   return (
     <span
@@ -70,10 +80,13 @@ function breakableExternalLinkText(text: string): ReactNode[] {
 export function MarkdownExternalLinkContent({
   host,
   plainText,
+  icon,
   children,
 }: {
   host: string;
   plainText: string | null;
+  /** Replaces the site favicon, such as for links that open inside T3 Code. */
+  icon?: LucideIcon | undefined;
   children: ReactNode;
 }) {
   if (plainText) {
@@ -81,7 +94,7 @@ export function MarkdownExternalLinkContent({
     return (
       <>
         <span className="whitespace-nowrap">
-          <MarkdownLinkFavicon host={host} />
+          <MarkdownLinkFavicon host={host} icon={icon} />
           {plainText.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(plainText.slice(leadingLength))}
@@ -97,7 +110,7 @@ export function MarkdownExternalLinkContent({
     return (
       <>
         <span className="whitespace-nowrap">
-          <MarkdownLinkFavicon host={host} />
+          <MarkdownLinkFavicon host={host} icon={icon} />
           {firstChild.slice(0, leadingLength)}
         </span>
         {breakableExternalLinkText(firstChild.slice(leadingLength))}
@@ -109,7 +122,7 @@ export function MarkdownExternalLinkContent({
   return (
     <>
       <span className="[overflow-wrap:anywhere]">
-        <MarkdownLinkFavicon host={host} />
+        <MarkdownLinkFavicon host={host} icon={icon} />
         {firstChild}
       </span>
       {childNodes.slice(1)}
