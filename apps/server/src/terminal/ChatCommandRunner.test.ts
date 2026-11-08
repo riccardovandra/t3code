@@ -57,10 +57,12 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("ChatCommandRun
 
   it.effect("does not expose server variables to the command", () =>
     Effect.gen(function* () {
+      // @effect-diagnostics-next-line processEnvInEffect:off - the test plants a server variable the command must not see.
       process.env.T3CODE_CHAT_COMMAND_TEST = "hidden";
       const runner = yield* ChatCommandRunner.ChatCommandRunner;
       const result = yield* runner
         .run({ cwd: NodeOS.tmpdir(), command: 'printf "%s" "${T3CODE_CHAT_COMMAND_TEST:-unset}"' })
+        // @effect-diagnostics-next-line processEnvInEffect:off - removes the planted variable.
         .pipe(Effect.ensuring(Effect.sync(() => delete process.env.T3CODE_CHAT_COMMAND_TEST)));
       assert.strictEqual(result.stdout, "unset");
     }).pipe(Effect.provide(TestLayer)),

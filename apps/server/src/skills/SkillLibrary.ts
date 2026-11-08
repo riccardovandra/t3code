@@ -1,18 +1,8 @@
 /**
- * SkillLibrary - installs skills from a source and describes the skill
- * folders the environment's agents report.
- *
- * Installs go through the `skills` CLI (see SkillsCli.ts), into
- * `.agents/skills` at home or in a project, with links for agents that read
- * their own folder. The CLI's lock files (`~/.agents/.skill-lock.json`, or
- * `$XDG_STATE_HOME/skills/.skill-lock.json`, and a project's
- * `skills-lock.json`) record where each install came from; this module reads
- * them to group skills by source and to update only what the CLI installed.
- * Remove takes any skill in the agents' own skill folders into the trash
- * (SkillTrash.ts), with its lock entry when the CLI installed it. Turning
- * skills on or off stays in settings.
- *
- * @module SkillLibrary
+ * Installs skills through the `skills` CLI (SkillsCli.ts) and reads its lock files
+ * to group skills by source and update only what the CLI installed. Remove moves a
+ * skill to SkillTrash.ts with its lock entry; turning skills on or off stays in
+ * settings.
  */
 import {
   type InstalledSkillInput,
@@ -47,7 +37,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as Hex from "effect/encoding/Hex";
@@ -213,7 +203,7 @@ export function lockedInstallSource(
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const cli = yield* SkillsCli.SkillsCli;
   const trash = yield* SkillTrash.SkillTrash;
   // Each CLI run rewrites a whole lock file without locking it, so two at once
@@ -294,11 +284,9 @@ const make = Effect.gen(function* () {
       (provider) => providerRegistry.refreshInstance(provider.instanceId),
       { concurrency: "unbounded", discard: true },
     );
-    // A fresh scan drops every other agent's snapshot of its folder. So one
-    // agent scans fresh, which drops the rest's stale lists (and clears its
-    // own caches), then the others rescan without dropping it in turn. A
-    // scan whose starting snapshot changed is discarded, so one folder's
-    // agents scan one after another. Different folders scan in parallel.
+    // A fresh scan drops other agents' snapshots of a folder, so one agent scans fresh
+    // and the rest rescan after it without dropping it. A folder's agents scan in turn;
+    // different folders scan in parallel.
     yield* Effect.forEach(
       scansByCwd,
       ([cwd, instanceIds]) =>
@@ -374,7 +362,7 @@ const make = Effect.gen(function* () {
   });
 
   const sha256 = (text: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(text)).pipe(
+    crypto.digest(Digest.sha256, new TextEncoder().encode(text)).pipe(
       Effect.map(Hex.encode),
       Effect.orElseSucceed(() => ""),
     );

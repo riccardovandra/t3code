@@ -11,7 +11,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -26,11 +26,9 @@ const user = { kind: "user", threadId: null } as const;
 const HISTORY_BUDGET = 4_000;
 
 /**
- * Comments a user writes from a client. With `sendFromThreadId` the comment is
- * saved first and then delivered to that conversation's doc agent: a subagent
- * thread per (conversation, doc), created on first use, that acts on it and
- * answers with docs_comment_reply. Agents comment through DocCommentsService
- * directly, so they never trigger a delivery.
+ * A user's comment with `sendFromThreadId` is saved, then delivered to that
+ * conversation's doc agent (one subagent thread per conversation and doc), which
+ * answers with docs_comment_reply. Agent comments never trigger a delivery.
  */
 export class DocCommentDelivery extends Context.Service<
   DocCommentDelivery,
@@ -99,7 +97,7 @@ interface DocAgent {
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const docs = yield* DocCommentsService.DocCommentsService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
 
@@ -144,7 +142,7 @@ const make = Effect.gen(function* () {
     // concurrent sends from any connection dispatch the same thread.create and
     // the orchestrator's command receipt turns the later one into a replay.
     const digest = yield* crypto.digest(
-      "SHA-256",
+      Digest.sha256,
       new TextEncoder().encode([parent.id, docPath, mapped ?? ""].join("\0")),
     );
     const key = Hex.encode(digest).slice(0, 32);

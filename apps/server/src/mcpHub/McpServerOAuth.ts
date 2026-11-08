@@ -27,7 +27,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -139,7 +139,7 @@ export class McpServerOAuth extends Context.Service<
 const make = Effect.gen(function* () {
   const registry = yield* McpServerRegistry.McpServerRegistry;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const context = yield* Effect.context<never>();
   const pending = new Map<string, PendingSignIn>();
   const discoveries = new Map<McpServerId, OAuthDiscoveryState>();

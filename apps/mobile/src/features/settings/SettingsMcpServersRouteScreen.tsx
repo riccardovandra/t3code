@@ -23,10 +23,7 @@ import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import {
-  AndroidSettingsEnvironmentFilter,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
@@ -34,30 +31,28 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 export function SettingsMcpServersRouteScreen() {
   const { selectedTargets } = useSettingsEnvironmentFilter();
   const insets = useSafeAreaInsets();
+  const environmentMenu = useSettingsEnvironmentMenu();
   return (
-    <>
-      <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="MCP servers" trailing={<AndroidSettingsEnvironmentFilter />}>
-        <ScreenScrollView
-          className="flex-1"
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerClassName="gap-6 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        >
-          {selectedTargets.length === 0 ? (
-            <Text className="text-foreground-muted">Select a connected environment.</Text>
-          ) : (
-            selectedTargets.map((environment) => (
-              <EnvironmentMcpServers key={environment.environmentId} environment={environment} />
-            ))
-          )}
-          <Text className="px-2 text-sm text-foreground-muted">
-            Add and edit servers in web or desktop Settings. Changes apply to threads started
-            afterwards.
-          </Text>
-        </ScreenScrollView>
-      </SettingsScreen>
-    </>
+    <SettingsScreen title="MCP servers" menus={[environmentMenu]}>
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-6 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
+        {selectedTargets.length === 0 ? (
+          <Text className="text-foreground-muted">Select a connected environment.</Text>
+        ) : (
+          selectedTargets.map((environment) => (
+            <EnvironmentMcpServers key={environment.environmentId} environment={environment} />
+          ))
+        )}
+        <Text className="px-2 text-sm text-foreground-muted">
+          Add and edit servers in web or desktop Settings. Changes apply to threads started
+          afterwards.
+        </Text>
+      </ScreenScrollView>
+    </SettingsScreen>
   );
 }
 

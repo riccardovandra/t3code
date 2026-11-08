@@ -1,5 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the fake upstream is a plain Node HTTP server.
 import * as NodeHttp from "node:http";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import type * as NodeNet from "node:net";
 
 import { NodeHttpServer } from "@effect/platform-node";
@@ -216,132 +217,136 @@ const setup = Effect.gen(function* () {
   return { upstream, registry, post, call };
 });
 
-it.layer(Layer.merge(NodeServices.layer, layerSecretRequests))("MCP upstream route", (it) => {
-  it.effect("forwards tools, resources, prompts and upstream errors unchanged", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { upstream, registry, call } = yield* setup;
-        const { id } = yield* registry.upsert({
-          name: "fake",
-          transport: { type: "http", url: upstream.url },
-          auth: { type: "header", header: "X-API-Key", secret: UPSTREAM_KEY },
-        });
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer, layerSecretRequests))(
+  "MCP upstream route",
+  (it) => {
+    it.effect("forwards tools, resources, prompts and upstream errors unchanged", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { upstream, registry, call } = yield* setup;
+          const { id } = yield* registry.upsert({
+            name: "fake",
+            transport: { type: "http", url: upstream.url },
+            auth: { type: "header", header: "X-API-Key", secret: UPSTREAM_KEY },
+          });
 
-        const initialized = yield* call(id, "initialize", {
-          protocolVersion: "2025-06-18",
-          capabilities: {},
-          clientInfo: { name: "provider", version: "1.0.0" },
-        });
-        assert.deepStrictEqual(initialized.result?.serverInfo, {
-          name: "fake-upstream",
-          version: "1.2.3",
-        });
-        assert.strictEqual(initialized.result?.instructions, "Use echo.");
-        assert.hasAllKeys(initialized.result?.capabilities, ["tools", "resources", "prompts"]);
+          const initialized = yield* call(id, "initialize", {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "provider", version: "1.0.0" },
+          });
+          assert.deepStrictEqual(initialized.result?.serverInfo, {
+            name: "fake-upstream",
+            version: "1.2.3",
+          });
+          assert.strictEqual(initialized.result?.instructions, "Use echo.");
+          assert.hasAllKeys(initialized.result?.capabilities, ["tools", "resources", "prompts"]);
 
-        const tools = yield* call(id, "tools/list");
-        assert.deepStrictEqual(
-          cast<unknown, ReadonlyArray<{ readonly _meta?: unknown }>>(tools.result?.tools)[0]?._meta,
-          { ui: { resourceUri: UI_RESOURCE } },
-        );
+          const tools = yield* call(id, "tools/list");
+          assert.deepStrictEqual(
+            cast<unknown, ReadonlyArray<{ readonly _meta?: unknown }>>(tools.result?.tools)[0]
+              ?._meta,
+            { ui: { resourceUri: UI_RESOURCE } },
+          );
 
-        const echoed = yield* call(id, "tools/call", {
-          name: "echo",
-          arguments: { text: "hello" },
-        });
-        assert.deepStrictEqual(echoed.result?.structuredContent, { echoed: "hello" });
+          const echoed = yield* call(id, "tools/call", {
+            name: "echo",
+            arguments: { text: "hello" },
+          });
+          assert.deepStrictEqual(echoed.result?.structuredContent, { echoed: "hello" });
 
-        const unknown = yield* call(id, "tools/call", { name: "missing", arguments: {} });
-        assert.strictEqual(unknown.error?.code, ErrorCode.InvalidParams);
-        assert.include(unknown.error?.message, "Unknown tool: missing");
+          const unknown = yield* call(id, "tools/call", { name: "missing", arguments: {} });
+          assert.strictEqual(unknown.error?.code, ErrorCode.InvalidParams);
+          assert.include(unknown.error?.message, "Unknown tool: missing");
 
-        const resource = yield* call(id, "resources/read", { uri: UI_RESOURCE });
-        assert.deepStrictEqual(resource.result?.contents, [
-          {
-            uri: UI_RESOURCE,
-            mimeType: "text/html;profile=mcp-app",
-            text: "<html>app</html>",
-            _meta: { ui: { prefersBorder: true } },
-          },
-        ]);
+          const resource = yield* call(id, "resources/read", { uri: UI_RESOURCE });
+          assert.deepStrictEqual(resource.result?.contents, [
+            {
+              uri: UI_RESOURCE,
+              mimeType: "text/html;profile=mcp-app",
+              text: "<html>app</html>",
+              _meta: { ui: { prefersBorder: true } },
+            },
+          ]);
 
-        const prompts = yield* call(id, "prompts/list");
-        assert.deepStrictEqual(prompts.result?.prompts, [{ name: "greet" }]);
+          const prompts = yield* call(id, "prompts/list");
+          assert.deepStrictEqual(prompts.result?.prompts, [{ name: "greet" }]);
 
-        const { servers } = yield* registry.list;
-        assert.deepStrictEqual(servers[0]?.status, { state: "connected" });
-      }),
-    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
+          const { servers } = yield* registry.list;
+          assert.deepStrictEqual(servers[0]?.status, { state: "connected" });
+        }),
+      ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
 
-  it.effect("rejects disabled servers, outside clients and missing credentials", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { upstream, registry, post } = yield* setup;
-        const { id } = yield* registry.upsert({
-          name: "fake",
-          enabled: false,
-          transport: { type: "http", url: upstream.url },
-          auth: { type: "header", header: "X-API-Key", secret: UPSTREAM_KEY },
-        });
+    it.effect("rejects disabled servers, outside clients and missing credentials", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { upstream, registry, post } = yield* setup;
+          const { id } = yield* registry.upsert({
+            name: "fake",
+            enabled: false,
+            transport: { type: "http", url: upstream.url },
+            auth: { type: "header", header: "X-API-Key", secret: UPSTREAM_KEY },
+          });
 
-        const disabled = yield* post({ serverId: id, token: threadToken, method: "tools/list" });
-        assert.strictEqual(disabled.status, 404);
-        assert.strictEqual(
-          cast<unknown, { readonly error: string }>(yield* disabled.json).error,
-          "mcp_server_disabled",
-        );
+          const disabled = yield* post({ serverId: id, token: threadToken, method: "tools/list" });
+          assert.strictEqual(disabled.status, 404);
+          assert.strictEqual(
+            cast<unknown, { readonly error: string }>(yield* disabled.json).error,
+            "mcp_server_disabled",
+          );
 
-        yield* registry.setEnabled({ id, enabled: true });
-        const outside = yield* post({ serverId: id, token: clientToken, method: "tools/list" });
-        assert.strictEqual(outside.status, 403);
-        const anonymous = yield* post({ serverId: id, method: "tools/list" });
-        assert.strictEqual(anonymous.status, 401);
-      }),
-    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
+          yield* registry.setEnabled({ id, enabled: true });
+          const outside = yield* post({ serverId: id, token: clientToken, method: "tools/list" });
+          assert.strictEqual(outside.status, 403);
+          const anonymous = yield* post({ serverId: id, method: "tools/list" });
+          assert.strictEqual(anonymous.status, 401);
+        }),
+      ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
 
-  it.effect("reports a rejected credential without answering 401", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { upstream, registry, post } = yield* setup;
-        const { id } = yield* registry.upsert({
-          name: "fake",
-          transport: { type: "http", url: upstream.url },
-          auth: { type: "header", header: "X-API-Key", secret: "wrong-key" },
-        });
+    it.effect("reports a rejected credential without answering 401", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { upstream, registry, post } = yield* setup;
+          const { id } = yield* registry.upsert({
+            name: "fake",
+            transport: { type: "http", url: upstream.url },
+            auth: { type: "header", header: "X-API-Key", secret: "wrong-key" },
+          });
 
-        const response = yield* post({ serverId: id, token: threadToken, method: "tools/list" });
-        assert.strictEqual(response.status, 503);
-        assert.strictEqual(
-          cast<unknown, { readonly error: string }>(yield* response.json).error,
-          "mcp_server_rejected_credential",
-        );
-        const { servers } = yield* registry.list;
-        assert.deepStrictEqual(servers[0]?.status, {
-          state: "error",
-          message: "That MCP server rejected the stored credential.",
-        });
-      }),
-    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
+          const response = yield* post({ serverId: id, token: threadToken, method: "tools/list" });
+          assert.strictEqual(response.status, 503);
+          assert.strictEqual(
+            cast<unknown, { readonly error: string }>(yield* response.json).error,
+            "mcp_server_rejected_credential",
+          );
+          const { servers } = yield* registry.list;
+          assert.deepStrictEqual(servers[0]?.status, {
+            state: "error",
+            message: "That MCP server rejected the stored credential.",
+          });
+        }),
+      ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
 
-  it.effect("runs a stdio server with its secret environment", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { registry, call } = yield* setup;
-        const { id } = yield* registry.upsert({
-          name: "local",
-          transport: {
-            type: "stdio",
-            command: process.execPath,
-            args: ["--input-type=module", "-e", STDIO_SERVER_SCRIPT],
-            secretEnv: { FAKE_TOKEN: { secret: "stdio-secret" } },
-          },
-        });
-        const result = yield* call(id, "tools/call", { name: "token", arguments: {} });
-        assert.deepStrictEqual(result.result?.content, [{ type: "text", text: "stdio-secret" }]);
-      }),
-    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
-});
+    it.effect("runs a stdio server with its secret environment", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { registry, call } = yield* setup;
+          const { id } = yield* registry.upsert({
+            name: "local",
+            transport: {
+              type: "stdio",
+              command: process.execPath,
+              args: ["--input-type=module", "-e", STDIO_SERVER_SCRIPT],
+              secretEnv: { FAKE_TOKEN: { secret: "stdio-secret" } },
+            },
+          });
+          const result = yield* call(id, "tools/call", { name: "token", arguments: {} });
+          assert.deepStrictEqual(result.result?.content, [{ type: "text", text: "stdio-secret" }]);
+        }),
+      ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  },
+);
