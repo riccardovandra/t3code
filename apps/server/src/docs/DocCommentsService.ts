@@ -13,7 +13,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -112,7 +112,7 @@ const commentNotFound = () => new DocsError({ reason: "comment_not_found" });
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
 
   const persistence = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
@@ -121,7 +121,7 @@ const make = Effect.gen(function* () {
     );
 
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
-  const newId = crypto.randomUUIDv4();
+  const newId = crypto.uuidV4();
 
   const findRow = (projectId: ProjectId, commentId: string) =>
     persistence(

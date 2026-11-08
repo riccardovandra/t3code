@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, SecretRef, SecretRequestError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -42,7 +43,7 @@ const reasonOf = <A, R>(effect: Effect.Effect<A, { readonly reason: string }, R>
     Effect.map((error) => error.reason),
   );
 
-it.layer(NodeServices.layer)("McpServerRegistry", (it) => {
+it.layer(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))("McpServerRegistry", (it) => {
   it.effect("keeps servers across a restart and never returns secret values", () =>
     Effect.scoped(
       Effect.gen(function* () {

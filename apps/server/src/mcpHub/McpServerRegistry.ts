@@ -20,7 +20,7 @@ import {
 } from "@t3tools/contracts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -113,7 +113,7 @@ export class McpServerRegistry extends Context.Service<
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const { settingsPath } = yield* ServerConfig.ServerConfig;
   const filePath = path.join(path.dirname(settingsPath), "mcp-servers.json");
@@ -233,7 +233,7 @@ const make = Effect.gen(function* () {
           const id =
             existing?.id ??
             McpServerId.make(
-              yield* crypto.randomUUIDv4().pipe(
+              yield* crypto.uuidV4().pipe(
                 Effect.orDie,
                 Effect.map((uuid) => uuid.toLowerCase()),
               ),

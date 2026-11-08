@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
@@ -174,121 +175,107 @@ const withLibrary = <A, E>(
       Effect.provideService(HostProcess.IsExecutable, false),
     );
     return yield* body({ library, home, project, source, providers, refreshed });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer)));
 
-it.effect(
-  "previews a source without installing it",
-  () =>
-    withLibrary(({ library, home, source }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const preview = yield* library.preview({ source });
-        assert.deepEqual(
-          preview.skills.map((skill) => [
-            skill.name,
-            skill.folder,
-            skill.description,
-            skill.scripts,
-          ]),
-          [
-            ["Git Review", "git-review", "Review with git.", false],
-            ["notes", "notes", "Take notes.", false],
-            ["review", "review", "Review a change.", true],
-          ],
-        );
-        assert.deepEqual(
-          preview.skills[2]?.files.map((file) => [file.path, file.executable, file.script]),
-          [
-            ["SKILL.md", false, false],
-            ["bin/run", true, true],
-          ],
-        );
-        assert.isFalse(yield* fileSystem.exists(`${home}/.agents`));
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  120_000,
+it.effect("previews a source without installing it", () =>
+  withLibrary(({ library, home, source }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const preview = yield* library.preview({ source });
+      assert.deepEqual(
+        preview.skills.map((skill) => [skill.name, skill.folder, skill.description, skill.scripts]),
+        [
+          ["Git Review", "git-review", "Review with git.", false],
+          ["notes", "notes", "Take notes.", false],
+          ["review", "review", "Review a change.", true],
+        ],
+      );
+      assert.deepEqual(
+        preview.skills[2]?.files.map((file) => [file.path, file.executable, file.script]),
+        [
+          ["SKILL.md", false, false],
+          ["bin/run", true, true],
+        ],
+      );
+      assert.isFalse(yield* fileSystem.exists(`${home}/.agents`));
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
+  ),
 );
 
-it.effect(
-  "installs into a project, reports the source, and removes it again",
-  () =>
-    withLibrary(({ library, project, source, providers, refreshed }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const result = yield* library.install({
-          source,
-          skills: ["review"],
-          target: { kind: "project", cwd: project },
-        });
-        assert.deepEqual(result.outcomes, [{ name: "review", status: "installed" }]);
-        // Claude reads only `.claude/skills`, so it gets a link there.
-        const claudeLink = path.join(project, ".claude", "skills", "review", "SKILL.md");
-        assert.isTrue(yield* fileSystem.exists(claudeLink));
-        assert.isFalse(yield* fileSystem.exists(path.join(project, ".agents/skills/notes")));
-        assert.deepEqual(
-          (yield* Ref.get(refreshed)).filter((entry) => entry.startsWith("workspace:")),
-          [`workspace:claude:${project}`],
-        );
+it.effect("installs into a project, reports the source, and removes it again", () =>
+  withLibrary(({ library, project, source, providers, refreshed }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const result = yield* library.install({
+        source,
+        skills: ["review"],
+        target: { kind: "project", cwd: project },
+      });
+      assert.deepEqual(result.outcomes, [{ name: "review", status: "installed" }]);
+      // Claude reads only `.claude/skills`, so it gets a link there.
+      const claudeLink = path.join(project, ".claude", "skills", "review", "SKILL.md");
+      assert.isTrue(yield* fileSystem.exists(claudeLink));
+      assert.isFalse(yield* fileSystem.exists(path.join(project, ".agents/skills/notes")));
+      assert.deepEqual(
+        (yield* Ref.get(refreshed)).filter((entry) => entry.startsWith("workspace:")),
+        [`workspace:claude:${project}`],
+      );
 
-        yield* Ref.set(providers, [
-          {
-            ...claude,
-            workspaceSnapshots: [
-              {
-                cwd: project,
-                checkedAt: "2026-10-09T00:00:00Z",
-                slashCommands: [],
-                skills: [{ name: "review", path: claudeLink, scope: "project", enabled: true }],
-              },
-            ],
-          },
-        ]);
-        const inspected = yield* library.inspect({ cwd: project });
-        assert.equal(inspected.folders.length, 1);
-        const folder = inspected.folders[0];
-        assert.equal(folder?.path, claudeLink);
-        assert.equal(
-          folder?.folder,
-          yield* fileSystem.realPath(path.join(project, ".agents/skills/review")),
-        );
-        assert.isTrue(folder?.scripts);
-        // A project lock keeps a local source relative to the project, so it travels with it.
-        assert.deepEqual(folder?.installed, {
-          target: { kind: "project", cwd: project },
-          source: path.relative(yield* fileSystem.realPath(project), source),
-        });
+      yield* Ref.set(providers, [
+        {
+          ...claude,
+          workspaceSnapshots: [
+            {
+              cwd: project,
+              checkedAt: "2026-10-09T00:00:00Z",
+              slashCommands: [],
+              skills: [{ name: "review", path: claudeLink, scope: "project", enabled: true }],
+            },
+          ],
+        },
+      ]);
+      const inspected = yield* library.inspect({ cwd: project });
+      assert.equal(inspected.folders.length, 1);
+      const folder = inspected.folders[0];
+      assert.equal(folder?.path, claudeLink);
+      assert.equal(
+        folder?.folder,
+        yield* fileSystem.realPath(path.join(project, ".agents/skills/review")),
+      );
+      assert.isTrue(folder?.scripts);
+      // A project lock keeps a local source relative to the project, so it travels with it.
+      assert.deepEqual(folder?.installed, {
+        target: { kind: "project", cwd: project },
+        source: path.relative(yield* fileSystem.realPath(project), source),
+      });
 
-        const updated = yield* library.update({
-          name: "review",
-          target: { kind: "project", cwd: project },
-        });
-        assert.deepEqual(updated.outcomes, [{ name: "review", status: "installed" }]);
+      const updated = yield* library.update({
+        name: "review",
+        target: { kind: "project", cwd: project },
+      });
+      assert.deepEqual(updated.outcomes, [{ name: "review", status: "installed" }]);
 
-        yield* library.remove({ name: "review", target: { kind: "project", cwd: project } });
-        assert.isFalse(yield* fileSystem.exists(path.join(project, ".agents/skills/review")));
-        assert.isFalse(yield* fileSystem.exists(path.join(project, ".claude/skills/review")));
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  180_000,
+      yield* library.remove({ name: "review", target: { kind: "project", cwd: project } });
+      assert.isFalse(yield* fileSystem.exists(path.join(project, ".agents/skills/review")));
+      assert.isFalse(yield* fileSystem.exists(path.join(project, ".claude/skills/review")));
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
+  ),
 );
 
-it.effect(
-  "refuses folders that aren't projects and skills the CLI didn't install",
-  () =>
-    withLibrary(({ library, home, source }) =>
-      Effect.gen(function* () {
-        const notProject = yield* library
-          .install({ source, skills: ["review"], target: { kind: "project", cwd: home } })
-          .pipe(Effect.flip);
-        assert.equal(notProject.reason, "projectNotRegistered");
-        const notInstalled = yield* library
-          .remove({ name: "review", target: { kind: "environment" } })
-          .pipe(Effect.flip);
-        assert.equal(notInstalled.reason, "notInstalled");
-      }),
-    ),
-  60_000,
+it.effect("refuses folders that aren't projects and skills the CLI didn't install", () =>
+  withLibrary(({ library, home, source }) =>
+    Effect.gen(function* () {
+      const notProject = yield* library
+        .install({ source, skills: ["review"], target: { kind: "project", cwd: home } })
+        .pipe(Effect.flip);
+      assert.equal(notProject.reason, "projectNotRegistered");
+      const notInstalled = yield* library
+        .remove({ name: "review", target: { kind: "environment" } })
+        .pipe(Effect.flip);
+      assert.equal(notInstalled.reason, "notInstalled");
+    }),
+  ),
 );
 
 it.effect(
@@ -373,10 +360,9 @@ it.effect(
           assert.equal(yield* fileSystem.readLink(link), own);
           assert.equal(yield* fileSystem.readLink(otherHome), own);
           assert.deepEqual((yield* library.listTrash).entries, []);
-        }).pipe(Effect.provide(NodeServices.layer)),
+        }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
       { claudeHomes: { claudeBark: ".claude-bark" } },
     ),
-  60_000,
 );
 
 it.effect(
@@ -458,33 +444,29 @@ it.effect(
         assert.equal(escape.reason, "cliFailed");
         assert.isFalse(yield* fileSystem.exists(path.join(home, ".agents", "outside")));
         assert.isFalse(yield* fileSystem.exists(path.join(home, ".agents", "skills", "evil")));
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
     ),
-  60_000,
 );
 
-it.effect(
-  "fails a removal it can't finish, and puts back what it had moved",
-  () =>
-    withLibrary(({ library, project, source }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const target = { kind: "project", cwd: project } as const;
-        yield* library.install({ source, skills: ["notes"], target });
-        const folder = path.join(project, ".agents", "skills");
-        yield* fileSystem.chmod(folder, 0o555);
-        const failure = yield* library
-          .remove({ name: "notes", target })
-          .pipe(Effect.flip, Effect.ensuring(fileSystem.chmod(folder, 0o755).pipe(Effect.ignore)));
-        assert.equal(failure.reason, "cliFailed");
-        assert.isTrue(yield* fileSystem.exists(path.join(folder, "notes")));
-        // Claude's link went first, so it is put back too, and nothing is left in the trash.
-        assert.isTrue(yield* fileSystem.exists(path.join(project, ".claude", "skills", "notes")));
-        assert.deepEqual((yield* library.listTrash).entries, []);
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  120_000,
+it.effect("fails a removal it can't finish, and puts back what it had moved", () =>
+  withLibrary(({ library, project, source }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const target = { kind: "project", cwd: project } as const;
+      yield* library.install({ source, skills: ["notes"], target });
+      const folder = path.join(project, ".agents", "skills");
+      yield* fileSystem.chmod(folder, 0o555);
+      const failure = yield* library
+        .remove({ name: "notes", target })
+        .pipe(Effect.flip, Effect.ensuring(fileSystem.chmod(folder, 0o755).pipe(Effect.ignore)));
+      assert.equal(failure.reason, "cliFailed");
+      assert.isTrue(yield* fileSystem.exists(path.join(folder, "notes")));
+      // Claude's link went first, so it is put back too, and nothing is left in the trash.
+      assert.isTrue(yield* fileSystem.exists(path.join(project, ".claude", "skills", "notes")));
+      assert.deepEqual((yield* library.listTrash).entries, []);
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
+  ),
 );
 
 it.effect(
@@ -534,65 +516,58 @@ it.effect(
           `fresh:claude:${project}:true`,
           `fresh:codex:${project}:false`,
         ]);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
     ),
-  120_000,
 );
 
-it.effect(
-  "installs, updates and removes a skill whose name isn't its folder",
-  () =>
-    withLibrary(({ library, project, source }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const target = { kind: "project", cwd: project } as const;
-        const preview = yield* library.preview({ source });
-        const gitReview = preview.skills.find((skill) => skill.folder === "git-review");
-        assert.equal(gitReview?.name, "Git Review");
-        const installed = yield* library.install({ source, skills: ["Git Review"], target });
-        assert.deepEqual(installed.outcomes, [{ name: "Git Review", status: "installed" }]);
-        const folder = path.join(project, ".agents", "skills", "git-review");
-        assert.isTrue(yield* fileSystem.exists(folder));
-        // The list knows the skill by its folder; update and remove find the lock's name.
-        const updated = yield* library.update({ name: "git-review", target });
-        assert.deepEqual(updated.outcomes, [{ name: "Git Review", status: "installed" }]);
-        yield* library.remove({ name: "git-review", target });
-        assert.isFalse(yield* fileSystem.exists(folder));
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  180_000,
+it.effect("installs, updates and removes a skill whose name isn't its folder", () =>
+  withLibrary(({ library, project, source }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const target = { kind: "project", cwd: project } as const;
+      const preview = yield* library.preview({ source });
+      const gitReview = preview.skills.find((skill) => skill.folder === "git-review");
+      assert.equal(gitReview?.name, "Git Review");
+      const installed = yield* library.install({ source, skills: ["Git Review"], target });
+      assert.deepEqual(installed.outcomes, [{ name: "Git Review", status: "installed" }]);
+      const folder = path.join(project, ".agents", "skills", "git-review");
+      assert.isTrue(yield* fileSystem.exists(folder));
+      // The list knows the skill by its folder; update and remove find the lock's name.
+      const updated = yield* library.update({ name: "git-review", target });
+      assert.deepEqual(updated.outcomes, [{ name: "Git Review", status: "installed" }]);
+      yield* library.remove({ name: "git-review", target });
+      assert.isFalse(yield* fileSystem.exists(folder));
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
+  ),
 );
 
-it.effect(
-  "previews a source whose result is larger than one pipe buffer",
-  () =>
-    withLibrary(({ library, home }) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        // About 360 bytes of JSON per skill, so 250 skills is well past 64 KiB.
-        const big = path.join(home, "big");
-        yield* Effect.forEach(
-          Array.from({ length: 250 }, (_, index) => `skill-${String(index).padStart(3, "0")}`),
-          (name) =>
-            fileSystem
-              .makeDirectory(path.join(big, name), { recursive: true })
-              .pipe(
-                Effect.andThen(
-                  fileSystem.writeFileString(
-                    path.join(big, name, "SKILL.md"),
-                    SKILL(name, `Skill ${name}.`),
-                  ),
+it.effect("previews a source whose result is larger than one pipe buffer", () =>
+  withLibrary(({ library, home }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      // About 360 bytes of JSON per skill, so 250 skills is well past 64 KiB.
+      const big = path.join(home, "big");
+      yield* Effect.forEach(
+        Array.from({ length: 250 }, (_, index) => `skill-${String(index).padStart(3, "0")}`),
+        (name) =>
+          fileSystem
+            .makeDirectory(path.join(big, name), { recursive: true })
+            .pipe(
+              Effect.andThen(
+                fileSystem.writeFileString(
+                  path.join(big, name, "SKILL.md"),
+                  SKILL(name, `Skill ${name}.`),
                 ),
               ),
-          { discard: true },
-        );
-        const preview = yield* library.preview({ source: big });
-        assert.equal(preview.skills.length, 250);
-      }).pipe(Effect.provide(NodeServices.layer)),
-    ),
-  180_000,
+            ),
+        { discard: true },
+      );
+      const preview = yield* library.preview({ source: big });
+      assert.equal(preview.skills.length, 250);
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
+  ),
 );
 
 it.effect("moves an installed skill to the trash with its lock entry, and restores all of it", () =>
@@ -635,7 +610,7 @@ it.effect("moves an installed skill to the trash with its lock entry, and restor
       assert.deepEqual((yield* lockedSkills).review, lockEntry);
       assert.isFalse(yield* fileSystem.exists(trashed));
       assert.deepEqual((yield* library.listTrash).entries, []);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
   ),
 );
 
@@ -731,7 +706,7 @@ it.effect("links environment installs into each Claude instance's own home and l
         yield* library.restoreFromTrash({ id: entries[0]?.id ?? "" });
         assert.equal(yield* fileSystem.readLink(barkLink), installed);
         assert.isTrue(yield* fileSystem.exists(path.join(barkLink, "SKILL.md")));
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
     { claudeHomes: { claudeBark: ".claude-bark" } },
   ),
 );

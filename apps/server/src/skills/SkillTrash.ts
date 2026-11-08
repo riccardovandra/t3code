@@ -1,16 +1,8 @@
 /**
- * SkillTrash - where Remove puts a skill instead of deleting it (fork).
- *
- * Each entry is a folder under `<userdata>/skill-trash/<id>/`: the skill's
- * folders moved to `items/<n>`, and `entry.json` recording every original
- * path, each agent link's target (links are recorded, not moved), and the
- * lock entry Remove took out of the `skills` CLI's lock file. Restore puts
- * all of it back and never overwrites what has since taken a path.
- *
- * Callers serialize changes: SkillLibrary runs these under the semaphore that
- * guards the lock files.
- *
- * @module SkillTrash
+ * Where Remove puts a skill instead of deleting it: `<userdata>/skill-trash/<id>/`
+ * holds the moved folders, each link's target, and the CLI lock entry, so Restore
+ * puts all of it back without overwriting what has since taken a path. Callers
+ * serialize changes under SkillLibrary's lock-file semaphore.
  */
 import {
   SkillInstallTarget,
@@ -20,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -186,7 +178,7 @@ export const moveByCopy = Effect.fn("SkillTrash.moveByCopy")(function* (from: st
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const config = yield* ServerConfig.ServerConfig;
   const root = path.join(config.stateDir, "skill-trash");
 

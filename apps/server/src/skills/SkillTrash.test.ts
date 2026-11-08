@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -45,7 +46,7 @@ const withTrash = <A, E>(
       ),
     );
     return yield* body({ trash, folder, link, lock });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer)));
 
 const put = (
   trash: SkillTrash.SkillTrash["Service"],
@@ -155,5 +156,5 @@ it.effect("moves across filesystems by copying, then deleting the source", () =>
     assert.equal(yield* fileSystem.readFileString(path.join(to, "bin", "run")), "#!/bin/sh\n");
     // A relative link stays relative, so it still resolves inside the moved folder.
     assert.equal(yield* fileSystem.readLink(path.join(to, "README.md")), "SKILL.md");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeServices.layer, NodePlatformCrypto.layer))),
 );
