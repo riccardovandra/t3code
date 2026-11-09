@@ -158,11 +158,6 @@ const EDITS: ReadonlyArray<Edit> = [
     replace: 'aria-label="UP"',
   },
   {
-    file: "apps/web/src/components/onboarding/WelcomeWizard.tsx",
-    find: /(>\s*)Code(\s*<\/span>)/,
-    replace: "$1Orchestrator$2",
-  },
-  {
     file: "apps/mobile/src/components/CompactBrandTitle.tsx",
     find: /(>\s*)Code(\s*<\/Text>)/,
     replace: "$1Orchestrator$2",
