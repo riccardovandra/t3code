@@ -127,27 +127,22 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
-        const settings = getClientSettings();
-        const { legacySidebarEnabled } = settings;
         const groups = readProjectGroups();
-        const scopedProjectRef = legacySidebarEnabled
-          ? null
-          : resolveScopedNewThreadProjectRef({
-              groups,
-              scopeKeys: resolveSidebarProjectScopeKeys({
-                groups,
-                keys: useUiStateStore.getState().sidebarProjectScopeKeys,
-                settings: selectProjectGroupingSettings(settings),
-              }),
-              contextProjectRef: resolveThreadActionProjectRef(readThreadContext()),
-            });
+        const scopedProjectRef = resolveScopedNewThreadProjectRef({
+          groups,
+          scopeKeys: resolveSidebarProjectScopeKeys({
+            groups,
+            keys: useUiStateStore.getState().sidebarProjectScopeKeys,
+            settings: selectProjectGroupingSettings(getClientSettings()),
+          }),
+          contextProjectRef: resolveThreadActionProjectRef(readThreadContext()),
+        });
         if (scopedProjectRef) {
           claim(event);
           void handleNewThread(scopedProjectRef);
           return;
         }
         if (
-          !legacySidebarEnabled &&
           !shouldCreateNewThreadInCurrentProject(
             false,
             groups.filter((group) => !group.archived).length,

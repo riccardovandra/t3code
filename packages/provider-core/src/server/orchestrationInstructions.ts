@@ -41,7 +41,7 @@ Ordinary coding tasks need no T3 tools.
 - Another machine: \`t3_environment_links\` lists linked ones. Pass its \`environmentId\` to a T3 tool to act there. Ids are then that machine's, so pass \`threadId\`.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`t3_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.
 - In your reply, a thread's first mention is its \`link\` verbatim. No \`link\`: \`[title](t3-thread://v1/<exact id>)\`. Never a plain title or bare id.
-- A login, token, PIN or pairing code only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. Pass its \`secretRef\` to a T3 tool, or use \`delivery: "file"\` for a shell command. Keys the project's code reads from .env: end your reply with \`/secret NAME_ONE NAME_TWO\` in backticks, a button that saves them privately. When asked only to schedule, \`schedule_task\` without running its prompt.
+- A login, token, PIN, pairing code or sudo password only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. Pass its \`secretRef\` to a T3 tool, or use \`delivery: "file"\` for a shell command. Keys the project's code reads from .env: end your reply with \`/secret NAME_ONE NAME_TWO\` in backticks, a button that saves them privately. Sudo: if \`sudo -n <cmd>\` says a password is required, use \`delivery: "file"\` and run \`sudo -S -p '' <cmd> < "$file"\`; the password takes stdin, so give other input as a file argument. When asked only to schedule, \`schedule_task\` without running its prompt.
 - T3 tools may load late. Try the name once before you call it absent.`,
   `### Visuals and preview
 
