@@ -62,6 +62,7 @@ import {
   Minimize2Icon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
+import { ReadAloudThreadScope } from "./MessageReadAloudButton";
 import { MorphIcon } from "~/components/MorphIcon";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -1060,14 +1061,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // Mounted in both the empty and filled timeline so a thread's first turn
   // starts from a baseline instead of a fresh, silent region.
   const activityAnnouncer = (
-    <ThreadActivityAnnouncer
-      threadKey={announceTurnStatus ? listIdentityKey : null}
-      status={awaitingUser ?? (isWorking ? "working" : "idle")}
-      requestId={awaitingRequestId}
-      runId={announcedRun?.runId ?? null}
-      runStatus={announcedRun?.status ?? null}
-      detailBehind={detailBehindShell}
-    />
+    <>
+      <ReadAloudThreadScope key={listIdentityKey} />
+      <ThreadActivityAnnouncer
+        threadKey={announceTurnStatus ? listIdentityKey : null}
+        status={awaitingUser ?? (isWorking ? "working" : "idle")}
+        requestId={awaitingRequestId}
+        runId={announcedRun?.runId ?? null}
+        runStatus={announcedRun?.status ?? null}
+        detailBehind={detailBehindShell}
+      />
+    </>
   );
   const listHeaderLeadingContent =
     parentThreadLink === null ? (
