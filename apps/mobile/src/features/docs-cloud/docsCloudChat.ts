@@ -2,8 +2,13 @@ import type {
   DocsCloudCommentForChat,
   DocsCloudDiagramCommentForChat,
 } from "@t3tools/client-runtime/docs-cloud";
-import type { DocComment, ReviewCommentContextRecord } from "@t3tools/contracts";
+import type {
+  DocComment,
+  OrchestrationMessageContext,
+  ReviewCommentContextRecord,
+} from "@t3tools/contracts";
 import {
+  formatComposerContextHref,
   sanitizeComposerContextLabel,
   toKindScopedComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
@@ -96,5 +101,27 @@ export function docsCloudDiagramCommentRecord(
       url: comment.url,
       ...(comment.page === null ? {} : { page: comment.page }),
     },
+  };
+}
+
+/**
+ * The draft's context with `record` in place of the one it already holds, or
+ * null when the draft text does not reference it yet. A reply to a thread
+ * that is already in the draft then updates its chip instead of adding one.
+ */
+export function contextWithReplacedRecord(
+  draft: { readonly text: string; readonly context?: OrchestrationMessageContext | undefined },
+  record: ReviewCommentContextRecord,
+): OrchestrationMessageContext | null {
+  const href = formatComposerContextHref(record.kind, record.contextId);
+  const records = draft.context?.records ?? [];
+  if (!draft.text.includes(`(${href})`) || !records.some((r) => r.contextId === record.contextId)) {
+    return null;
+  }
+  return {
+    ...draft.context!,
+    records: records.map((existing) =>
+      existing.contextId === record.contextId ? record : existing,
+    ),
   };
 }

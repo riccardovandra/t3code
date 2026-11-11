@@ -57,14 +57,19 @@ import { environmentThreadShells } from "../../state/threads";
 import {
   getComposerDraftSnapshot,
   insertComposerDraftContext,
+  setComposerDraftContext,
 } from "../../state/use-composer-drafts";
 import {
+  contextWithReplacedRecord,
   docsCloudCommentRecord,
   docsCloudDiagramCommentRecord,
   localDocCommentRecord,
 } from "./docsCloudChat";
 
-/** Appends a comment chip to the thread's draft; false when the draft has no room. */
+/**
+ * Appends a comment chip to the thread's draft, or updates the chip already
+ * there for the same thread; false when the draft has no room.
+ */
 function addRecordToDraft(
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -72,6 +77,11 @@ function addRecordToDraft(
 ): boolean {
   const draftKey = scopedThreadKey(environmentId, threadId);
   const draft = getComposerDraftSnapshot(draftKey);
+  const replaced = contextWithReplacedRecord(draft, record);
+  if (replaced !== null) {
+    setComposerDraftContext(draftKey, replaced);
+    return true;
+  }
   return insertComposerDraftContext(
     draftKey,
     {
