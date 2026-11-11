@@ -169,6 +169,28 @@ export interface DocsCloudCommentForChat {
   readonly anchor: DocsCloudCommentAnchor | null;
 }
 
+/**
+ * A comment on a Docs Cloud Draw.io diagram to add to the composer. The frame
+ * sends it as `add-comment-to-chat` with `diagramId`, `diagramTitle` and
+ * `diagramPage`, empty `docId` and `tabId`, and the diagram's page as `url`,
+ * once the host lists DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE.
+ */
+export interface DocsCloudDiagramCommentForChat {
+  readonly diagramId: string;
+  readonly diagramTitle: string;
+  /** The diagram page's name, or null when it has none. */
+  readonly page: string | null;
+  readonly url: string;
+  /** The thread's root comment. */
+  readonly commentId: string;
+  /** The shape's label, or "" for a pin on empty space. */
+  readonly quote: string;
+  readonly body: string;
+}
+
+/** Listed in `hello` so the frame sends diagram comments too. */
+export const DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE = "add-diagram-comment-to-chat";
+
 /** Copy the doc into another app; T3 Code answers with `sent-to` and the same requestId. */
 export interface DocsCloudSendToRequest {
   readonly requestId: string;
@@ -188,7 +210,13 @@ export type DocsCloudFrameRequest =
   | ({ readonly type: "t3-docs:open-thread" } & DocsCloudThreadRef)
   | ({ readonly type: "t3-docs:thread-linked"; readonly docId: string } & DocsCloudThreadRef)
   | ({ readonly type: "t3-docs:add-comment-to-chat" } & DocsCloudCommentForChat)
+  | ({ readonly type: "t3-docs:add-comment-to-chat" } & DocsCloudDiagramCommentForChat)
   | ({ readonly type: "t3-docs:send-to" } & DocsCloudSendToRequest);
+
+/** True for the diagram form of `add-comment-to-chat`. */
+export const isDocsCloudDiagramComment = (
+  request: DocsCloudCommentForChat | DocsCloudDiagramCommentForChat,
+): request is DocsCloudDiagramCommentForChat => "diagramId" in request;
 
 const DOCS_CLOUD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const isId = (value: unknown): value is string =>
@@ -245,6 +273,49 @@ function isDocUrl(
   }
 }
 
+/** True when `url` is the diagram's own page on the Docs Cloud origin. */
+function isDiagramUrl(url: unknown, origin: string, diagramId: string): url is string {
+  if (typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.origin === origin &&
+      parsed.pathname === `/diagrams/${diagramId}` &&
+      parsed.search === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The diagram form of `add-comment-to-chat`: no doc or tab, no doc anchor, the diagram's own URL. */
+function parseDiagramComment(
+  message: Record<string, unknown>,
+  origin: string,
+): ({ readonly type: "t3-docs:add-comment-to-chat" } & DocsCloudDiagramCommentForChat) | null {
+  const { diagramId, commentId, quote, body, url } = message;
+  const diagramTitle = message.diagramTitle ?? message.docTitle;
+  const page = message.diagramPage ?? null;
+  const noDoc = (value: unknown) => value === undefined || value === "";
+  if (!isId(diagramId) || !isId(commentId) || !noDoc(message.docId) || !noDoc(message.tabId)) {
+    return null;
+  }
+  if (message.anchor !== undefined && message.anchor !== null) return null;
+  if (!isText(diagramTitle, 500) || !isText(quote, 2_000) || !isText(body, 10_000)) return null;
+  if (page !== null && !isText(page, 200)) return null;
+  if (body.trim() === "" || !isDiagramUrl(url, origin, diagramId)) return null;
+  return {
+    type: "t3-docs:add-comment-to-chat",
+    diagramId,
+    diagramTitle: diagramTitle.trim() || "Untitled diagram",
+    page,
+    url,
+    commentId,
+    quote,
+    body,
+  };
+}
+
 /**
  * The frame's request, or null when it is not one or is malformed. Origin and
  * source are the caller's checks. Doc URLs must be the doc's own page on the
@@ -287,6 +358,7 @@ export function parseDocsCloudFrameRequest(
           }
         : null;
     case "t3-docs:add-comment-to-chat": {
+      if (message.diagramId !== undefined) return parseDiagramComment(message, origin);
       const { docId, tabId, docTitle, url, commentId, quote, body } = message;
       if (!isId(docId) || !isId(tabId) || !isId(commentId)) return null;
       if (!isText(docTitle, 500) || !isText(quote, 2_000) || !isText(body, 10_000)) return null;

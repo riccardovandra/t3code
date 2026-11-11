@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
+import {
+  DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE,
+  docsCloudPath,
+  isDocsCloudDiagramComment,
+  parseDocsCloudFrameRequest,
+} from "@t3tools/client-runtime/docs-cloud";
 import {
   latestRunCompletion,
   localCommentHandlers,
@@ -53,7 +58,11 @@ import {
   getComposerDraftSnapshot,
   insertComposerDraftContext,
 } from "../../state/use-composer-drafts";
-import { docsCloudCommentRecord, localDocCommentRecord } from "./docsCloudChat";
+import {
+  docsCloudCommentRecord,
+  docsCloudDiagramCommentRecord,
+  localDocCommentRecord,
+} from "./docsCloudChat";
 
 /** Appends a comment chip to the thread's draft; false when the draft has no room. */
 function addRecordToDraft(
@@ -144,7 +153,7 @@ export function useDocsCloudHost(props: {
   };
 
   const features = [
-    ...(threadId === null ? [] : ["add-to-chat"]),
+    ...(threadId === null ? [] : ["add-to-chat", DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE]),
     ...(canSendTo ? ["send-to"] : []),
     ...(localDocs === null ? [] : [LOCAL_FILES_FEATURE, LOCAL_COMMENTS_FEATURE]),
     ...(localDocs !== null && canWrite ? [LOCAL_CREATE_FEATURE] : []),
@@ -229,7 +238,10 @@ export function useDocsCloudHost(props: {
     if (request?.type === "t3-docs:add-comment-to-chat") {
       if (threadId === null) return;
       const { type: _type, ...comment } = request;
-      if (!addRecordToDraft(environmentId, threadId, docsCloudCommentRecord(comment))) {
+      const record = isDocsCloudDiagramComment(comment)
+        ? docsCloudDiagramCommentRecord(comment)
+        : docsCloudCommentRecord(comment);
+      if (!addRecordToDraft(environmentId, threadId, record)) {
         Dialog.alert("Too many context items", "Remove some context from the draft and try again.");
       }
     } else if (request?.type === "t3-docs:send-to") {

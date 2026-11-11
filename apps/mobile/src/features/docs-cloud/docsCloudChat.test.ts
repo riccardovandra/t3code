@@ -2,7 +2,11 @@ import { ReviewCommentContextRecord, type DocComment, type ProjectId } from "@t3
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { docsCloudCommentRecord, localDocCommentRecord } from "./docsCloudChat";
+import {
+  docsCloudCommentRecord,
+  docsCloudDiagramCommentRecord,
+  localDocCommentRecord,
+} from "./docsCloudChat";
 
 const isRecord = Schema.is(ReviewCommentContextRecord);
 
@@ -55,5 +59,29 @@ describe("doc comments added to the chat", () => {
       anchor: { kind: "cell", blockId: "t1", rowId: "r1", colId: "c1" },
     });
     expect(record.label).toBe("Launch plan");
+  });
+});
+
+describe("diagram comments added to the chat", () => {
+  it("carry the diagram, its page and the shape label, the way web does", () => {
+    const record = docsCloudDiagramCommentRecord({
+      diagramId: "diag-1",
+      diagramTitle: "Sales flow",
+      page: "Flow",
+      url: "https://docs.test/diagrams/diag-1",
+      commentId: "comment-9",
+      quote: "Proposal",
+      body: " Split this step ",
+    });
+    expect(isRecord(record)).toBe(true);
+    expect(record).toMatchObject({
+      label: "Sales flow · “Proposal”",
+      sectionId: "docs-cloud-diagram:diag-1",
+      filePath: "https://docs.test/diagrams/diag-1",
+      text: "Split this step",
+      diff: "Proposal",
+      docsCloudDiagram: { diagramId: "diag-1", commentId: "comment-9", page: "Flow" },
+    });
+    expect(record).not.toHaveProperty("docsCloud");
   });
 });

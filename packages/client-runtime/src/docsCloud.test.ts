@@ -3,12 +3,14 @@ import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE,
   docsCloudBaseUrl,
   docsCloudConfig,
   docsCloudPath,
   docsCloudToolEvent,
   docsCloudUpsertInput,
   docsCloudWorkBrief,
+  isDocsCloudDiagramComment,
   parseDocsCloudFrameRequest,
 } from "./docsCloud.ts";
 
@@ -243,6 +245,64 @@ describe("parseDocsCloudFrameRequest", () => {
     ).toEqual({
       type: "t3-docs:resolve-threads",
       threads: [{ environmentId: "env-1", threadId: "thread-1" }],
+    });
+  });
+
+  describe("a comment on a diagram", () => {
+    // The message exactly as UP Docs sends it to a host that lists the feature.
+    const diagramComment = {
+      ...addComment,
+      docId: "",
+      tabId: "",
+      docTitle: "Sales flow",
+      url: `${BASE}/diagrams/diag-1`,
+      quote: "Proposal",
+      diagramId: "diag-1",
+      diagramTitle: "Sales flow",
+      diagramPage: "Flow",
+    };
+
+    it("is accepted with its diagram, page and shape label, and no doc", () => {
+      const parsed = parseDocsCloudFrameRequest(diagramComment, BASE);
+      expect(parsed).toEqual({
+        type: "t3-docs:add-comment-to-chat",
+        diagramId: "diag-1",
+        diagramTitle: "Sales flow",
+        page: "Flow",
+        url: `${BASE}/diagrams/diag-1`,
+        commentId: "comment-1",
+        quote: "Proposal",
+        body: "Split this",
+      });
+      expect(isDocsCloudDiagramComment(parsed as never)).toBe(true);
+      expect(isDocsCloudDiagramComment(parseDocsCloudFrameRequest(addComment, BASE) as never)).toBe(
+        false,
+      );
+      // No page name, and no doc fields at all.
+      const { docId: _d, tabId: _t, ...bare } = { ...diagramComment, diagramPage: null };
+      expect(parseDocsCloudFrameRequest(bare, BASE)).toMatchObject({ page: null });
+      expect(DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE).toBe("add-diagram-comment-to-chat");
+    });
+
+    it("is refused off the diagram's own page, with a doc, or with a doc anchor", () => {
+      for (const url of [
+        `https://evil.example.com/diagrams/diag-1`,
+        `${BASE}/diagrams/diag-2`,
+        `${BASE}/diagrams/diag-1?x=1`,
+        `${BASE}/d/doc-1/tab-1`,
+      ]) {
+        expect(parseDocsCloudFrameRequest({ ...diagramComment, url }, BASE)).toBeNull();
+      }
+      for (const bad of [
+        { docId: "doc-1" },
+        { tabId: "tab-1" },
+        { diagramId: "../x" },
+        { body: " " },
+        { diagramPage: 3 },
+        { anchor: { kind: "label", blockId: "b", textId: "t" } },
+      ]) {
+        expect(parseDocsCloudFrameRequest({ ...diagramComment, ...bad }, BASE)).toBeNull();
+      }
     });
   });
 

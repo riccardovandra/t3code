@@ -9,7 +9,10 @@ import {
 import * as Schema from "effect/Schema";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 
-import { buildDocsCloudReviewComment } from "~/reviewCommentContext";
+import {
+  buildDocsCloudDiagramReviewComment,
+  buildDocsCloudReviewComment,
+} from "~/reviewCommentContext";
 
 import {
   formatInlineContextReference,
@@ -30,6 +33,7 @@ import {
   selectedMessageContextFragment,
   reviewCommentContextRecord,
   reviewCommentFromRecord,
+  reviewCommentKindLabel,
   terminalContextRecord,
   terminalContextReference,
   terminalContextDraftFromRecord,
@@ -520,5 +524,46 @@ describe("selectedMessageContextFragment", () => {
 
     expect(fragment).toContain(review.contextId);
     expect(fragment).not.toContain(terminal.contextId);
+  });
+});
+
+describe("Docs Cloud diagram comments", () => {
+  const comment = buildDocsCloudDiagramReviewComment({
+    diagramId: "diag-1",
+    diagramTitle: "Sales flow",
+    page: "Flow",
+    url: "https://docs.test/diagrams/diag-1",
+    commentId: "comment-9",
+    quote: "Proposal",
+    body: " Split this step ",
+  });
+
+  it("labels the chip by diagram and shape and survives the wire with its ids", () => {
+    const record = reviewCommentContextRecord(comment);
+    expect(record.label).toBe("Sales flow · “Proposal”");
+    expect(record.text).toBe("Split this step");
+    expect(record).not.toHaveProperty("docsCloud");
+    const [decoded] = decodeMessageContext({ version: 1, records: [record] }).records;
+    expect(decoded).toMatchObject({
+      docsCloudDiagram: { diagramId: "diag-1", commentId: "comment-9", page: "Flow" },
+    });
+    expect(reviewCommentFromRecord(record)).toEqual(comment);
+    expect(reviewCommentKindLabel(comment)).toBe("Diagram comment");
+  });
+
+  it("is one chip per thread, so a reply replaces the comment", () => {
+    const reply = buildDocsCloudDiagramReviewComment({
+      diagramId: "diag-1",
+      diagramTitle: "Sales flow",
+      page: null,
+      url: "https://docs.test/diagrams/diag-1",
+      commentId: "comment-9",
+      quote: "Proposal",
+      body: "And rename it",
+    });
+    expect(reviewCommentContextRecord(reply).contextId).toBe(
+      reviewCommentContextRecord(comment).contextId,
+    );
+    expect(reply.docsCloudDiagram).not.toHaveProperty("page");
   });
 });

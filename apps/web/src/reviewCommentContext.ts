@@ -1,6 +1,7 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
 import {
   DocsCloudCommentContextMetadata,
+  DocsCloudDiagramCommentContextMetadata,
   PullRequestContextMetadata,
   type PullRequestReviewPosition,
 } from "@t3tools/contracts";
@@ -30,6 +31,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   selection: Schema.optional(ReviewCommentSelectionSchema),
   pullRequest: Schema.optional(PullRequestContextMetadata),
   docsCloud: Schema.optional(DocsCloudCommentContextMetadata),
+  docsCloudDiagram: Schema.optional(DocsCloudDiagramCommentContextMetadata),
 });
 
 export interface ReviewCommentContext {
@@ -46,6 +48,7 @@ export interface ReviewCommentContext {
   readonly selection?: ReviewCommentSelection | undefined;
   readonly pullRequest?: PullRequestContextMetadata | undefined;
   readonly docsCloud?: DocsCloudCommentContextMetadata | undefined;
+  readonly docsCloudDiagram?: DocsCloudDiagramCommentContextMetadata | undefined;
 }
 
 interface DiffReviewLine {
@@ -111,6 +114,42 @@ export function buildDocsCloudReviewComment(
     diff: quote,
     fenceLanguage: "text",
     docsCloud,
+  };
+}
+
+/**
+ * A comment on a Docs Cloud Draw.io diagram as composer context: the diagram's
+ * URL stands where a file path would, and the shape's label where its lines
+ * would. The same thread added again replaces itself, so a reply updates it.
+ */
+export function buildDocsCloudDiagramReviewComment(input: {
+  readonly diagramId: string;
+  readonly diagramTitle: string;
+  readonly page: string | null;
+  readonly url: string;
+  readonly commentId: string;
+  readonly quote: string;
+  readonly body: string;
+}): ReviewCommentContext {
+  const title = input.diagramTitle.trim() || "Untitled diagram";
+  return {
+    id: `docs-cloud-${input.commentId}`,
+    sectionId: `docs-cloud-diagram:${input.diagramId}`,
+    sectionTitle: "Docs Cloud diagram comment",
+    filePath: input.url,
+    startIndex: 0,
+    endIndex: 0,
+    rangeLabel: input.page === null ? title : `${title} · ${input.page}`,
+    text: input.body.trim(),
+    diff: input.quote,
+    fenceLanguage: "text",
+    docsCloudDiagram: {
+      diagramId: input.diagramId,
+      commentId: input.commentId,
+      diagramTitle: title,
+      url: input.url,
+      ...(input.page === null ? {} : { page: input.page }),
+    },
   };
 }
 

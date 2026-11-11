@@ -1,4 +1,7 @@
-import type { DocsCloudCommentForChat } from "@t3tools/client-runtime/docs-cloud";
+import type {
+  DocsCloudCommentForChat,
+  DocsCloudDiagramCommentForChat,
+} from "@t3tools/client-runtime/docs-cloud";
 import type { DocComment, ReviewCommentContextRecord } from "@t3tools/contracts";
 import {
   sanitizeComposerContextLabel,
@@ -64,5 +67,34 @@ export function docsCloudCommentRecord(
     diff: quote,
     fenceLanguage: "text",
     docsCloud: { ...docsCloud, ...(anchor === null ? {} : { anchor }) },
+  };
+}
+
+/** A Docs Cloud diagram comment as composer context, as web's diagram "Add to chat" makes it. */
+export function docsCloudDiagramCommentRecord(
+  comment: DocsCloudDiagramCommentForChat,
+): ReviewCommentContextRecord {
+  const title = comment.diagramTitle.trim() || "Untitled diagram";
+  return {
+    version: 1,
+    kind: "review-comment",
+    contextId: toKindScopedComposerContextId("review-comment", `docs-cloud-${comment.commentId}`),
+    label: docCommentLabel(title, comment.quote),
+    sectionId: `docs-cloud-diagram:${comment.diagramId}`,
+    sectionTitle: "Docs Cloud diagram comment",
+    filePath: comment.url,
+    startIndex: 0,
+    endIndex: 0,
+    rangeLabel: comment.page === null ? title : `${title} · ${comment.page}`,
+    text: comment.body.trim(),
+    diff: comment.quote,
+    fenceLanguage: "text",
+    docsCloudDiagram: {
+      diagramId: comment.diagramId,
+      commentId: comment.commentId,
+      diagramTitle: title,
+      url: comment.url,
+      ...(comment.page === null ? {} : { page: comment.page }),
+    },
   };
 }
