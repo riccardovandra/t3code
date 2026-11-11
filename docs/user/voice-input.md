@@ -141,3 +141,14 @@ cleanup even when it is on, so you see what the model heard. Browser recording
 needs HTTPS or localhost and microphone permission; for a remote server over
 plain HTTP, use the desktop app. If the selected microphone is missing, choose
 another or the system default.
+
+## Hear a reply read aloud
+
+On web and desktop, hover a finished agent reply and choose **Read aloud** next
+to **Copy message**. Choose it again to stop; leaving the thread also stops it.
+Code blocks are skipped and tables are read row by row.
+
+Replies are spoken with a voice built into your browser or desktop app, so it
+works with every provider. In Chrome, T3 Code uses the Google US English voice,
+which sends the text of the reply to Google to generate the speech. Elsewhere it
+uses your system's default voice, which runs on your device.
