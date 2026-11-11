@@ -1,4 +1,9 @@
-import { docsCloudPath, parseDocsCloudFrameRequest } from "@t3tools/client-runtime/docs-cloud";
+import {
+  DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE,
+  docsCloudPath,
+  isDocsCloudDiagramComment,
+  parseDocsCloudFrameRequest,
+} from "@t3tools/client-runtime/docs-cloud";
 import {
   answerLocalDocsRequest,
   LOCAL_FILE_HANDLERS,
@@ -25,7 +30,10 @@ import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useActiveThemeColors } from "~/hooks/useHtmlRenderTheme";
-import { buildDocsCloudReviewComment } from "~/reviewCommentContext";
+import {
+  buildDocsCloudDiagramReviewComment,
+  buildDocsCloudReviewComment,
+} from "~/reviewCommentContext";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProject, useQuietThreadShell, useThreadShell } from "~/state/entities";
 import { useEnvironment } from "~/state/environments";
@@ -164,6 +172,7 @@ export function DocsCloudPanel(props: {
   const features = [
     ...(startWork ? ["start-work"] : []),
     "add-to-chat",
+    DOCS_CLOUD_DIAGRAM_COMMENTS_FEATURE,
     "send-to",
     ...(servesFiles ? [LOCAL_FILES_FEATURE, LOCAL_COMMENTS_FEATURE] : []),
     ...(servesFiles && canWriteFiles ? [LOCAL_CREATE_FEATURE] : []),
@@ -235,6 +244,11 @@ export function DocsCloudPanel(props: {
         clearPendingDocLink(toThreadRef(request), request.docId);
         return;
       case "t3-docs:add-comment-to-chat": {
+        if (isDocsCloudDiagramComment(request)) {
+          const { type: _type, ...comment } = request;
+          addReviewComment(props.composerDraftTarget, buildDocsCloudDiagramReviewComment(comment));
+          return;
+        }
         const { type: _type, anchor, ...comment } = request;
         addReviewComment(
           props.composerDraftTarget,

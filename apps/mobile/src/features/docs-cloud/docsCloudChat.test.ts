@@ -2,7 +2,14 @@ import { ReviewCommentContextRecord, type DocComment, type ProjectId } from "@t3
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { docsCloudCommentRecord, localDocCommentRecord } from "./docsCloudChat";
+import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+
+import {
+  contextWithReplacedRecord,
+  docsCloudCommentRecord,
+  docsCloudDiagramCommentRecord,
+  localDocCommentRecord,
+} from "./docsCloudChat";
 
 const isRecord = Schema.is(ReviewCommentContextRecord);
 
@@ -55,5 +62,70 @@ describe("doc comments added to the chat", () => {
       anchor: { kind: "cell", blockId: "t1", rowId: "r1", colId: "c1" },
     });
     expect(record.label).toBe("Launch plan");
+  });
+});
+
+describe("diagram comments added to the chat", () => {
+  it("carry the diagram, its page and the shape label, the way web does", () => {
+    const record = docsCloudDiagramCommentRecord({
+      diagramId: "diag-1",
+      diagramTitle: "Sales flow",
+      page: "Flow",
+      url: "https://docs.test/diagrams/diag-1",
+      commentId: "comment-9",
+      quote: "Proposal",
+      body: " Split this step ",
+    });
+    expect(isRecord(record)).toBe(true);
+    expect(record).toMatchObject({
+      label: "Sales flow · “Proposal”",
+      sectionId: "docs-cloud-diagram:diag-1",
+      filePath: "https://docs.test/diagrams/diag-1",
+      text: "Split this step",
+      diff: "Proposal",
+      docsCloudDiagram: { diagramId: "diag-1", commentId: "comment-9", page: "Flow" },
+    });
+    expect(record).not.toHaveProperty("docsCloud");
+  });
+});
+
+describe("a reply to a thread already in the draft", () => {
+  const comment = docsCloudDiagramCommentRecord({
+    diagramId: "diag-1",
+    diagramTitle: "Sales flow",
+    page: null,
+    url: "https://docs.test/diagrams/diag-1",
+    commentId: "comment-9",
+    quote: "Proposal",
+    body: "Split this step",
+  });
+  const reply = docsCloudDiagramCommentRecord({
+    diagramId: "diag-1",
+    diagramTitle: "Sales flow",
+    page: null,
+    url: "https://docs.test/diagrams/diag-1",
+    commentId: "comment-9",
+    quote: "Proposal",
+    body: "And rename it",
+  });
+
+  it("updates the one chip instead of adding a second reference", () => {
+    const text = `Please handle ${formatComposerContextReference(comment)} `;
+    const context = contextWithReplacedRecord(
+      { text, context: { version: 1, records: [comment] } },
+      reply,
+    );
+    expect(context?.records).toEqual([reply]);
+  });
+
+  it("leaves a draft without the thread to the usual insert", () => {
+    expect(contextWithReplacedRecord({ text: "Hello", context: undefined }, reply)).toBeNull();
+    // A record left over with no reference in the text is not a chip.
+    expect(
+      contextWithReplacedRecord(
+        { text: "Hello", context: { version: 1, records: [comment] } },
+        reply,
+      ),
+    ).toBeNull();
   });
 });

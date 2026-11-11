@@ -107,6 +107,18 @@ export const DocsCloudCommentContextMetadata = Schema.Struct({
 });
 export type DocsCloudCommentContextMetadata = typeof DocsCloudCommentContextMetadata.Type;
 
+/** A comment on a Docs Cloud Draw.io diagram, so its agent can change the diagram, reply and resolve. */
+export const DocsCloudDiagramCommentContextMetadata = Schema.Struct({
+  diagramId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  commentId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  diagramTitle: ShortString,
+  url: ShortString,
+  /** The diagram page's name, when the page has one. */
+  page: Schema.optionalKey(ShortString),
+});
+export type DocsCloudDiagramCommentContextMetadata =
+  typeof DocsCloudDiagramCommentContextMetadata.Type;
+
 const recordBase = {
   version: Schema.Literal(1),
   contextId: ComposerContextId,
@@ -215,6 +227,7 @@ export const ReviewCommentContextRecord = Schema.Struct({
   fenceLanguage: Schema.optionalKey(BoundedString(64)),
   pullRequest: Schema.optionalKey(PullRequestContextMetadata),
   docsCloud: Schema.optionalKey(DocsCloudCommentContextMetadata),
+  docsCloudDiagram: Schema.optionalKey(DocsCloudDiagramCommentContextMetadata),
 }).check(Schema.makeFilter((record) => record.endIndex >= record.startIndex));
 export type ReviewCommentContextRecord = typeof ReviewCommentContextRecord.Type;
 

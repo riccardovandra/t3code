@@ -69,8 +69,9 @@ function basename(filePath: string): string {
 const DOC_QUOTE_LABEL_MAX_CHARS = 40;
 
 export function reviewCommentContextLabel(comment: ReviewCommentPresentation): string {
-  if (comment.docsCloud !== undefined) {
-    const title = comment.docsCloud.docTitle.trim() || "Untitled";
+  const docsCloudTitle = comment.docsCloud?.docTitle ?? comment.docsCloudDiagram?.diagramTitle;
+  if (docsCloudTitle !== undefined) {
+    const title = docsCloudTitle.trim() || "Untitled";
     const quote = comment.diff.trim().replace(/\s+/g, " ");
     if (!quote) return title;
     const clipped =
@@ -120,6 +121,7 @@ export function pullRequestContextDisplayState(
 /** What the chip calls a review comment: its pull request state, a doc comment, or neither. */
 export function reviewCommentKindLabel(comment: ReviewCommentPresentation): string {
   if (isPullRequestSummaryContext(comment)) return pullRequestContextKindLabel(comment);
+  if (comment.docsCloudDiagram !== undefined) return "Diagram comment";
   return comment.docsCloud !== undefined ? "Doc comment" : "Review comment";
 }
 
@@ -241,6 +243,9 @@ export function reviewCommentContextRecord(
     ...(comment.fenceLanguage !== undefined ? { fenceLanguage: comment.fenceLanguage } : {}),
     ...(comment.pullRequest !== undefined ? { pullRequest: comment.pullRequest } : {}),
     ...(comment.docsCloud !== undefined ? { docsCloud: comment.docsCloud } : {}),
+    ...(comment.docsCloudDiagram !== undefined
+      ? { docsCloudDiagram: comment.docsCloudDiagram }
+      : {}),
   };
 }
 
@@ -464,6 +469,7 @@ export function reviewCommentFromRecord(record: ReviewCommentContextRecord): Rev
     ...(record.fenceLanguage !== undefined ? { fenceLanguage: record.fenceLanguage } : {}),
     ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
     ...(record.docsCloud !== undefined ? { docsCloud: record.docsCloud } : {}),
+    ...(record.docsCloudDiagram !== undefined ? { docsCloudDiagram: record.docsCloudDiagram } : {}),
   };
 }
 

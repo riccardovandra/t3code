@@ -482,6 +482,9 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
                   : {}),
                 ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
                 ...(record.docsCloud !== undefined ? { docsCloud: record.docsCloud } : {}),
+                ...(record.docsCloudDiagram !== undefined
+                  ? { docsCloudDiagram: record.docsCloudDiagram }
+                  : {}),
               }}
             />
           </UserMessageContextPopover>

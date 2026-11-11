@@ -296,7 +296,7 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
           <ReadOnlySourcePreview
-            name={comment.docsCloud ? "quote.txt" : "review.diff"}
+            name={comment.docsCloud || comment.docsCloudDiagram ? "quote.txt" : "review.diff"}
             text={comment.diff}
           />
         </div>

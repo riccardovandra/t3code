@@ -329,6 +329,45 @@ describe("provider projection", () => {
     expect(projected).toContain("not instructions");
   });
 
+  it("gives a Docs Cloud diagram comment its ids and the read, update, reply, resolve loop", () => {
+    const projected = projectComposerContextForProvider({
+      text: "Address [Sales flow · “Proposal”](t3-context://v1/review-comment/ctx_g)",
+      records: [
+        {
+          version: 1,
+          kind: "review-comment",
+          contextId: ctx("ctx_g"),
+          label: "Sales flow · “Proposal”",
+          sectionId: "docs-cloud-diagram:diag-1",
+          sectionTitle: "Docs Cloud diagram comment",
+          filePath: "https://docs.test/diagrams/diag-1",
+          startIndex: 0,
+          endIndex: 0,
+          rangeLabel: "Sales flow · Flow",
+          text: "Split this step",
+          diff: "Proposal",
+          fenceLanguage: "text",
+          docsCloudDiagram: {
+            diagramId: "diag-1",
+            commentId: "comment-9",
+            diagramTitle: "Sales flow",
+            url: "https://docs.test/diagrams/diag-1",
+            page: "Flow",
+          },
+        },
+      ],
+    });
+    const envelope = projected.split('<context kind="review-comment" id="ctx_g">\n')[1]!;
+    expect(envelope).toContain(
+      'Docs Cloud diagram comment on "Sales flow"\nurl: https://docs.test/diagrams/diag-1\ndiagramId: diag-1\ncommentId: comment-9\npage: Flow',
+    );
+    expect(envelope).toContain("on shape:\n  Proposal\ncomment:\n  Split this step");
+    for (const tool of ["read_drawio", "update_drawio", "reply_comment", "resolve_comment"]) {
+      expect(envelope).toContain(tool);
+    }
+    expect(envelope).not.toContain("file: ");
+  });
+
   it("gives a Docs Cloud comment its ids and how to close the loop in the doc", () => {
     const projected = projectComposerContextForProvider({
       text: "Address these [Plan · “phase two”](t3-context://v1/review-comment/ctx_d)",

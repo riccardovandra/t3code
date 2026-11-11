@@ -320,6 +320,29 @@ function formatDocsCloudCommentForAgent(
   return lines.join("\n");
 }
 
+/**
+ * A comment on a Docs Cloud Draw.io diagram for the agent: the diagram, the
+ * shape it is pinned to, what it says, and how to close the loop there.
+ */
+function formatDocsCloudDiagramCommentForAgent(
+  record: Pick<ReviewCommentContextRecord, "text" | "diff">,
+  diagram: NonNullable<ReviewCommentContextRecord["docsCloudDiagram"]>,
+): string {
+  const lines = [
+    `Docs Cloud diagram comment on ${JSON.stringify(diagram.diagramTitle)}`,
+    `url: ${diagram.url}`,
+    `diagramId: ${diagram.diagramId}`,
+    `commentId: ${diagram.commentId}`,
+  ];
+  if (diagram.page !== undefined) lines.push(`page: ${diagram.page}`);
+  if (record.diff.trim()) lines.push("on shape:", indent(record.diff.trim()));
+  if (record.text.trim()) lines.push("comment:", indent(record.text.trim()));
+  lines.push(
+    `Act on it with the docs-cloud tools: list_comments (diagramId above) shows the thread and the shape it is pinned to; read_drawio with includeXml, then change the diagram with update_drawio. Then reply_comment (diagramId and commentId above) saying briefly what changed or answering the question, and resolve_comment once it is handled.`,
+  );
+  return lines.join("\n");
+}
+
 function formatComposerContextProviderPayload(record: KnownComposerContextRecord): string {
   switch (record.kind) {
     case "image":
@@ -361,6 +384,9 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
     }
     case "review-comment": {
       if (record.docsCloud) return formatDocsCloudCommentForAgent(record, record.docsCloud);
+      if (record.docsCloudDiagram) {
+        return formatDocsCloudDiagramCommentForAgent(record, record.docsCloudDiagram);
+      }
       const lines = [
         `file: ${record.filePath}`,
         `range: ${record.rangeLabel} (${record.startIndex}-${record.endIndex})`,
